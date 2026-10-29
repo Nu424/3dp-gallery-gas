@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+node_modules/
+dev/preview/out/
+dev/**/out/
+.DS_Store
+Thumbs.db
