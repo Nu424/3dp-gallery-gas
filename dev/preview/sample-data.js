@@ -22,6 +22,8 @@ const photos = (id, thumb, names) => names.map((n) => ({ name: n, url: thumb ? t
 export const SAMPLE_DATA = {
   syncedAt: '2026-10-29T09:12:00+09:00',
   sheetUrl: 'https://example.com/preview/sheet',
+  statuses: ['使用中', '参考', '引退'],
+  canSync: true,
   items: [
     { folderId: 'id-tray-0210', folderName: '20260210_恒温槽用トレイ', folderUrl: 'https://example.com/preview/folder/tray', date: '2026-02-10', name: '恒温槽用トレイ', author: '鈴木', purpose: '恒温槽の中でサンプル瓶6本を立てておく', status: '使用中',
       tags: ['恒温槽', '収納'], note: ['PETGで印刷。PLAだと60℃で反る。', '瓶の径は22mm想定。'],
@@ -57,7 +59,7 @@ export const SAMPLE_DATA = {
       files: files('cable', ['guide.stl', 'thumb.jpg']) }
   ],
   issues: [
-    { folderName: '20260722_ファンダクト試作', problem: 'meta.json の purpose が空です',
+    { folderId: 'id-fanduct-0722', folderName: '20260722_ファンダクト試作', problem: 'meta.json の purpose が空です',
       url: 'https://example.com/preview/folder/fanduct', rowUrl: 'https://example.com/preview/sheet#gid=0&range=A9' }
   ]
 };

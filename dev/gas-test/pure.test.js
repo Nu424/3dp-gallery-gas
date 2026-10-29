@@ -238,14 +238,14 @@ test('buildRecord: 正常な作品の行', () => {
   assert.equal(r.name, '流路セルホルダー');
   assert.equal(r.author, '山田');
   assert.equal(r.status, '使用中');
-  assert.equal(r.tags, '顕微鏡, 治具');
+  assert.equal(r.tags, '["顕微鏡","治具"]');
   assert.equal(r.note, 'M3ネジ×4で固定。\n縦向きで刷る。');
   assert.equal(r.thumb_id, 't1');
   assert.equal(r.error, '');
   assert.equal(r.fingerprint, 'fp');
   const files = JSON.parse(r.files);
   assert.deepEqual(files.map((x) => x.name), ['base.stl', 'meta.json', 'photo_1.jpg', 'photo_2.jpg', 'thumb.png']);
-  assert.deepEqual(Object.keys(files[0]), ['name', 'id', 'size', 'mimeType']);
+  assert.deepEqual(Object.keys(files[0]), ['name', 'id', 'size']);
   assert.deepEqual(Object.keys(r), plain(ctx.HEADERS));
 });
 
@@ -316,6 +316,7 @@ test('recordToGalleryEntry: 不備のある行は issue（行へのリンク付�
     sheetUrl: 'https://docs.google.com/spreadsheets/d/SS/edit', sheetGid: 42, rowNumber: 7 }));
   assert.equal(e.item, undefined);
   assert.deepEqual(e.issue, {
+    folderId: 'F1',
     folderName: '20250612_流路セルホルダー',
     problem: r.error,
     url: 'https://drive.google.com/drive/folders/F1',
@@ -333,4 +334,84 @@ test('buildSyncMessage', () => {
   assert.equal(ctx.buildSyncMessage({ done: true, checked: 3, updated: 0, removed: 1 }, 'web'), '同期しました（3件を確認、0件を更新、1件を削除）');
   assert.match(ctx.buildSyncMessage({ done: false, checked: 2, updated: 2, removed: 0 }, 'web'), /^途中まで同期しました.*もう一度押すと続きから再開します$/);
   assert.match(ctx.buildSyncMessage({ done: false, checked: 2, updated: 2, removed: 0 }, 'menu'), /自動的に再開/);
+});
+
+// ---------------------------------------------------------------------------
+// レビュー対応で足した振る舞い
+// ---------------------------------------------------------------------------
+
+test('tags 列：JSON 配列で保存し、カンマを含むタグも割れない。旧形式（カンマ区切り）も読める', () => {
+  const r = plain(record({ metaText: JSON.stringify({ ...goodMeta, tags: ['M3,M4', '治具'] }) }));
+  assert.equal(r.tags, '["M3,M4","治具"]');
+  const it = ctx.recordToGalleryEntry(r, { sheetUrl: 'u', sheetGid: 0, rowNumber: 2 }).item;
+  assert.deepEqual(plain(it.tags), ['M3,M4', '治具']);
+  assert.deepEqual(plain(ctx.splitTags('顕微鏡, 治具')), ['顕微鏡', '治具']);
+  assert.deepEqual(plain(ctx.splitTags('')), []);
+  assert.deepEqual(plain(ctx.splitTags('[壊れ, た')), ['[壊れ', 'た']);
+  assert.equal(record({ metaText: JSON.stringify({ ...goodMeta, tags: [] }) }).tags, '');
+});
+
+test('写真・代表画像は mimeType の無い files 列（拡張子）でも判定できる', () => {
+  const it = ctx.recordToGalleryEntry(plain(record()), { sheetUrl: 'u', sheetGid: 0, rowNumber: 2 }).item;
+  assert.equal(it.photos.length, 2);
+  assert.deepEqual(plain(ctx.IMAGE_EXTENSIONS), ['png', 'jpg', 'jpeg', 'gif', 'webp']);
+});
+
+test('セルの上限：ファイルが多すぎると切り詰めて要対応に', () => {
+  const many = Array.from({ length: 1200 }, (_, i) => ({
+    name: `part_${String(i).padStart(4, '0')}_with_a_rather_long_file_name.stl`, id: 'x'.repeat(33) + i,
+    size: 123456, mimeType: 'model/stl', updated: 1 }));
+  const r = plain(record({ files: [...FILES, ...many] }));
+  assert.ok(r.files.length <= ctx.CELL_CHAR_LIMIT);
+  assert.ok(JSON.parse(r.files).length < many.length + FILES.length);
+  assert.match(r.error, /ファイルが多すぎて一覧を保存できません（1205個）。フォルダを分けてください/);
+});
+
+test('セルの上限：note などが長すぎると切り詰めて error に記録', () => {
+  const long = 'あ'.repeat(60000);
+  const r = plain(record({ metaText: JSON.stringify({ ...goodMeta, note: long, purpose: long }) }));
+  assert.equal(r.note.length, ctx.CELL_CHAR_LIMIT);
+  assert.equal(r.purpose.length, ctx.CELL_CHAR_LIMIT);
+  assert.match(r.error, /「purpose」が長すぎるため切り詰めました/);
+  assert.match(r.error, /「note」が長すぎるため切り詰めました/);
+  // recordToRow でも念のため切る
+  const row = plain(ctx.recordToRow({ ...r, error: 'e'.repeat(70000) }));
+  assert.ok(row.every((v) => v.length <= ctx.CELL_CHAR_LIMIT));
+});
+
+test('fingerprint：同名・同サイズ・同時刻でもファイルIDが違えば変わる', () => {
+  const a = ctx.computeFingerprint('20250101_x', [{ name: 'a.stl', id: 'A', size: 1, updated: 1 }]);
+  const b = ctx.computeFingerprint('20250101_x', [{ name: 'a.stl', id: 'B', size: 1, updated: 1 }]);
+  assert.notEqual(a, b);
+});
+
+test('isIgnoredFileName：*.tmp は無視', () => {
+  assert.equal(ctx.isIgnoredFileName('base.stl.tmp'), true);
+  assert.equal(ctx.isIgnoredFileName('X.TMP'), true);
+  assert.equal(ctx.isIgnoredFileName('base.stl'), false);
+});
+
+test('folderKey はタブ区切り', () => {
+  assert.equal(ctx.folderKey('20250101_a', 'ID'), '20250101_a' + String.fromCharCode(9) + 'ID');
+});
+
+test('deletionGuardMessage：0件・多すぎるときだけ見送る', () => {
+  assert.equal(ctx.deletionGuardMessage(5, 5, 0), '');
+  assert.match(ctx.deletionGuardMessage(3, 0, 3), /items フォルダの中が見つからない/);
+  assert.equal(ctx.deletionGuardMessage(4, 1, 3), '', '少ない行数なら半数超でも消す');
+  assert.equal(ctx.deletionGuardMessage(10, 5, 5), '', 'ちょうど半数は消す');
+  assert.match(ctx.deletionGuardMessage(10, 4, 6), /多すぎるため.*（6行）/);
+});
+
+test('toUserError_：権限の判定は狭く、「アクセス」単独では当てない', () => {
+  const MSG = '同期にはスプシの編集権限が必要です（items フォルダは閲覧できれば足ります）';
+  assert.equal(ctx.toUserError_(new Error('You do not have permission to call X')).message, MSG);
+  assert.equal(ctx.toUserError_(new Error('この操作を行う権限がありません')).message, MSG);
+  assert.equal(ctx.toUserError_(new Error('サーバーへのアクセス中にエラー')).message, '同期に失敗しました：サーバーへのアクセス中にエラー');
+  assert.equal(ctx.toUserError_(new Error('x'), { prefix: 'P:' }).message, 'P:x');
+});
+
+test('isNotFoundError', () => {
+  assert.equal(ctx.isNotFoundError(new Error('No item with the given ID could be found, or you do not have permission to access it.')), true);
+  assert.equal(ctx.isNotFoundError(new Error('Service error: Drive')), false);
 });

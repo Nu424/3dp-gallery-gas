@@ -239,7 +239,8 @@ test('書き込み権限が無いと決まり文句に言い換える', () => {
   addItem(env, '20250101_a');
   env.ctx.syncNow();
   env.ss.getSheetByName('items').failWrites = true;
-  assert.throws(() => env.ctx.syncNow(), { message: '同期には items フォルダとスプシの編集権限が必要です' });
+  assert.throws(() => env.ctx.syncNow(), { message: '同期にはスプシの編集権限が必要です（items フォルダは閲覧できれば足ります）' });
+  assert.throws(() => env.ctx.resyncItem('x'), { message: '同期にはスプシの編集権限が必要です（items フォルダは閲覧できれば足ります）' });
   assert.equal(env.lock.state.held, false, '失敗してもロックは解放される');
 });
 
@@ -336,7 +337,8 @@ test('全部作り直す：データ行を消して全件読み直す（続き�
 test('getGalleryData：シートが無ければ空', () => {
   const env = setupEnv();
   assert.deepEqual(plain(env.ctx.getGalleryData()), {
-    syncedAt: null, sheetUrl: 'https://docs.google.com/spreadsheets/d/SSID/edit', items: [], issues: [] });
+    syncedAt: null, sheetUrl: 'https://docs.google.com/spreadsheets/d/SSID/edit',
+    statuses: ['使用中', '参考', '引退'], canSync: true, items: [], issues: [] });
 });
 
 test('doGet と include', () => {
@@ -346,4 +348,123 @@ test('doGet と include', () => {
   assert.equal(out.metas.viewport, 'width=device-width, initial-scale=1');
   assert.deepEqual(env.html.calls, [['template', 'index']]);
   assert.equal(env.ctx.include('guide'), '<!-- guide -->');
+});
+
+// ---------------------------------------------------------------------------
+// レビュー対応で足した振る舞い
+// ---------------------------------------------------------------------------
+
+const MSG_PERMISSION = '同期にはスプシの編集権限が必要です（items フォルダは閲覧できれば足ります）';
+
+test('書き込みが途中で失敗しても、シートの既存の行は消えない', () => {
+  const env = setupEnv();
+  addItem(env, '20250101_a');
+  addItem(env, '20250102_b');
+  env.ctx.syncNow();
+  const before = plain(rows(env));
+  addItem(env, '20250103_c');
+  env.ss.getSheetByName('items').failSetValues = true;
+  assert.throws(() => env.ctx.syncNow(), /同期に失敗しました/);
+  assert.deepEqual(plain(rows(env)), before);
+});
+
+test('行が減ったときは余った行だけ消える', () => {
+  const env = setupEnv();
+  const ids = ['20250101_a', '20250102_b', '20250103_c'].map((n) => addItem(env, n));
+  env.ctx.syncNow();
+  env.drive.remove(ids[0]);
+  env.drive.remove(ids[1]);
+  env.ctx.syncNow();
+  assert.equal(env.ss.getSheetByName('items').getLastRow(), 2);
+  assert.deepEqual(names(env), ['20250103_c']);
+});
+
+test('書き込み権限が無ければ Drive を走査する前に止まる', () => {
+  const env = setupEnv();
+  addItem(env, '20250101_a');
+  env.ctx.syncNow();
+  env.ss.getSheetByName('items').failWrites = true;
+  env.ctx.listItemFolders_ = () => { throw new Error('走査してはいけない'); };
+  assert.throws(() => env.ctx.syncNow(), { message: MSG_PERMISSION });
+});
+
+test('*.tmp は files に入らない', () => {
+  const env = setupEnv();
+  addItem(env, '20250101_a', { extra: ['base.stl.tmp'] });
+  env.ctx.syncNow();
+  assert.ok(!JSON.parse(rows(env)[0].files).some((f) => f.name.endsWith('.tmp')));
+});
+
+test('削除の安全装置：フォルダが0件なら行を消さず知らせる。完了時刻も更新しない', () => {
+  const env = setupEnv();
+  const ids = ['20250101_a', '20250102_b'].map((n) => addItem(env, n));
+  env.ctx.syncNow();
+  env.props.store.SYNC_LAST_COMPLETED_AT = 'old';
+  ids.forEach((id) => env.drive.remove(id));
+  const r = env.ctx.syncNow();
+  assert.equal(r.done, true);
+  assert.match(r.message, /^同期しました（0件を確認、0件を更新）。items フォルダの中が見つからないため、行の削除を見送りました/);
+  assert.equal(rows(env).length, 2);
+  assert.equal(env.props.store.SYNC_LAST_COMPLETED_AT, 'old');
+});
+
+test('削除の安全装置：10行以上で半数超が消えるときは見送る。全部作り直すなら消える', () => {
+  const env = setupEnv();
+  const ids = Array.from({ length: 10 }, (_, i) => addItem(env, `202501${i + 10}_x`));
+  env.ctx.syncNow();
+  ids.slice(0, 6).forEach((id) => env.drive.remove(id));
+  const r = env.ctx.syncNow();
+  assert.match(r.message, /消えたフォルダが多すぎるため、行の削除を見送りました（6行）/);
+  assert.equal(rows(env).length, 10);
+  const r2 = env.ctx.runSync_({ mode: 'menu', rebuild: true });
+  assert.equal(r2.warning, '');
+  assert.equal(rows(env).length, 4);
+});
+
+test('getGalleryData：statuses・canSync・issues の folderId', () => {
+  const env = setupEnv();
+  const id = addItem(env, '20250101_a', { meta: '{' });
+  env.ctx.syncNow();
+  const data = plain(env.ctx.getGalleryData());
+  assert.deepEqual(data.statuses, ['使用中', '参考', '引退']);
+  assert.equal(data.canSync, true);
+  assert.deepEqual(Object.keys(data.issues[0]), ['folderId', 'folderName', 'problem', 'url', 'rowUrl']);
+  assert.equal(data.issues[0].folderId, id);
+  env.ss.canEdit = false;
+  assert.equal(env.ctx.getGalleryData().canSync, false);
+});
+
+test('getGalleryData：旧形式（カンマ区切り）の tags 列も読める', () => {
+  const env = setupEnv();
+  addItem(env, '20250101_a');
+  env.ctx.syncNow();
+  const sheet = env.ss.getSheetByName('items');
+  sheet.cells[1][plain(env.ctx.HEADERS).indexOf('tags')] = '顕微鏡, 治具';
+  assert.deepEqual(plain(env.ctx.getGalleryData().items[0].tags), ['顕微鏡', '治具']);
+});
+
+test('getGalleryData：スプシを読めなければ日本語で投げる', () => {
+  const env = setupEnv();
+  env.ss.failRead = true;
+  assert.throws(() => env.ctx.getGalleryData(), { message: '一覧を読み込めません。スプシを閲覧する権限があるか確認してください' });
+});
+
+test('resyncItem：「見つからない」以外の失敗は投げ直し、行を消さない', () => {
+  const env = setupEnv();
+  const id = addItem(env, '20250101_a');
+  env.ctx.syncNow();
+  env.drive.rename(id, '_a'); // 一覧から外れたが、理由を調べる getFolderById が失敗する
+  env.drive.getByIdErrors[id] = 'Service error: Drive';
+  assert.throws(() => env.ctx.resyncItem(id), { message: '同期に失敗しました：Service error: Drive' });
+  assert.equal(rows(env).length, 1);
+});
+
+test('continueSync：ロックが取れなければ1分後に再挑戦する。dailySync はしない', () => {
+  const env = setupEnv();
+  addItem(env, '20250101_a');
+  env.lock.state.busyByOther = true;
+  env.ctx.dailySync();
+  assert.equal(env.script.triggers.length, 0);
+  env.ctx.continueSync();
+  assert.deepEqual(env.script.triggers.map((t) => t.spec), [{ handler: 'continueSync', after: 60000 }]);
 });

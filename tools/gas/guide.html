@@ -47,7 +47,9 @@
       <button type="button" role="tab" id="tab-manual" aria-controls="panel-manual" aria-selected="true" data-tab="manual">手で用意する（数件）</button>
       <button type="button" role="tab" id="tab-auto" aria-controls="panel-auto" aria-selected="false" data-tab="auto" tabindex="-1">Fusionから書き出す（まとめて）</button>
     </div>
-    <ol class="steps tabpanel" role="tabpanel" id="panel-manual" aria-labelledby="tab-manual">
+    <div class="tabpanel" role="tabpanel" id="panel-manual" aria-labelledby="tab-manual">
+      <p class="hint" style="margin-bottom:6px">この手順は、<b>Google ドライブ（パソコン版）</b>でフォルダを開いて作業する前提です。Webの画面だけで進めるときは、新しいフォルダを作り、_template の meta.json をダウンロードして編集し、そのフォルダへアップロードします。同じ名前のファイルがあるときは「置き換える」を選んでください（2つあると要対応になります）。</p>
+    <ol class="steps">
       <li><span class="no">1</span><span class="t">items/_template をコピーして、フォルダ名を「YYYYMMDD_名前」に変える</span></li>
       <li><span class="no">2</span><span class="t">Fusionでデザインを開き、ファイル › エクスポートで .f3d と .step を保存する</span></li>
       <li><span class="no">3</span><span class="t">印刷用に、部品ごとの .stl（または .3mf）を保存する（ボディを右クリック →「メッシュとして保存」でもよい）</span></li>
@@ -55,6 +57,7 @@
       <li><span class="no">5</span><span class="t">meta.json の author・purpose・status を埋める。書ききれないことは note へ</span></li>
       <li><span class="no">6</span><span class="t">フォルダを items/ に置き、「今すぐ同期」を押す</span></li>
     </ol>
+    </div>
     <ol class="steps tabpanel" role="tabpanel" id="panel-auto" aria-labelledby="tab-auto" hidden>
       <li><span class="no">1</span><span class="t">tools/fusion_export/fusion_export.py を、Fusionの「スクリプトとアドイン」に登録する</span></li>
       <li><span class="no">2</span><span class="t">設定欄で対象プロジェクトと出力先を指定し、モード1（サムネイルのみ）で実行する。triage.csv と画像が出る</span></li>

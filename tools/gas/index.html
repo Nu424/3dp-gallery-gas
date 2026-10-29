@@ -18,9 +18,10 @@
    getGalleryData() の戻り値
    {
      syncedAt: ISO文字列 または null,  sheetUrl: スプシのURL,
+     statuses: [状態の選択肢（並び順どおり）],  canSync: 同期してよい人か（false なら同期ボタンを無効化）,
      items: [{ folderId, folderName, folderUrl, date:"YYYY-MM-DD", name, author, purpose, status,
                tags:[..], note:[..], thumbUrl|null, photos:[{name,url}], files:[{name,url,downloadUrl}] }],
-     issues: [{ folderName, problem, url /* Driveのフォルダ */, rowUrl /* スプシの該当行 */ }]
+     issues: [{ folderId, folderName, problem, url /* Driveのフォルダ */, rowUrl /* スプシの該当行 */ }]
    }
    syncNow() / resyncItem(folderId) の戻り値は { done: boolean, message: string }。
    message はそのまま画面に出す。done=false は時間切れで途中まで、の意味。
@@ -38,6 +39,7 @@
   --warn-bg:#FFF6DB; --warn-line:#E9CC6B; --warn-ink:#7A5300; --req:#A3301F;
   --st-use-bg:#F5D447; --st-use-fg:#2A2200; --st-use-bd:#D9B52B;
   --st-ref-bg:#FFFFFF; --st-ref-fg:#1F252B; --st-ref-bd:#AEB8C1;
+  --st-oth-bg:#F4F6F8; --st-oth-fg:#3B4550; --st-oth-bd:#AEB8C1;
   --st-ret-bg:#DCE1E5; --st-ret-fg:#3E4852; --st-ret-bd:#C3CBD2;
 }
 *{box-sizing:border-box}
@@ -107,9 +109,11 @@ a{color:var(--accent)}a:hover{color:#174A84}
 .seg button[aria-pressed="true"],.seg button[aria-selected="true"]{background:#fff;box-shadow:0 1px 2px rgba(31,37,43,.2)}
 
 .status-badge{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:4px;border:1px solid;white-space:nowrap}
-.st-使用中{background:var(--st-use-bg);color:var(--st-use-fg);border-color:var(--st-use-bd)}
-.st-参考{background:var(--st-ref-bg);color:var(--st-ref-fg);border-color:var(--st-ref-bd)}
-.st-引退{background:var(--st-ret-bg);color:var(--st-ret-fg);border-color:var(--st-ret-bd)}
+/* 既知の3種（使用中・参考・引退）の色。それ以外の状態は st-other（グレーの破線枠） */
+.st-use{background:var(--st-use-bg);color:var(--st-use-fg);border-color:var(--st-use-bd)}
+.st-ref{background:var(--st-ref-bg);color:var(--st-ref-fg);border-color:var(--st-ref-bd)}
+.st-ret{background:var(--st-ret-bg);color:var(--st-ret-fg);border-color:var(--st-ret-bd)}
+.st-other{background:var(--st-oth-bg);color:var(--st-oth-fg);border-color:var(--st-oth-bd);border-style:dashed}
 
 .tag-btn{min-height:40px;padding:0 3px;background:none;border:none;cursor:pointer;display:inline-flex;align-items:center}
 .tag-btn span{font-size:12.5px;padding:3px 9px;border-radius:12px;background:#EDF1F4;color:var(--ink-2)}
@@ -247,9 +251,11 @@ a{color:var(--accent)}a:hover{color:#174A84}
 .resync .err{color:var(--req);font-weight:700}
 .resync .warn{color:var(--warn-ink);font-weight:700}
 @media (prefers-reduced-motion: reduce){.spinner{animation-duration:3s}}
+.issue-row .links .btn{min-height:36px;padding:0 10px;font-size:13px}
 </style>
 </head>
 <body>
+<div class="sr-only" id="live" aria-live="polite"></div>
 <div class="app">
   <header class="topbar">
     <h1>3Dプリント作品ギャラリー</h1>
@@ -319,15 +325,14 @@ a{color:var(--accent)}a:hover{color:#174A84}
 /* ============================================================
    状態
    ============================================================ */
-const STATUSES = ['使用中', '参考', '引退'];
 const state = {
   data: { items: [], issues: [], syncedAt: null, sheetUrl: '' },
   loading: true, loadError: '',                 // 初回の読み込み中／失敗
   q: '', status: 'all', tag: null, author: 'all',
   sort: 'new', view: 'gallery', selId: null,
   filtersOpen: !window.matchMedia('(max-width: 960px)').matches, // スマホ幅では最初はたたむ
-  syncing: false, notice: null,                 // notice: { text, kind: ''|'warn'|'err' }（同期ボタン横に出す）
-  resync: null                                  // { id, busy, text, kind }（この作品だけ再同期の状態）
+  syncing: false, resyncing: null, notice: null,   // resyncing: 再同期中の folderId。notice: { text, kind: ''|'warn'|'err' }（同期ボタン横に出す）
+  lastIssues: null                              // 要対応の件数（変わったときだけ読み上げる）
 };
 
 /* ============================================================
@@ -335,11 +340,13 @@ const state = {
    ============================================================ */
 const errMsg = (err) => (err && err.message) ? err.message : String(err || '不明なエラー');
 
-function loadData() {
+function loadData(selectId) {
   google.script.run
     .withSuccessHandler((data) => {
       state.data = Object.assign({ items: [], issues: [], syncedAt: null, sheetUrl: '' }, data);
       state.loading = false; state.loadError = '';
+      // 要対応から一覧に移った作品は、選択状態にして見つけやすくする
+      if (selectId && state.data.items.some((it) => it.folderId === selectId)) state.selId = selectId;
       afterLoad();
     })
     .withFailureHandler((err) => {
@@ -348,32 +355,37 @@ function loadData() {
     })
     .getGalleryData();
 }
+/* 同期できる人か（サーバーが canSync:false を返したら無効化。未指定は true 扱い） */
+const canSync = () => state.data.canSync !== false;
+const NO_SYNC_TITLE = '同期にはスプシの編集権限が必要です';
+const busy = () => state.syncing || !!state.resyncing;
+const refreshBusy = () => { renderSync(); renderMain(); renderDetail(); };
+
 function syncNow() {
-  if (state.syncing) return;
-  state.syncing = true; state.notice = null; renderSync();
+  if (busy() || !canSync()) return;
+  state.syncing = true; state.notice = null; refreshBusy();
   google.script.run
     .withSuccessHandler((res) => {
       state.syncing = false;
       // done=false は時間切れで途中まで。メッセージを目立たせ、ボタンは押せる状態に戻す
       state.notice = { text: (res && res.message) || '同期しました', kind: res && res.done === false ? 'warn' : '' };
-      renderSync(); loadData();
+      refreshBusy(); loadData();
     })
-    .withFailureHandler((err) => { state.syncing = false; showError('同期できませんでした：' + errMsg(err)); })
+    .withFailureHandler((err) => { state.syncing = false; showError('同期できませんでした：' + errMsg(err)); refreshBusy(); })
     .syncNow();
 }
+/* この作品だけ再同期。結果は同期ボタン横のラベルに出す（選択が変わっても見える） */
 function resyncItem(folderId) {
-  if (state.resync && state.resync.busy) return;
-  state.resync = { id: folderId, busy: true, text: '読み直し中…', kind: '' };
-  renderDetail();
+  if (busy() || !canSync()) return;
+  const wasIssue = (state.data.issues || []).some((i) => i.folderId === folderId);
+  state.resyncing = folderId; state.notice = null; refreshBusy();
   google.script.run
     .withSuccessHandler((res) => {
-      state.resync = { id: folderId, busy: false, text: (res && res.message) || '読み直しました', kind: res && res.done === false ? 'warn' : '' };
-      renderDetail(); loadData();
+      state.resyncing = null;
+      state.notice = { text: (res && res.message) || '読み直しました', kind: res && res.done === false ? 'warn' : '' };
+      refreshBusy(); loadData(wasIssue ? folderId : null);
     })
-    .withFailureHandler((err) => {
-      state.resync = { id: folderId, busy: false, text: '読み直せませんでした：' + errMsg(err), kind: 'err' };
-      renderDetail();
-    })
+    .withFailureHandler((err) => { state.resyncing = null; showError('読み直せませんでした：' + errMsg(err)); refreshBusy(); })
     .resyncItem(folderId);
 }
 function afterLoad() {
@@ -395,6 +407,39 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const dateLong = (d) => { const [y, m, dd] = String(d || '').split('-').map(Number); return y ? `${y}年${m}月${dd}日` : ''; };
 const dateDot = (d) => String(d || '').replaceAll('-', '.');
 const timeShort = (iso) => { if (!iso) return ''; const t = new Date(iso); return isNaN(t) ? '' : `${t.getMonth() + 1}/${t.getDate()} ${t.getHours()}:${String(t.getMinutes()).padStart(2, '0')}`; };
+/* 状態の見た目：既知の3種は色つき、それ以外は st-other（グレー）。クラス名に日本語を使わない */
+const ST_KEY = { '使用中': 'use', '参考': 'ref', '引退': 'ret' };
+const stClass = (st) => ST_KEY[st] || 'other';
+const DEFAULT_STATUSES = ['使用中', '参考', '引退'];
+function statusList() {   // サーバーの statuses を使う。items にだけある状態も末尾に足す
+  const list = (state.data.statuses && state.data.statuses.length ? state.data.statuses : DEFAULT_STATUSES).slice();
+  state.data.items.forEach((it) => { if (it.status && !list.includes(it.status)) list.push(it.status); });
+  return list;
+}
+
+/* 描き直しでフォーカスを失わないための仕組み：描き直し前に「どの要素か」を覚え、後で戻す */
+function focusKey() {
+  const el = document.activeElement;
+  if (!el || el === document.body) return null;
+  const box = el.closest('#filters, #main, #detail');
+  if (!box) return null;
+  const same = sameKind(box, { tag: el.tagName, cls: el.className, data: JSON.stringify({ ...el.dataset }) });
+  return { box: box.id, tag: el.tagName, cls: el.className, data: JSON.stringify({ ...el.dataset }), idx: same.indexOf(el) };
+}
+const sameKind = (box, k) => [...box.querySelectorAll(k.tag)].filter((e) => e.className === k.cls && JSON.stringify({ ...e.dataset }) === k.data);
+function restoreFocus(k) {
+  if (!k) return;
+  const cur = document.activeElement;
+  if (cur && cur !== document.body && document.contains(cur)) return;   // 失っていなければ何もしない
+  const same = sameKind(document.getElementById(k.box), k);
+  const target = same[k.idx] || same[0];
+  if (target) target.focus({ preventScroll: true });
+}
+const keepFocus = (fn) => { const k = focusKey(); fn(); restoreFocus(k); };
+
+/* 読み込みに失敗した画像URL。次の描画からは最初からアイコンにして、ちらつきを防ぐ */
+const failedImg = new Set();
+
 const extOf = (name) => String(name).split('.').pop().toLowerCase();
 
 function fileGroups(files) {
@@ -436,10 +481,11 @@ function seedLook(seed) {
 const itemSeed = (it) => it.folderId || it.folderName || it.name;
 const glyphFor = (it) => { const l = seedLook(itemSeed(it)); return glyph(l.shape, l.color); };
 /* 画像があれば <img>、無いか読み込みに失敗したらアイコン。失敗時は img を差し替える */
-const thumbHTML = (it, alt) => it.thumbUrl
+const thumbHTML = (it, alt) => it.thumbUrl && !failedImg.has(it.thumbUrl)
   ? `<img src="${esc(it.thumbUrl)}" alt="${esc(alt || '')}" loading="lazy" referrerpolicy="no-referrer" data-seed="${esc(itemSeed(it))}" onerror="imgFail(this)">`
   : glyphFor(it);
 function imgFail(img) {
+  failedImg.add(img.getAttribute('src'));
   if (img.dataset.kind === 'photo') { img.insertAdjacentHTML('afterend', ICON.photo); img.remove(); return; }
   const l = seedLook(img.dataset.seed);
   img.insertAdjacentHTML('afterend', glyph(l.shape, l.color));
@@ -489,15 +535,17 @@ function renderAll() { renderFilters(); renderMain(); renderDetail(); renderSync
 
 function renderSync() {
   const btn = document.getElementById('btn-sync');
-  btn.disabled = state.syncing;
+  btn.disabled = busy() || !canSync();
+  btn.title = canSync() ? '' : NO_SYNC_TITLE;
   const label = document.getElementById('sync-label');
   const last = state.data.syncedAt ? '最終同期 ' + timeShort(state.data.syncedAt) : (state.loading ? '' : '未同期');
   const n = state.notice;
-  label.className = 'sync-label' + (n && !state.syncing && n.kind ? ' ' + n.kind : '');
-  label.textContent = state.syncing ? '同期中…' : (n ? n.text + (last ? '　' + last : '') : last);
+  label.className = 'sync-label' + (n && !busy() && n.kind ? ' ' + n.kind : '');
+  label.textContent = state.syncing ? '同期中…（数分かかることがあります）' : state.resyncing ? '読み直し中…' : (n ? n.text + (last ? '　' + last : '') : last);
 }
 
-function renderFilters() {
+function renderFilters() { keepFocus(renderFiltersBody); }
+function renderFiltersBody() {
   const items = state.data.items;
   const el = document.getElementById('filters');
   el.classList.toggle('closed', !state.filtersOpen);
@@ -505,10 +553,10 @@ function renderFilters() {
   const badge = document.getElementById('rail-badge');
   badge.hidden = n === 0; badge.textContent = n;
 
-  const statusRows = [['all', 'すべて', '#FFFFFF', '#1F252B']].concat(STATUSES.map((s) => [s, s, `var(--st-${{ '使用中': 'use', '参考': 'ref', '引退': 'ret' }[s]}-bg)`, `var(--st-${{ '使用中': 'use', '参考': 'ref', '引退': 'ret' }[s]}-bd)`]))
+  const statusRows = [['all', 'すべて', '#FFFFFF', '#1F252B']].concat(statusList().map((s) => [s, s, `var(--st-${ST_KEY[s] || 'oth'}-bg)`, `var(--st-${ST_KEY[s] || 'oth'}-bd)`]))
     .map(([k, label, bg, bd]) => {
       const count = items.filter((it) => matches(it, 'status') && (k === 'all' || it.status === k)).length;
-      return `<button class="status-row" type="button" data-status="${k}" aria-pressed="${state.status === k}"><span class="sw" style="background:${bg};border-color:${bd}"></span><span class="label">${label}</span><span class="count">${count}</span></button>`;
+      return `<button class="status-row" type="button" data-status="${esc(k)}" aria-pressed="${state.status === k}"><span class="sw" style="background:${bg};border-color:${bd}"></span><span class="label">${esc(label)}</span><span class="count">${count}</span></button>`;
     }).join('');
 
   const tags = [];
@@ -535,7 +583,7 @@ function issuesBar() {
   if (!issues.length) return '';
   const link = (url, text) => url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${text}${ICON.ext}</a>` : '';
   return `
-    <div class="issues" role="status">
+    <div class="issues">
       <div class="issues-head">${ICON.warn}
         <strong>一覧に出ていない作品が${issues.length}件あります</strong>
         <button class="linklike" type="button" data-action="open-guide">直し方</button>
@@ -543,12 +591,13 @@ function issuesBar() {
       <ul class="issue-list">${issues.map((i) => `
         <li class="issue-row">
           <span class="issue-text">${esc(i.folderName)}：${esc(i.problem)}</span>
-          <span class="links">${link(i.url, 'Driveのフォルダ')}${link(i.rowUrl || state.data.sheetUrl, i.rowUrl ? 'スプシの該当行' : 'スプシで確認')}</span>
+          <span class="links">${link(i.url, 'Driveのフォルダ')}${link(i.rowUrl || state.data.sheetUrl, i.rowUrl ? 'スプシの該当行' : 'スプシで確認')}${i.folderId ? `<button class="btn btn-small" type="button" data-action="resync-issue" data-id="${esc(i.folderId)}"${busy() || !canSync() ? ' disabled' : ''}${canSync() ? '' : ` title="${NO_SYNC_TITLE}"`}>${state.resyncing === i.folderId ? '再同期中…' : '再同期'}</button>` : ''}</span>
         </li>`).join('')}</ul>
     </div>`;
 }
 
-function renderMain() {
+function renderMain() { keepFocus(renderMainBody); }
+function renderMainBody() {
   const main = document.getElementById('main');
   // 初回の読み込み中／失敗
   if (state.loading) {
@@ -562,6 +611,11 @@ function renderMain() {
   const list = sortedItems(state.data.items.filter((it) => matches(it, null)));
   const act = activeFilters();
   const issuesHTML = issuesBar();
+  const nIssues = (state.data.issues || []).length;
+  if (state.lastIssues !== nIssues) {
+    if (state.lastIssues !== null || nIssues) document.getElementById('live').textContent = nIssues ? `一覧に出ていない作品が${nIssues}件あります` : '一覧に出ていない作品はなくなりました';
+    state.lastIssues = nIssues;
+  }
 
   // 作品が1件も無いとき：次の一手を出す
   if (!state.data.items.length) {
@@ -593,8 +647,8 @@ function renderMain() {
     body = `<div class="grid">${list.map((it) => {
       const on = it.folderId === state.selId;
       return `<div class="card${on ? ' selected' : ''}">
-        <button class="card-main" type="button" data-select="${esc(it.folderId)}" aria-pressed="${on}">
-          <span class="thumb">${thumbHTML(it)}<span class="status-badge st-${esc(it.status)}">${esc(it.status)}</span></span>
+        <button class="card-main" type="button" data-select="${esc(it.folderId)}"${on ? ' aria-current="true"' : ''}>
+          <span class="thumb">${thumbHTML(it)}<span class="status-badge st-${stClass(it.status)}">${esc(it.status)}</span></span>
           <span class="card-name">${esc(it.name)}</span>
           <span class="card-purpose">${esc(it.purpose)}</span>
         </button>
@@ -606,10 +660,10 @@ function renderMain() {
     body = `<div class="list">${list.map((it) => {
       const on = it.folderId === state.selId;
       return `<div class="row${on ? ' selected' : ''}">
-        <button class="row-main" type="button" data-select="${esc(it.folderId)}" aria-pressed="${on}">
+        <button class="row-main" type="button" data-select="${esc(it.folderId)}"${on ? ' aria-current="true"' : ''}>
           <span class="row-thumb">${thumbHTML(it)}</span>
           <span class="row-text"><span class="row-name">${esc(it.name)}</span><span class="row-purpose">${esc(it.purpose)}</span></span>
-          <span class="status-badge st-${esc(it.status)}">${esc(it.status)}</span>
+          <span class="status-badge st-${stClass(it.status)}">${esc(it.status)}</span>
           <span class="row-date">${dateDot(it.date)}</span>
         </button>
         <div class="row-tags">${tagButtons(it.tags)}</div>
@@ -619,22 +673,28 @@ function renderMain() {
   main.innerHTML = issuesHTML + toolbar + body;
 }
 
-function renderDetail() {
+function renderDetail() { keepFocus(renderDetailBody); }
+function renderDetailBody() {
   const el = document.getElementById('detail');
   const it = state.data.items.find((x) => x.folderId === state.selId);
   if (!it) {
     el.innerHTML = `<div class="detail-body"><p class="hint">${state.loading ? '' : '一覧から作品を選ぶと、ここに用途や元データが出ます。'}</p></div>`;
     return;
   }
-  const photos = (it.photos || []).map((p) => `<figure><div class="ph">${p.url ? `<img src="${esc(p.url)}" alt="${esc(p.name)}" loading="lazy" referrerpolicy="no-referrer" data-kind="photo" onerror="imgFail(this)">` : ICON.photo}</div><figcaption>${esc(p.name)}</figcaption></figure>`).join('');
+  // 写真：クリックで Drive のファイルを新しいタブで開く（photos には url しか無いので、files から同名を探す）
+  const photos = (it.photos || []).map((p) => {
+    const inner = p.url && !failedImg.has(p.url) ? `<img src="${esc(p.url)}" alt="${esc(p.name)}" loading="lazy" referrerpolicy="no-referrer" data-kind="photo" onerror="imgFail(this)">` : ICON.photo;
+    const f = (it.files || []).find((x) => x.name === p.name);
+    const box = f && f.url ? `<a class="ph" href="${esc(f.url)}" target="_blank" rel="noopener" aria-label="${esc(p.name)}をDriveで開く">${inner}</a>` : `<div class="ph">${inner}</div>`;
+    return `<figure>${box}<figcaption>${esc(p.name)}</figcaption></figure>`;
+  }).join('');
   const groups = fileGroups(it.files).map((g) => `
     <div class="fgroup">
       <div class="fgroup-head"><b>${g.label}</b><span>${g.hint}</span></div>
       ${g.files.map((f) => `<a class="file" href="${esc(f.downloadUrl || f.url)}" target="_blank" rel="noopener" aria-label="${esc(f.name)}をダウンロード"><span class="ext">${esc(extOf(f.name).toUpperCase())}</span><span class="fname">${esc(f.name)}</span>${ICON.dl}</a>`).join('')}
     </div>`).join('');
-  const rs = state.resync && state.resync.id === it.folderId ? state.resync : null;
   el.innerHTML = `
-    <div class="detail-head"><span class="status-badge st-${esc(it.status)}">${esc(it.status)}</span><span class="date">${dateLong(it.date)}作成</span></div>
+    <div class="detail-head"><span class="status-badge st-${stClass(it.status)}">${esc(it.status)}</span><span class="date">${dateLong(it.date)}作成</span></div>
     <div class="detail-body">
       <h2>${esc(it.name)}</h2>
       <p class="purpose" style="margin-top:-12px">${esc(it.purpose)}</p>
@@ -647,7 +707,7 @@ function renderDetail() {
         <dt>作った人</dt><dd>${esc(it.author)}</dd>
         <dt>フォルダ</dt><dd><span>${esc(it.folderName)}</span>${it.folderUrl ? `<a href="${esc(it.folderUrl)}" target="_blank" rel="noopener">Driveで開く${ICON.ext}</a>` : ''}</dd>
       </dl>
-      <div class="resync"><button class="btn btn-small" type="button" data-action="resync"${rs && rs.busy ? ' disabled' : ''}>この作品だけ再同期</button><span aria-live="polite"${rs && rs.kind ? ` class="${rs.kind}"` : ''}>${rs ? esc(rs.text) : ''}</span></div>
+      <div class="resync"><button class="btn btn-small" type="button" data-action="resync"${busy() || !canSync() ? ' disabled' : ''}${canSync() ? '' : ` title="${NO_SYNC_TITLE}"`}>${state.resyncing === it.folderId ? '再同期中…' : 'この作品だけ再同期'}</button>${canSync() ? '' : `<span>${NO_SYNC_TITLE}</span>`}</div>
     </div>`;
 }
 
@@ -704,6 +764,7 @@ document.addEventListener('click', (e) => {
     case 'open-guide': openGuide(); break;
     case 'close-guide': closeGuide(); break;
     case 'resync': if (state.selId) resyncItem(state.selId); break;
+    case 'resync-issue': resyncItem(d.id); break;
     case 'copy-prompt': {
       const text = document.getElementById('ai-prompt').textContent;
       const ok = () => { t.textContent = 'コピーしました'; setTimeout(() => { t.textContent = '文をコピー'; }, 2000); };

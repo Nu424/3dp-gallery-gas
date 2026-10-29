@@ -23,6 +23,7 @@ class FakeDrive {
     this.seq = 0;
     this.blobReads = []; // getBlob() されたファイル名（meta.json を読んだか調べる用）
     this.clock = Date.UTC(2026, 0, 1);
+    this.getByIdErrors = {}; // { フォルダID: メッセージ } で、そのIDの getFolderById が例外を投げる
   }
   newId(prefix) { return prefix + String(++this.seq).padStart(4, '0'); }
   addFolder(name, parentId) {
@@ -83,6 +84,7 @@ class FakeDrive {
   api() {
     return {
       getFolderById: (id) => {
+        if (this.getByIdErrors[id]) throw new Error(this.getByIdErrors[id]);
         const n = this.nodes.get(id);
         if (!n || n.kind !== 'folder') {
           throw new Error('No item with the given ID could be found, or you do not have permission to access it.');
@@ -111,6 +113,7 @@ class FakeSheet {
     this.protections = [];
     this.frozenRows = 0;
     this.failWrites = false; // true で書き込み時に権限エラーを投げる
+    this.failSetValues = false; // true で setValues だけ失敗させる（書き込み途中の失敗の再現）
   }
   getName() { return this.name; }
   getSheetId() { return this.gid; }
@@ -138,6 +141,7 @@ class FakeSheet {
       },
       setValues(values) {
         sheet.checkWrite();
+        if (sheet.failSetValues) throw new Error('Service error: Spreadsheets');
         if (values.length !== numRows || values.some((l) => l.length !== numCols)) {
           throw new Error('The number of rows/columns in the data does not match the range.');
         }
@@ -158,6 +162,7 @@ class FakeSheet {
       setNumberFormat() { return range; },
       setFontWeight() { return range; },
       setNote(note) {
+        sheet.checkWrite();
         for (let c = 0; c < numCols; c++) sheet.notes[`${row},${col + c}`] = note;
         return range;
       },
@@ -197,8 +202,11 @@ class FakeSpreadsheet {
   constructor() {
     this.sheets = [];
     this.toasts = [];
+    this.canEdit = true;   // false で getEditors() が例外（編集権限なし）
+    this.failRead = false; // true で getSheetByName が権限エラー
   }
-  getSheetByName(name) { return this.sheets.find((s) => s.name === name) || null; }
+  getSheetByName(name) {
+    if (this.failRead) throw new Error('You do not have permission to access the requested document.'); return this.sheets.find((s) => s.name === name) || null; }
   insertSheet(name) {
     const s = new FakeSheet(name, 1000 + this.sheets.length);
     this.sheets.push(s);
@@ -206,6 +214,10 @@ class FakeSpreadsheet {
   }
   getUrl() { return 'https://docs.google.com/spreadsheets/d/SSID/edit'; }
   toast(msg) { this.toasts.push(msg); }
+  getEditors() {
+    if (!this.canEdit) throw new Error('Access denied.');
+    return [];
+  }
 }
 
 // ---------------------------------------------------------------------------

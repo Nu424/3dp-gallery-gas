@@ -31,8 +31,14 @@
 var SHEET_NAME = 'items';
 
 /**
- * 状態（meta.json の status）の選択肢。ここを変えれば検査も変わる。
+ * 状態（meta.json の status）の選択肢。ここを変えれば検査も変わり、
+ * getGalleryData の statuses として画面にも渡る。
  * この値と必須キーは fingerprint に含めているので、変えると次の同期で全作品が読み直される。
+ * ほかに直す場所：
+ *   - index.html の状態の色（使用中＝黄、参考＝白、引退＝グレー の対応）
+ *   - guide.html の説明と AI 用プロンプトの「status は … のいずれか」
+ *   - items/_template/README.txt の説明
+ *   - fusion_export.py は status を空で書き出すので直さなくてよい
  */
 var STATUS_CHOICES = ['使用中', '参考', '引退'];
 
@@ -67,11 +73,30 @@ var THUMB_FILE_NAMES = ['thumb.png', 'thumb.jpg', 'thumb.jpeg']; // この順に
 var PHOTO_PREFIX = 'photo_';
 var IGNORE_PREFIX = '_'; // この文字で始まるフォルダは同期しない（_template など）
 
-/** 画像とみなす拡張子（mimeType が image/ でない場合の予備判定） */
-var IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'];
+/**
+ * 画像とみなす拡張子。写真・代表画像の判定に使う（シートの files 列には mimeType を
+ * 保存しないので、画面用データでは拡張子だけで判定する）。
+ * index.html のファイル分類（「画像」の欄）も同じ一覧にそろえること。
+ */
+var IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+
+/** 同期で無視するファイルの拡張子（Fusion 書き出しスクリプトの一時ファイルなど） */
+var IGNORE_FILE_EXTENSIONS = ['tmp'];
 
 /** Drive のショートカットの mimeType（作品のファイルとしては扱わない） */
 var SHORTCUT_MIME_TYPE = 'application/vnd.google-apps.shortcut';
+
+/** スプシの1セルに入る文字数の上限。超えると書き込み全体が失敗するので、行を作る時点で収める */
+var CELL_CHAR_LIMIT = 50000;
+
+/**
+ * 一覧の欠けに対する安全装置。全件を見終えたとき、既存の行がこの数以上あり、
+ * その半数を超える行を消すことになる場合は、削除を見送って知らせる
+ * （ITEMS_FOLDER_ID の誤りや権限の問題で一覧が丸ごと消えるのを防ぐ）。
+ * 見つかったフォルダが0件なのに既存の行がある場合は、行数に関係なく見送る。
+ * 本当に消したいときはメニュー「全部作り直す」を使う。
+ */
+var DELETE_GUARD_MIN_ROWS = 10;
 
 /** スクリプトプロパティのキー。ユーザーが設定するのは ITEMS_FOLDER_ID だけ */
 var PROP_ITEMS_FOLDER_ID = 'ITEMS_FOLDER_ID';
@@ -87,8 +112,13 @@ var HEADER_NOTE = 'このシートは同期で上書きされます。編集は�
 var PROTECTION_DESCRIPTION = '同期で上書きされるシート（編集は meta.json で）';
 
 /** 画面に出す決まり文句 */
-var MSG_PERMISSION = '同期には items フォルダとスプシの編集権限が必要です';
+var MSG_PERMISSION = '同期にはスプシの編集権限が必要です（items フォルダは閲覧できれば足ります）';
 var MSG_LOCKED = '別の同期が実行中です。少し待ってからもう一度押してください';
+var MSG_READ_PERMISSION = '一覧を読み込めません。スプシを閲覧する権限があるか確認してください';
+var MSG_DELETE_SKIPPED_EMPTY = 'items フォルダの中が見つからないため、行の削除を見送りました。' +
+  'ITEMS_FOLDER_ID と権限を確認してください';
+var MSG_DELETE_SKIPPED_MANY = '消えたフォルダが多すぎるため、行の削除を見送りました（{n}行）。' +
+  'ITEMS_FOLDER_ID と権限を確認し、問題なければスプシのメニュー「ギャラリー → 全部作り直す」を実行してください';
 
 /** Webアプリの題名 */
 var APP_TITLE = '3Dプリント作品ギャラリー';
@@ -133,9 +163,14 @@ function isIgnoredFolderName(folderName) {
   return String(folderName).indexOf(IGNORE_PREFIX) === 0;
 }
 
+/** 同期で無視するファイルか（*.tmp など、IGNORE_FILE_EXTENSIONS の拡張子） */
+function isIgnoredFileName(fileName) {
+  return IGNORE_FILE_EXTENSIONS.indexOf(fileExtension(fileName)) >= 0;
+}
+
 /** 先頭の BOM（Windows のメモ帳などが付ける見えない文字）を取り除く */
 function stripBom(text) {
-  return String(text).replace(/^﻿/, '');
+  return String(text).replace(/^\uFEFF/, '');
 }
 
 /**
@@ -251,14 +286,15 @@ function pickPhotoFiles(files) {
 
 /**
  * fingerprint の元になる文字列。
- * フォルダ名 ＋ 各ファイルの「名前・サイズ・更新日時」。ファイルは並べ替えるので、
+ * フォルダ名 ＋ 各ファイルの「名前・ID・サイズ・更新日時」。ファイルは並べ替えるので、
  * Drive が返す順番が変わっても同じ値になる。フォルダ名を含めるのは、リネームだけ
- * では中のファイルが変わらないため。
- * @param {Array<{name:string,size:number,updated:number}>} files updated はミリ秒
+ * では中のファイルが変わらないため。ID を含めるのは、同じ名前・サイズのファイルに
+ * 差し替えたときも、シートに保存したファイルIDを新しくするため。
+ * @param {Array<{name:string,id:string,size:number,updated:number}>} files updated はミリ秒
  */
 function fingerprintSource(folderName, files) {
   var lines = files.map(function (f) {
-    return [f.name, f.size, f.updated].join('\t');
+    return [f.name, f.id, f.size, f.updated].join('\t');
   }).sort();
   // 検査のルールも含める。ルールを変えたら、中身が同じフォルダも読み直して検査をやり直すため
   var rules = JSON.stringify([STATUS_CHOICES, REQUIRED_META_KEYS]);
@@ -310,11 +346,20 @@ function buildRecord(input) {
   }
 
   var thumb = pickThumbFile(input.files);
-  var fileList = input.files.slice().sort(compareByName).map(function (f) {
-    return { name: f.name, id: f.id, size: f.size, mimeType: f.mimeType };
-  });
 
-  return {
+  // ファイル一覧（mimeType は保存しない。画面では拡張子で種類を判断する）
+  var fileList = input.files.slice().sort(compareByName).map(function (f) {
+    return { name: f.name, id: f.id, size: f.size };
+  });
+  var filesJson = JSON.stringify(fileList);
+  if (filesJson.length > CELL_CHAR_LIMIT) {
+    // 1セルに収まらない。収まるところまで切り詰め、作品は「要対応」にする
+    errors.push('ファイルが多すぎて一覧を保存できません（' + fileList.length + '個）。フォルダを分けてください');
+    while (fileList.length > 0 && JSON.stringify(fileList).length > CELL_CHAR_LIMIT) fileList.pop();
+    filesJson = JSON.stringify(fileList);
+  }
+
+  var record = {
     folder_id: input.folderId,
     folder_name: input.folderName,
     date: parsed.date,
@@ -322,21 +367,42 @@ function buildRecord(input) {
     author: meta.author,
     purpose: meta.purpose,
     status: meta.status,
-    tags: meta.tags.join(', '),
+    tags: meta.tags.length ? JSON.stringify(meta.tags) : '', // JSON 配列（タグ名にカンマがあっても割れない）
     note: meta.note.join('\n'),
     thumb_id: thumb ? thumb.id : '',
-    files: JSON.stringify(fileList),
+    files: filesJson,
     fingerprint: input.fingerprint,
-    error: errors.join(' / '),
+    error: '',
     synced_at: input.syncedAt
   };
+
+  // 1セルの文字数上限を超える値は切り詰め、何を切ったかを error に残す。
+  // 上限を超えたまま書くと、シートへの書き込み全体が失敗して一覧が更新されなくなるため。
+  // （tags は切ると JSON として壊れるが、error が付くので画面には出ない）
+  ['folder_name', 'name', 'author', 'purpose', 'status', 'tags', 'note'].forEach(function (key) {
+    if (record[key].length > CELL_CHAR_LIMIT) {
+      record[key] = record[key].slice(0, CELL_CHAR_LIMIT);
+      errors.push('「' + key + '」が長すぎるため切り詰めました（' + CELL_CHAR_LIMIT + '文字まで）');
+    }
+  });
+  record.error = truncateText(errors.join(' / '), CELL_CHAR_LIMIT);
+  return record;
 }
 
-/** 行データ（オブジェクト）→ シートに書く配列（HEADERS の順） */
+/** 文字列を max 文字までにする */
+function truncateText(text, max) {
+  var s = String(text);
+  return s.length > max ? s.slice(0, max) : s;
+}
+
+/**
+ * 行データ（オブジェクト）→ シートに書く配列（HEADERS の順）。
+ * 念のためここでも1セルの上限で切る（古い行や想定外の値で書き込み全体が失敗しないように）。
+ */
 function recordToRow(record) {
   return HEADERS.map(function (h) {
     var v = record[h];
-    return v === undefined || v === null ? '' : String(v);
+    return v === undefined || v === null ? '' : truncateText(v, CELL_CHAR_LIMIT);
   });
 }
 
@@ -372,9 +438,21 @@ function driveFileUrl(id) { return 'https://drive.google.com/file/d/' + id + '/v
 function driveDownloadUrl(id) { return 'https://drive.google.com/uc?export=download&id=' + id; }
 function driveThumbnailUrl(id) { return 'https://drive.google.com/thumbnail?id=' + id + '&sz=w600'; }
 
-/** カンマ区切り → 配列（空は除く） */
+/**
+ * tags 列 → 配列。今の形式は JSON 配列（["顕微鏡","治具"]）。
+ * 古い形式（カンマ区切り）も読めるようにしてある。
+ */
 function splitTags(text) {
-  return String(text || '').split(',').map(function (t) { return t.trim(); }).filter(function (t) { return t !== ''; });
+  var s = String(text || '').trim();
+  if (s.charAt(0) === '[') {
+    try {
+      var v = JSON.parse(s);
+      if (isStringArray(v)) return v;
+    } catch (e) {
+      // 壊れた JSON はカンマ区切りとして読む
+    }
+  }
+  return s.split(',').map(function (t) { return t.trim(); }).filter(function (t) { return t !== ''; });
 }
 
 /** 改行区切り → 配列（空文字なら空配列） */
@@ -404,6 +482,7 @@ function recordToGalleryEntry(record, where) {
   if (record.error) {
     return {
       issue: {
+        folderId: record.folder_id, // 画面の「この作品だけ再同期」で resyncItem に渡す
         folderName: record.folder_name,
         problem: record.error,
         url: folderUrl,
@@ -450,12 +529,13 @@ function sortRecords(records) {
 
 /**
  * 同期の結果を画面に出す文に。
- * @param {{done:boolean, checked:number, updated:number, removed:number}} r
+ * @param {{done:boolean, checked:number, updated:number, removed:number, warning:string}} r
+ *   warning … 削除を見送ったときなどの注意書き（任意）
  * @param {string} mode 'web'（画面のボタン）/ 'menu'（スプシのメニュー）/ 'trigger'
  */
 function buildSyncMessage(r, mode) {
   var counts = r.checked + '件を確認、' + r.updated + '件を更新' + (r.removed ? '、' + r.removed + '件を削除' : '');
-  if (r.done) return '同期しました（' + counts + '）';
+  if (r.done) return '同期しました（' + counts + '）' + (r.warning ? '。' + r.warning : '');
   if (mode === 'web') return '途中まで同期しました（' + counts + '）。もう一度押すと続きから再開します';
   return '途中まで同期しました（' + counts + '）。続きは1分ほどで自動的に再開します';
 }
@@ -484,22 +564,36 @@ function userError_(message) {
   return e;
 }
 
-/** 例外を画面向けの Error にする */
-function toUserError_(e) {
-  if (e && e.userFacing) return e;
+/** 権限不足の例外らしいか（GAS の英語・日本語のメッセージに出る語で判定） */
+function isPermissionError(e) {
   var msg = String(e && e.message ? e.message : e);
-  if (/permission|not have access|access denied|権限|アクセス/i.test(msg)) {
-    return userError_(MSG_PERMISSION);
-  }
-  return userError_('同期に失敗しました：' + msg);
+  return /permission|not have access|access denied|権限/i.test(msg);
 }
 
-/** fn を実行し、失敗したら画面向けの Error にして投げる */
-function withUserErrors_(fn) {
+/** 「見つからない」例外らしいか（getFolderById の失敗など） */
+function isNotFoundError(e) {
+  var msg = String(e && e.message ? e.message : e);
+  return /could be found|not found|見つかりません|見つからない/i.test(msg);
+}
+
+/**
+ * 例外を画面向けの Error にする。
+ * @param {Object} [texts] 言い換えの文言 { permission: 権限不足のとき, prefix: それ以外の前置き }
+ */
+function toUserError_(e, texts) {
+  texts = texts || {};
+  if (e && e.userFacing) return e;
+  if (isPermissionError(e)) return userError_(texts.permission || MSG_PERMISSION);
+  var msg = String(e && e.message ? e.message : e);
+  return userError_((texts.prefix || '同期に失敗しました：') + msg);
+}
+
+/** fn を実行し、失敗したら画面向けの Error にして投げる（texts は toUserError_ と同じ） */
+function withUserErrors_(fn, texts) {
   try {
     return fn();
   } catch (e) {
-    throw toUserError_(e);
+    throw toUserError_(e, texts);
   }
 }
 
@@ -558,12 +652,12 @@ function listItemFolders_(itemsFolder) {
 
 /** 続きの位置を表すキー。同名フォルダがあっても順番が決まるようにIDを足す */
 function folderKey(name, id) {
-  return name + '\u0000' + id;
+  return name + '\t' + id; // タブはフォルダ名にまず入らない区切り
 }
 
 /**
  * 作品フォルダ直下のファイルを並べる。サブフォルダは見ない（作品フォルダはフラットの約束）。
- * ゴミ箱の中とショートカットは除く。
+ * ゴミ箱の中・ショートカット・一時ファイル（*.tmp）は除く。
  * @return {Array<{name,id,size,mimeType,updated,file}>}
  */
 function listFolderFiles_(folder) {
@@ -572,6 +666,7 @@ function listFolderFiles_(folder) {
   while (it.hasNext()) {
     var f = it.next();
     if (f.isTrashed()) continue;
+    if (isIgnoredFileName(f.getName())) continue;
     var mimeType = f.getMimeType();
     if (mimeType === SHORTCUT_MIME_TYPE) continue;
     files.push({
@@ -624,6 +719,25 @@ function syncOneFolder_(entry, previous, force, syncedAt) {
   return { record: record, changed: true };
 }
 
+/**
+ * items/ 直下の一覧に無かったフォルダについて、その理由を説明する文を返す。
+ * getFolderById が「見つからない」以外の理由で失敗したら投げ直す
+ * （権限の問題などで、実際にはあるフォルダの行を消してしまわないように）。
+ */
+function whyNotSyncTarget_(folderId, itemsFolderId) {
+  var folder;
+  try {
+    folder = DriveApp.getFolderById(folderId);
+  } catch (e) {
+    if (isNotFoundError(e)) return 'フォルダが見つかりません';
+    throw e;
+  }
+  if (folder.isTrashed()) return 'フォルダがゴミ箱に入っています';
+  if (isIgnoredFolderName(folder.getName())) return 'フォルダ名が ' + IGNORE_PREFIX + ' で始まっています';
+  if (!isDirectChildOf_(folder, itemsFolderId)) return 'フォルダが items の直下にありません';
+  return 'items フォルダの一覧に見つかりません';
+}
+
 /** folder が parentId のフォルダの直下にあるか */
 function isDirectChildOf_(folder, parentId) {
   var parents = folder.getParents();
@@ -669,15 +783,49 @@ function readRecords_(sheet) {
   return values.map(rowToRecord).filter(function (r) { return r.folder_id !== ''; });
 }
 
-/** データ行をまとめて書き直す（フォルダ名順） */
+/**
+ * データ行をまとめて書き直す（フォルダ名順）。
+ * 先に新しい行で上書きし、そのあと余った行だけを消す。先に全部消してから書くと、
+ * 書き込みが失敗したときにシートが空のまま残り、ギャラリーが空になるため。
+ */
 function writeRecords_(sheet, records) {
-  var last = sheet.getLastRow();
-  if (last >= 2) sheet.getRange(2, 1, last - 1, HEADERS.length).clearContent();
+  var oldLast = sheet.getLastRow();
   var sorted = sortRecords(records);
-  if (sorted.length === 0) return;
-  sheet.getRange(2, 1, sorted.length, HEADERS.length)
-    .setNumberFormat('@')
-    .setValues(sorted.map(recordToRow));
+  if (sorted.length > 0) {
+    sheet.getRange(2, 1, sorted.length, HEADERS.length)
+      .setNumberFormat('@')
+      .setValues(sorted.map(recordToRow));
+  }
+  var newLast = sorted.length + 1;
+  if (oldLast > newLast) {
+    sheet.getRange(newLast + 1, 1, oldLast - newLast, HEADERS.length).clearContent();
+  }
+}
+
+/**
+ * スプシに書けるかを、軽い書き込み（見出しのメモの付け直し）で先に確かめる。
+ * Drive を走査してから最後の書き込みで失敗すると時間が無駄になるので、最初に試す。
+ */
+function assertCanWriteSheet_(sheet) {
+  try {
+    sheet.getRange(1, 1, 1, HEADERS.length).setNote(HEADER_NOTE);
+  } catch (e) {
+    throw userError_(MSG_PERMISSION);
+  }
+}
+
+/**
+ * 今の利用者がスプシを編集できるか（画面の「今すぐ同期」ボタンを出すかの判断用）。
+ * Spreadsheet.getEditors() は編集権限の無い人が呼ぶと例外になるので、それで見分ける。
+ * 判定に失敗したときに同期ボタンが消えると困るので、例外以外は true とする。
+ */
+function canEditSpreadsheet_(ss) {
+  try {
+    ss.getEditors();
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 /** シートに「警告のみ」の保護をかける（既に保護があれば触らない） */
@@ -697,27 +845,47 @@ function protectSheet_(sheet) {
 //   3. 時間の目安（約4.5分）を超えたら、そこまでをシートに書いて位置を保存し、止める
 //   4. 最後まで見終えた回だけ、Drive から消えたフォルダの行を削除し、完了時刻を記録する
 //      （途中で止まった回に削除すると、まだ見ていないだけの行を消してしまうため）
+//      ただし消える行が多すぎるとき（DELETE_GUARD_MIN_ROWS の説明）は削除を見送って知らせる
 // =============================================================================
+
+/**
+ * 消えたフォルダの行を消してよいか判断する（純粋な関数）。
+ * @param {number} existingRows 同期を始めたときにシートにあった行数
+ * @param {number} foundFolders 今回 items/ に見つかったフォルダ数
+ * @param {number} toRemove     消すことになる行数
+ * @return {string} 見送る理由（画面に出す文）。消してよければ空文字
+ */
+function deletionGuardMessage(existingRows, foundFolders, toRemove) {
+  if (toRemove === 0) return '';
+  if (foundFolders === 0 && existingRows > 0) return MSG_DELETE_SKIPPED_EMPTY;
+  if (existingRows >= DELETE_GUARD_MIN_ROWS && toRemove * 2 > existingRows) {
+    return MSG_DELETE_SKIPPED_MANY.replace('{n}', String(toRemove));
+  }
+  return '';
+}
 
 /**
  * @param {{mode:string, rebuild:boolean}} options
  *   mode    : 'web' / 'menu' / 'trigger'（メッセージの言い回しにだけ使う）
- *   rebuild : true ならシートのデータ行を消してから全件読み直す
- * @return {{done:boolean, checked:number, updated:number, removed:number, message:string}}
+ *   rebuild : true ならシートのデータ行を消してから全件読み直す（削除の安全装置も効かせない）
+ * @return {{done:boolean, checked:number, updated:number, removed:number, warning:string, message:string}}
  */
 function runSync_(options) {
   var mode = options.mode || 'web';
   return withSyncLock_(function () {
     var startedMs = nowMs();
     var props = PropertiesService.getScriptProperties();
-    var itemsFolder = getItemsFolder_();
     var sheet = getOrCreateSheet_();
+    assertCanWriteSheet_(sheet);
+    var itemsFolder = getItemsFolder_();
 
     var byId = {};
+    var existingRows = 0;
     if (options.rebuild) {
       props.deleteProperty(PROP_RESUME_AFTER);
     } else {
       readRecords_(sheet).forEach(function (r) { byId[r.folder_id] = r; });
+      existingRows = Object.keys(byId).length;
     }
 
     var folders = listItemFolders_(itemsFolder);
@@ -744,15 +912,16 @@ function runSync_(options) {
     }
 
     var removed = 0;
+    var warning = '';
     if (!timedOut) {
       var alive = {};
       folders.forEach(function (f) { alive[f.id] = true; });
-      Object.keys(byId).forEach(function (id) {
-        if (!alive[id]) {
-          delete byId[id];
-          removed++;
-        }
-      });
+      var gone = Object.keys(byId).filter(function (id) { return !alive[id]; });
+      warning = deletionGuardMessage(existingRows, folders.length, gone.length);
+      if (!warning) {
+        gone.forEach(function (id) { delete byId[id]; });
+        removed = gone.length;
+      }
     }
 
     writeRecords_(sheet, Object.keys(byId).map(function (id) { return byId[id]; }));
@@ -761,10 +930,11 @@ function runSync_(options) {
       props.setProperty(PROP_RESUME_AFTER, lastKey);
     } else {
       props.deleteProperty(PROP_RESUME_AFTER);
-      props.setProperty(PROP_LAST_FULL_SYNC, syncedAt);
+      // 削除を見送った回は「正常に全件を見終えた」とは言えないので、完了時刻を更新しない
+      if (!warning) props.setProperty(PROP_LAST_FULL_SYNC, syncedAt);
     }
 
-    var r = { done: !timedOut, checked: checked, updated: updated, removed: removed };
+    var r = { done: !timedOut, checked: checked, updated: updated, removed: removed, warning: warning };
     r.message = buildSyncMessage(r, mode);
     return r;
   });
@@ -772,30 +942,24 @@ function runSync_(options) {
 
 /**
  * 1作品だけ同期し直す（詳細画面の「この作品だけ再同期」）。
- * fingerprint に関係なく meta.json を読み直す。フォルダが無い・ゴミ箱・先頭 _ ・
- * items/ の外に移された場合は、その行を削除する。
+ * fingerprint に関係なく meta.json を読み直す。
+ * 対象かどうかは、全体の同期と同じく「items/ 直下の一覧（ゴミ箱・先頭 _ を除く）に
+ * あるか」で決める。一覧に無ければ行を削除する。理由の説明のために getFolderById も
+ * 呼ぶが、「見つからない」以外の失敗（権限など）は投げ直し、行は消さない。
  */
 function resyncItem_(folderId) {
+  folderId = String(folderId || '');
   return withSyncLock_(function () {
-    var itemsFolder = getItemsFolder_();
     var sheet = getOrCreateSheet_();
+    assertCanWriteSheet_(sheet);
+    var itemsFolder = getItemsFolder_();
     var records = readRecords_(sheet);
 
-    var folder = null;
-    try {
-      folder = DriveApp.getFolderById(String(folderId));
-    } catch (e) {
-      folder = null;
-    }
+    var entry = listItemFolders_(itemsFolder).filter(function (f) { return f.id === folderId; })[0];
 
-    var reason = '';
-    if (!folder) reason = 'フォルダが見つかりません';
-    else if (folder.isTrashed()) reason = 'フォルダがゴミ箱に入っています';
-    else if (isIgnoredFolderName(folder.getName())) reason = 'フォルダ名が ' + IGNORE_PREFIX + ' で始まっています';
-    else if (!isDirectChildOf_(folder, itemsFolder.getId())) reason = 'フォルダが items の直下にありません';
-
-    if (reason) {
-      var rest = records.filter(function (r) { return r.folder_id !== String(folderId); });
+    if (!entry) {
+      var reason = whyNotSyncTarget_(folderId, itemsFolder.getId());
+      var rest = records.filter(function (r) { return r.folder_id !== folderId; });
       var hadRow = rest.length !== records.length;
       if (hadRow) writeRecords_(sheet, rest);
       return {
@@ -804,8 +968,7 @@ function resyncItem_(folderId) {
       };
     }
 
-    var name = folder.getName();
-    var entry = { folder: folder, id: folder.getId(), name: name, key: folderKey(name, folder.getId()) };
+    var name = entry.name;
     var previous = records.filter(function (r) { return r.folder_id === entry.id; })[0];
     var result = syncOneFolder_(entry, previous, true, nowIso_());
     var others = records.filter(function (r) { return r.folder_id !== entry.id; });
@@ -843,26 +1006,37 @@ function include(name) {
 /**
  * 一覧を返す。シートを読むだけで Drive は見ないので速い。
  * error が空の行は items、error がある行は issues（「要対応」）に入れる。
+ * 戻り値の形は index.html と約束したもの（変えるときは画面側も直す）：
+ *   { syncedAt, sheetUrl, statuses, canSync, items: [...], issues: [...] }
  */
 function getGalleryData() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(SHEET_NAME);
-  var syncedAt = PropertiesService.getScriptProperties().getProperty(PROP_LAST_FULL_SYNC) || null;
-  var data = { syncedAt: syncedAt, sheetUrl: ss.getUrl(), items: [], issues: [] };
-  if (!sheet) return data;
+  return withUserErrors_(function () {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(SHEET_NAME);
+    var syncedAt = PropertiesService.getScriptProperties().getProperty(PROP_LAST_FULL_SYNC) || null;
+    var data = {
+      syncedAt: syncedAt,
+      sheetUrl: ss.getUrl(),
+      statuses: STATUS_CHOICES.slice(),
+      canSync: canEditSpreadsheet_(ss),
+      items: [],
+      issues: []
+    };
+    if (!sheet) return data;
 
-  var last = sheet.getLastRow();
-  if (last < 2) return data;
-  var values = sheet.getRange(2, 1, last - 1, HEADERS.length).getValues();
-  var gid = sheet.getSheetId();
-  values.forEach(function (row, i) {
-    var record = rowToRecord(row);
-    if (!record.folder_id) return;
-    var entry = recordToGalleryEntry(record, { sheetUrl: data.sheetUrl, sheetGid: gid, rowNumber: i + 2 });
-    if (entry.item) data.items.push(entry.item);
-    else data.issues.push(entry.issue);
-  });
-  return data;
+    var last = sheet.getLastRow();
+    if (last < 2) return data;
+    var values = sheet.getRange(2, 1, last - 1, HEADERS.length).getValues();
+    var gid = sheet.getSheetId();
+    values.forEach(function (row, i) {
+      var record = rowToRecord(row);
+      if (!record.folder_id) return;
+      var entry = recordToGalleryEntry(record, { sheetUrl: data.sheetUrl, sheetGid: gid, rowNumber: i + 2 });
+      if (entry.item) data.items.push(entry.item);
+      else data.issues.push(entry.issue);
+    });
+    return data;
+  }, { permission: MSG_READ_PERMISSION, prefix: '一覧を読み込めませんでした：' });
 }
 
 /**
@@ -890,30 +1064,41 @@ function resyncItem(folderId) {
 
 // =============================================================================
 // トリガー（毎日の同期と、時間切れの続き）
+//
+// 名前の最後に _ を付けていない理由：トリガーやメニューから呼ぶ関数は、エディタの
+// 「実行」やトリガー設定画面で選べるよう公開関数にしておく（_ 付きの非公開関数を
+// トリガー・メニューから呼べるかは保証されていないため）。その代わり、これらは
+// google.script.run からも呼べてしまう。呼ばれても、編集権限が無ければ同期は
+// 権限エラーで止まり、menu* は画面の外では getUi() が失敗するだけなので、害は小さい。
 // =============================================================================
 
 /** 毎日の時間トリガーから呼ばれる */
 function dailySync() {
-  runSyncFromTrigger_();
-}
-
-/** 時間切れの続き（1回限りのトリガー）。まず自分のトリガーを消してから続きを行う */
-function continueSync() {
-  deleteTriggersFor_(CONTINUE_HANDLER);
-  runSyncFromTrigger_();
+  runSyncFromTrigger_(false);
 }
 
 /**
- * トリガーから同期する。別の同期が実行中なら何もしない（続きの位置は保存されて
- * いるので、次の実行で拾われる）。時間切れなら続きのトリガーを作る。
+ * 時間切れの続き（1回限りのトリガー）。まず自分のトリガーを消してから続きを行う。
+ * 別の同期が実行中でロックが取れなければ、1分後にもう一度挑戦する。
  */
-function runSyncFromTrigger_() {
+function continueSync() {
+  deleteTriggersFor_(CONTINUE_HANDLER);
+  runSyncFromTrigger_(true);
+}
+
+/**
+ * トリガーから同期する。時間切れなら続きのトリガーを作る。
+ * 別の同期が実行中なら、retryOnLock のときだけ続きのトリガーを作り直す
+ * （毎日の同期は、実行中の同期が続きを引き受けているはずなので何もしない）。
+ */
+function runSyncFromTrigger_(retryOnLock) {
   var r;
   try {
     r = runSync_({ mode: 'trigger' });
   } catch (e) {
     if (e && e.message === MSG_LOCKED) {
       Logger.log(MSG_LOCKED);
+      if (retryOnLock) scheduleContinuation_();
       return null;
     }
     throw e; // 失敗をトリガーの実行記録（とメール通知）に残す
@@ -949,6 +1134,9 @@ function ensureDailyTrigger_() {
 
 // =============================================================================
 // スプシのメニューと初期設定
+//   menu* と setup も、上の「トリガー」の説明と同じ理由で公開関数にしている。
+//   setup を google.script.run から呼ばれた場合、編集権限のある人なら、その人の
+//   アカウントに毎日のトリガーが1つできることがある（重複は作らない）。害は小さい。
 // =============================================================================
 
 /** スプシを開いたときにメニュー「ギャラリー」を足す（単純トリガー） */
