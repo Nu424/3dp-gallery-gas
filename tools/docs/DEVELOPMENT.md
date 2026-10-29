@@ -1,10 +1,10 @@
 # 開発手引き（DEVELOPMENT）
 
-**この文書は誰向けか**：コードを改修する人（と、改修を頼まれたAIエージェント）。3ファイルの役割、画面とサーバーの約束、スプシの列、**データ仕様（このリポジトリでの正）**、仕様を変えるときに直す箇所、動作確認の手順、Fusionスクリプトの構成をまとめています。AIに改修を頼む方法は [AI_GUIDE.md](AI_GUIDE.md) にあります。
+**この文書は誰向けか**：コードを改修する人（と、改修を頼まれたAIエージェント）。4ファイルの役割、画面とサーバーの約束、スプシの列、**データ仕様（このリポジトリでの正）**、仕様を変えるときに直す箇所、動作確認の手順、Fusionスクリプトの構成をまとめています。AIに改修を頼む方法は [AI_GUIDE.md](AI_GUIDE.md) にあります。
 
 ## 目次
 
-1. [構成と3ファイルの役割](#構成と3ファイルの役割)
+1. [構成と4ファイルの役割](#構成と4ファイルの役割)
 2. [Code.gs の関数](#codegs-の関数)
 3. [画面とサーバーの約束](#画面とサーバーの約束)
 4. [スプシの列](#スプシの列)
@@ -18,15 +18,15 @@
 
 ---
 
-## 構成と3ファイルの役割
+## 構成と4ファイルの役割
 
-方針：外部ライブラリ・GASの拡張サービスは使わない。コピペ（3ファイルの貼り付け＋スクリプトプロパティ1つ）で動くことを守る。
+方針：外部ライブラリ・GASの拡張サービスは使わない。コピペ（4ファイル＝`Code.gs` `index.html` `guide.html` `appsscript.json` の貼り付け＋スクリプトプロパティ1つ）で動くことを守る。
 
 ```
 3dp-gallery-gas/（リポジトリ）
 ├── docs/               計画書・作業計画・画面モック（設計の記録。Driveには置かない）
 ├── tools/              ← 中身を丸ごと Drive の 3Dギャラリー/tools/ にコピーする
-│   ├── gas/            Code.gs, index.html, guide.html
+│   ├── gas/            Code.gs, index.html, guide.html, appsscript.json
 │   ├── fusion_export/  fusion_export.py, fusion_export.manifest
 │   ├── items_template/_template/   meta.json, README.txt（Drive の items/ へコピーする雛形）
 │   └── docs/           この文書たち
@@ -37,6 +37,7 @@
 | --- | --- |
 | `tools/gas/Code.gs` | サーバー側。同期処理、`doGet`、画面から呼ぶ関数、トリガー、スプシのメニュー、`setup()` |
 | `tools/gas/index.html` | 画面（一覧と詳細）。見た目とブラウザ側の処理はすべてここ。`<?!= include('guide') ?>` で `guide.html` を読み込む。GASとの境目は `loadData` / `syncNow` / `resyncItem` の3関数だけ |
+| `tools/gas/appsscript.json` | GASの設定ファイル（マニフェスト）。`oauthScopes`（`drive.readonly` / `spreadsheets` / `script.scriptapp` / `script.container.ui`）で許可の範囲を絞り、`webapp`（`executeAs: USER_ACCESSING`、`access: DOMAIN`）を決める。エディタでは「プロジェクトの設定」で表示をオンにして編集する。貼り方は [SETUP.md](SETUP.md#4つ目appsscriptjson-を置き換える許可の範囲を絞る) |
 | `tools/gas/guide.html` | 「作品を追加する」パネルの本文（HTMLの断片）。文章の修正はこのファイルだけで済む。AIに渡すプロンプトは `#ai-prompt` の1か所にまとめてある。**スクリプトレット（`<?` で始まる構文）は書かない** |
 
 `Code.gs` は上から「設定」→「純粋な関数」→「エラーの扱い」→「Driveの読み取り」→「シートの読み書き」→「同期の本体」→「画面から呼ばれる関数」→「トリガー」→「スプシのメニューと初期設定」の順に並んでいる。変えたくなる値は先頭の「設定」にある。関数名の末尾が `_` のものは非公開（画面やメニューから直接呼べない）。テストから差し替えるため、一部の設定は `var` で宣言されている。
@@ -48,7 +49,7 @@
 | 関数 | 内容 |
 | --- | --- |
 | `parseFolderName(folderName)` | `YYYYMMDD_名前` を日付と名前に分ける。日付の実在を検査 |
-| `isRealDate` / `isIgnoredFolderName` / `stripBom` | 日付の実在判定／先頭 `_` の判定／BOM除去 |
+| `isRealDate` / `isIgnoredFolderName` / `isIgnoredFileName` / `stripBom` | 日付の実在判定／先頭 `_` の判定／無視するファイル（`*.tmp`）の判定／BOM除去 |
 | `checkMeta(text)` | `meta.json` の文字列を検査し、整形した meta とエラー配列を返す |
 | `isStringArray` / `fileExtension` / `isImageFile` / `compareByName` | 補助 |
 | `pickThumbFile(files)` / `pickPhotoFiles(files)` | 代表画像の選択／`photo_` の写真の選択 |
@@ -56,7 +57,9 @@
 | `buildRecord(input)` | 1作品フォルダの情報から、シート1行分（列名→値）を作る |
 | `recordToRow` / `rowToRecord` / `cellToText` | 行データ⇄シート配列 |
 | `recordToGalleryEntry(record, where)` | 行データ→画面用の item または issue |
-| `splitTags` / `splitNote` / `parseFilesCell` / `sortRecords` / `sheetRowUrl` | 補助 |
+| `splitTags` / `splitNote` / `parseFilesCell` / `sortRecords` / `sheetRowUrl` / `truncateText` | 補助。`splitTags` は JSON 配列を読み、古いカンマ区切りも読める。`truncateText` はセル上限での切り詰め |
+| `deletionGuardMessage(existing, found, toRemove)` | 消えた行の削除を見送るべきかの判断（理由の文、無ければ空） |
+| `isPermissionError` / `isNotFoundError` | 例外が権限不足／見つからないらしいかの判定 |
 | `driveFolderUrl` / `driveFileUrl` / `driveDownloadUrl` / `driveThumbnailUrl` | URLの組み立て |
 | `buildSyncMessage(r, mode)` | 同期結果の文（mode: web / menu / trigger） |
 | `nowMs` / `nowIso_` | 現在時刻（テストで差し替え） |
@@ -66,8 +69,9 @@
 | 関数 | 内容 |
 | --- | --- |
 | `getItemsFolder_()` | `ITEMS_FOLDER_ID` のフォルダを開く。設定漏れ・誤りはわかる言葉で投げる |
-| `listItemFolders_` / `listFolderFiles_` / `syncOneFolder_` / `isDirectChildOf_` | フォルダ・ファイルの列挙、1フォルダの同期 |
-| `getOrCreateSheet_` / `ensureHeader_` / `readRecords_` / `writeRecords_` / `protectSheet_` | シートの読み書き。列は「書式なしテキスト」。1回で読み、まとめて書く |
+| `listItemFolders_` / `listFolderFiles_` / `syncOneFolder_` / `isDirectChildOf_` / `whyNotSyncTarget_` | フォルダ・ファイルの列挙（ゴミ箱・ショートカット・`*.tmp` を除く）、1フォルダの同期、一覧に無いフォルダの理由の説明 |
+| `getOrCreateSheet_` / `ensureHeader_` / `readRecords_` / `writeRecords_` / `protectSheet_` | シートの読み書き。列は「書式なしテキスト」。1回で読み、まとめて書く。`writeRecords_` は新しい行で上書きしてから余りを消す（書き込み失敗でシートが空にならないように） |
+| `assertCanWriteSheet_` / `canEditSpreadsheet_` | 同期の前にスプシへ書けるか確かめる（書けなければ `MSG_PERMISSION`）／編集権限の有無（`getGalleryData` の `canSync`） |
 | `runSync_(options)` | 同期の本体（時間切れの区切り、続きの位置の保存、ロック） |
 | `resyncItem_(folderId)` | 1作品だけの再同期 |
 | `withSyncLock_` / `userError_` / `toUserError_` / `withUserErrors_` | ロックとエラーの言い換え |
@@ -91,8 +95,11 @@
 設計上の要点：
 
 - **時間切れ対策**：名前順に処理し、約4.5分（`SYNC_TIME_BUDGET_MS`）で区切る。続きの位置を `SYNC_RESUME_AFTER`（スクリプトプロパティ、内部用）に保存し、メニュー・トリガー経由なら1分後の1回限りトリガーで再開。消えたフォルダの行の削除は全件を見終えた回だけ。全件完了時に `SYNC_LAST_COMPLETED_AT` を記録（画面の「最終同期」）。
-- **二重実行**：`LockService.getScriptLock()`（待ち5秒）。
-- **指紋**：フォルダ名＋各ファイルの名前・サイズ・更新日時＋**検査ルール（`STATUS_CHOICES` と `REQUIRED_META_KEYS`）**。ルールを変えると次の同期で全作品が読み直される。
+- **二重実行**：`LockService.getScriptLock()`（待ち5秒）。続きのトリガー（`continueSync`）がロックを取れなかったときは、1分後にもう一度挑戦する。
+- **同期前の権限確認**：`runSync_` / `resyncItem_` はまず `assertCanWriteSheet_` でスプシに書けるかを試し、無ければすぐ「同期にはスプシの編集権限が必要です（items フォルダは閲覧できれば足ります）」を返す（`items/` は閲覧でよい。Drive のスコープは `drive.readonly`）。
+- **削除の安全装置**：全件を見終えたとき、`items/` で見つかったフォルダが0件なのに既存の行がある、または既存の行が `DELETE_GUARD_MIN_ROWS`（10）以上で半数超を消すことになる場合は、削除を見送ってメッセージを返し、完了時刻も更新しない。「全部作り直す」には効かない。
+- **セル上限**：1セル50000文字（`CELL_CHAR_LIMIT`）。超える値は切り詰めて `error` に理由を残す（作品は要対応になる）。
+- **指紋**：フォルダ名＋各ファイルの名前・**ID**・サイズ・更新日時＋**検査ルール（`STATUS_CHOICES` と `REQUIRED_META_KEYS`）**。ルールを変えると次の同期で全作品が読み直される。
 - **ユーザーが設定するスクリプトプロパティは `ITEMS_FOLDER_ID` のみ**。`SYNC_RESUME_AFTER` と `SYNC_LAST_COMPLETED_AT` はコードが管理する。
 - **シートの列順や追加列を変えたら**「全部作り直す」が必要（`HEADERS` の変更）。
 
@@ -104,12 +111,14 @@
 
 ```js
 {
-  syncedAt: "2026-10-30T04:12:00+09:00" | null,  // 最後に全件を見終えた時刻。未同期なら null
+  syncedAt: "2026-10-30T04:12:00+09:00" | null,  // 最後に全件を見終えた時刻（削除を見送った回は更新されない）。未同期なら null
   sheetUrl: "https://docs.google.com/spreadsheets/d/…/edit",
+  statuses: ["使用中", "参考", "引退"],           // STATUS_CHOICES（並び順どおり。画面の状態の選択肢）
+  canSync: true | false,                          // スプシの編集権限があるか。false なら画面は同期ボタンを無効にする
   items: [ {                                      // error が空の行
     folderId, folderName, folderUrl,
     date: "2025-06-12", name: "流路セルホルダー",
-    author, purpose, status,                      // status は 使用中 / 参考 / 引退
+    author, purpose, status,                      // status は statuses のどれか
     tags: ["顕微鏡", "治具"],
     note: ["M3ネジ×4で固定。", …],               // 1要素＝1行
     thumbUrl: "https://drive.google.com/thumbnail?id=…&sz=w600" | null,
@@ -117,11 +126,14 @@
     files:  [ { name, url, downloadUrl } ]        // フォルダ内の全ファイル
   } ],
   issues: [ {                                     // error がある行（「要対応」）
+    folderId /* 「再同期」ボタンで resyncItem に渡す */,
     folderName, problem /* error 列の文 */,
     url /* Driveのフォルダ */, rowUrl /* スプシの該当行 */
   } ]
 }
 ```
+
+`getGalleryData` の失敗は日本語のメッセージ入りの `Error`（権限不足なら「一覧を読み込めません。スプシを閲覧する権限があるか確認してください」）。画面は `statuses` を使い、items にだけある未知の状態もグレーの破線枠（`st-other`）で表示する（色が付くのは既知の3種）。
 
 URLの形：サムネイル `…/thumbnail?id=<id>&sz=w600`、ファイル `…/file/d/<id>/view`、ダウンロード `…/uc?export=download&id=<id>`、フォルダ `…/drive/folders/<id>`。画像が読めないときは `index.html` 側の `onerror` が、フォルダIDから決めた形と色のアイコンに差し替える。
 
@@ -133,7 +145,8 @@ URLの形：サムネイル `…/thumbnail?id=<id>&sz=w600`、ファイル `…/
 
 - `done: false` は時間切れで途中まで。画面は `message` を警告色で出し、ボタンを押せる状態に戻す（もう一度押すと続きから）。
 - `resyncItem` の `message` は「『名前』を再同期しました」「…直すところがあります：<error>」「一覧から外しました（理由）」など。
-- どちらも、ロックが取れなければ「別の同期が実行中です…」、権限不足なら「同期には items フォルダとスプシの編集権限が必要です」、その他は「同期に失敗しました：…」の `Error` を投げる。
+- どちらも、ロックが取れなければ「別の同期が実行中です…」、権限不足なら「同期にはスプシの編集権限が必要です（items フォルダは閲覧できれば足ります）」、その他は「同期に失敗しました：…」の `Error` を投げる。
+- `syncNow` の `message` には、削除を見送った場合の注意（「…行の削除を見送りました」）が付くことがある。
 
 ## スプシの列
 
@@ -146,12 +159,12 @@ URLの形：サムネイル `…/thumbnail?id=<id>&sz=w600`、ファイル `…/
 | `date` | フォルダ名から分解した日付（`YYYY-MM-DD`）。分解できなければ空 |
 | `name` | フォルダ名から分解した名前 |
 | `author` / `purpose` / `status` | `meta.json` から |
-| `tags` | カンマ＋空白区切り（`顕微鏡, 治具`） |
+| `tags` | **JSON 配列**の文字列（`["顕微鏡","治具"]`。タグ名にカンマがあっても割れない）。タグが無ければ空。古いカンマ区切りも読める |
 | `note` | 改行区切りの文字列 |
 | `thumb_id` | 代表画像のファイルID（無ければ空） |
-| `files` | フォルダ内ファイルのJSON配列 `[{name,id,size,mimeType}]`（名前順。ショートカット・ゴミ箱を除く） |
-| `fingerprint` | SHA-256 の16進。差分判定用 |
-| `error` | 不備の内容（` / ` 区切り）。**空ならギャラリーに表示、あれば要対応** |
+| `files` | フォルダ内ファイルのJSON配列 `[{name,id,size}]`（名前順。**mimeType は保存しない**。ショートカット・ゴミ箱・`*.tmp` を除く）。画面は拡張子で種類を分ける |
+| `fingerprint` | SHA-256 の16進。差分判定用（フォルダ名、各ファイルの名前・ID・サイズ・更新日時、検査ルールから計算） |
+| `error` | 不備の内容（` / ` 区切り）。**空ならギャラリーに表示、あれば要対応**。セル上限での切り詰めもここに記録 |
 | `synced_at` | その行を最後に更新した時刻（ISO形式） |
 
 ---
@@ -175,7 +188,7 @@ URLの形：サムネイル `…/thumbnail?id=<id>&sz=w600`、ファイル `…/
 - 名前は日本語可。`/` `\` `:` などファイル名に使えない記号は避ける。
 - 同じ日付・同じ名前が重なったら末尾に `-v2` などを付ける（`-v2` は名前の一部として扱われる）。
 - 日付と名前はフォルダ名から取る。**`meta.json` には書かない**。
-- **同期の対象外**：`items/` 直下の、先頭が `_` のフォルダ／ゴミ箱の中のフォルダ／ショートカット／フォルダ以外のファイル。作品フォルダ内では、ゴミ箱の中とショートカットを無視する。
+- **同期の対象外**：`items/` 直下の、先頭が `_` のフォルダ／ゴミ箱の中のフォルダ／ショートカット／フォルダ以外のファイル。作品フォルダ内では、ゴミ箱の中・ショートカット・`*.tmp`（`IGNORE_FILE_EXTENSIONS`。Fusion書き出しの一時ファイルなど）を無視する。
 
 ### フォルダの中身
 
@@ -185,7 +198,7 @@ URLの形：サムネイル `…/thumbnail?id=<id>&sz=w600`、ファイル `…/
 | `thumb.png` / `thumb.jpg`（`.jpeg`） | 推奨 | ギャラリーの代表画像。この順に探し（大文字小文字は無視）、無ければフォルダ内の名前順で最初の画像を使う |
 | `*.f3d` | 推奨 | Fusionの元データ。編集用の正本 |
 | `*.step` | 推奨 | Fusion以外のCADでも開ける保険。履歴（スケッチ・寸法拘束）は消える |
-| `*.stl` / `*.3mf` | 推奨 | 印刷用。部品が複数なら `base.stl`, `lid.stl` のように並べる |
+| `*.stl` / `*.3mf` | 推奨 | 印刷用。部品が複数なら `base.stl`, `lid.stl` のように並べる（Fusionスクリプトは `コンポーネント名_ボディ名.stl`） |
 | `photo_*.jpg` / `photo_*.png` | 任意 | 使用中の様子など。名前が `photo_` で始まる画像が詳細の写真欄に並ぶ（名前順） |
 | その他 | 任意 | 図面PDFなど。詳細のファイル一覧に出る |
 
@@ -222,6 +235,7 @@ URLの形：サムネイル `…/thumbnail?id=<id>&sz=w600`、ファイル `…/
 - `status` が `STATUS_CHOICES` のどれか
 - `tags` を書くなら文字列の配列（各要素は前後の空白除去、空は捨てる）
 - `note` を書くなら文字列か文字列の配列
+- 1セル50000文字を超える値は切り詰め、`error` に記録する（`files` の一覧が収まらない場合も要対応）
 - **未知のキーはエラーにしない**（将来キーを足しても、古いコードで壊れないように）
 
 ---
@@ -232,18 +246,19 @@ URLの形：サムネイル `…/thumbnail?id=<id>&sz=w600`、ファイル `…/
 
 | 変えること | 直す箇所 |
 | --- | --- |
-| 状態の選択肢（例：「保管中」を足す） | `Code.gs` の `STATUS_CHOICES`（検査と指紋に効く）／`index.html` の `STATUSES` と状態の色（CSS の `--st-*`、`.st-使用中` などと `statusRows` の色対応）／`guide.html` の表（`status` の行）と `#ai-prompt` の status の文／`_template/README.txt`／`fusion_export.py` は status を空で出すので通常は不要／**この文書のデータ仕様** |
+| 状態の選択肢（例：「保管中」を足す） | `Code.gs` の `STATUS_CHOICES`（検査と指紋に効き、`getGalleryData` の `statuses` として画面にも渡る）／`index.html` の状態の色（既知の3種の色対応。`DEFAULT_STATUSES` は `statuses` が無いときの予備。色が無い新しい状態はグレーの破線枠で出る）／`guide.html` の表（`status` の行）と `#ai-prompt` の status の文／`_template/README.txt`／`fusion_export.py` は status を空で出すので通常は不要／**この文書のデータ仕様** |
 | 必須キーを足す・外す | `Code.gs` の `REQUIRED_META_KEYS` と `checkMeta`（キーごとの検査）／`guide.html` の meta 例・キー一覧・`#ai-prompt`／`_template/meta.json` と `README.txt`／`fusion_export.py` の `build_meta` の雛形／この文書。**古い作品が一斉に要対応にならないか**を考える（必須にするなら既存作品を直す手間が出る。基本は任意キーとして足す） |
 | 任意キーを足す | `checkMeta`（型の検査と整形）／シートの列を足すなら `HEADERS`・`buildRecord`・`recordToGalleryEntry`（そして「全部作り直す」）／`getGalleryData` の戻り値を変えるなら `index.html`／`guide.html`／`_template`／`build_meta`／この文書 |
 | フォルダ名の形式 | `Code.gs` の `parseFolderName`／`fusion_export.py` の `FOLDER_NAME_PATTERN`・`make_folder_name`・`is_valid_folder_name`・`date_part`／`guide.html`／`_template/README.txt`／この文書 |
 | 代表画像・写真の規則 | `Code.gs` の `THUMB_FILE_NAMES`・`PHOTO_PREFIX`・`pickThumbFile`・`pickPhotoFiles`／`fusion_export.py` の `THUMB_FILENAME`／`guide.html`／この文書 |
-| 同期の対象外にする条件 | `Code.gs` の `IGNORE_PREFIX`・`listItemFolders_`・`listFolderFiles_`／`guide.html`／この文書 |
+| 新しいGoogleサービスを使う（スコープが増える） | コードを変えたら、`appsscript.json` の `oauthScopes` に必要なスコープを足す（足さないと実行時に権限エラー。足すと閲覧者の許可画面の内容が広がるので最小限に）／[SETUP.md](SETUP.md) の `appsscript.json` の説明 |
+| 同期の対象外にする条件 | `Code.gs` の `IGNORE_PREFIX`・`IGNORE_FILE_EXTENSIONS`・`listItemFolders_`・`listFolderFiles_`／`guide.html`／この文書 |
 
 あわせて：
 
 - 該当するテスト（`dev/gas-test`、`dev/fusion-test`）を直して、通ることを確認する。
 - `tools/` の控え（Drive上の `3Dギャラリー/tools/`）を差し替える。
-- Apps Script に貼り直し、「デプロイを管理」で新バージョンを出す（[SETUP.md](SETUP.md#更新するとき新しいデプロイとデプロイを管理の違い)）。
+- Apps Script に貼り直し（`appsscript.json` を変えたらそれも）、「デプロイを管理」で新バージョンを出す（[SETUP.md](SETUP.md#更新するとき新しいデプロイとデプロイを管理の違い)）。
 - 検査ルール（`STATUS_CHOICES`、`REQUIRED_META_KEYS`）を変えると、指紋が変わって次の同期で全作品が自動的に読み直される。
 
 ---
@@ -267,7 +282,7 @@ URLの形：サムネイル `…/thumbnail?id=<id>&sz=w600`、ファイル `…/
 AIや他の人が直したコードは、本番に出す前にテスト環境で確かめる。
 
 1. **スプシごとコピーしてテスト環境を作る**：本番のスプシを「ファイル → コピーを作成」する（コピーに GAS も付く）。
-2. **コピー側の GAS に変更したコードを貼る**。コピー側の「プロジェクトの設定 → スクリプト プロパティ」で `ITEMS_FOLDER_ID` を**テスト用フォルダ**（本番の `items/` ではない、テスト作品だけを入れた別フォルダ）のIDにする。コピーではスクリプトプロパティが引き継がれないことがあるので、必ず確かめる。
+2. **コピー側の GAS に変更したコードを貼る**（`appsscript.json` を変えた場合は、コピー側でもマニフェストの表示をオンにして置き換える）。コピー側の「プロジェクトの設定 → スクリプト プロパティ」で `ITEMS_FOLDER_ID` を**テスト用フォルダ**（本番の `items/` ではない、テスト作品だけを入れた別フォルダ）のIDにする。コピーではスクリプトプロパティが引き継がれないことがあるので、必ず確かめる。
 3. スプシのメニュー「ギャラリー → 今すぐ同期」でテスト用フォルダを同期し、シートの内容（変更した列・`error`）を確認する。`setup()` は必須ではない（同期が見出しを作る）。実行した場合は、コピー側に毎日のトリガーが登録されるので、確認後にエディタの「トリガー」から削除する。
 4. エディタの「デプロイ → デプロイをテスト」の URL（最新コードが動く）で画面を確認する。一覧、絞り込み、詳細、要対応、「作品を追加する」パネル、PC幅とスマホ幅。
 5. 問題なければ**本番のGASに貼り替え**、「デプロイ → デプロイを管理」で新バージョンを出す。URLが変わっていないことを確認する。
@@ -286,20 +301,22 @@ AIや他の人が直したコードは、本番に出す前にテスト環境で
 | --- | --- |
 | 設定欄 | `MODE` `OUTPUT_DIR` `TRIAGE_DIR` `TRIAGE_CSV` `PROJECT_NAMES` `STL_PER_BODY` `MESH_QUALITY` `THUMB_WIDTH/HEIGHT` |
 | 定数 | `TRIAGE_COLUMNS`、ファイル名、ランク（`EXPORT_RANKS = ("A","B")`）、ログの result の語、`FOLDER_NAME_PATTERN`（GASの同期と同じ規則） |
-| 純粋な関数 | `sanitize_filename` `epoch_to_text` `date_part` `make_folder_name` `is_valid_folder_name` `unique_name` `source_text` `build_meta` `meta_json_text` `write_meta_json` `is_done` `write_triage_csv` `read_triage_csv` `normalize_rank` `select_rows_for_export` `select_projects` `lookup_candidates` `append_log` `backup_path` `collect_visible_solid_bodies` |
-| Fusionを使う関数 | `list_target_projects` `walk_f3d_files` `first_created_epoch` `FileFinder` `open_document` `close_document` `get_design` `save_thumbnail` `export_f3d/step/stl/3mf` `find_external_references` `export_item` `Progress` |
+| 純粋な関数 | `sanitize_filename` `epoch_to_text` `date_part` `make_folder_name` `is_valid_folder_name` `unique_name` `source_text` `build_meta` `meta_json_text` `write_meta_json` `is_done` `folder_state` `resolve_output_folder` `check_setting_path` `write_triage_csv` `read_triage_csv` `normalize_rank` `select_rows_for_export` `select_projects` `lookup_candidates` `append_log` `backup_path` `collect_visible_solid_bodies`（`[(ボディ, STLの名前の元), …]` を返す） |
+| Fusionを使う関数 | `list_target_projects` `walk_f3d_files` `first_created_epoch` `FileFinder` `open_document` `close_document` `is_modified` `get_design` `save_thumbnail` `export_f3d/step/stl/3mf` `find_external_references` `export_item` `Progress` |
 | 実行 | `run_mode1` `run_mode2` `run(context)`（Fusionが呼ぶ入口） |
 
 設計の決まり：
 
 - 純粋な関数は Fusion を要しないので `dev/fusion-test` で検証する。Fusion を使う部分は薄く保つ。
 - `triage.csv` は BOM 付きUTF-8で書き、読むときは BOM の有無・Shift_JIS(cp932) のどれも受ける。モード1の再実行では既存の `triage.csv` を `triage_日時.csv` に退避する。
-- 完了の目印は **`meta.json` を最後に書くこと**。`meta.json` のあるフォルダは再実行で飛ばし、途中で止まったフォルダはやり直す。`meta.json` は一時ファイルに書いてから置き換える。
+- 完了の目印は **`meta.json` を最後に書くこと**。済み判定は `folder_state`：`meta.json` の `note` に「Fusion元: <この行の場所>」が一致すれば `done`（飛ばす）、`meta.json` が無ければ `partial`（やり直す）、`meta.json` はあるが元が違う・読めなければ `conflict`（手作りの同名フォルダなど。上書きせず `resolve_output_folder` が `-v2`、`-v3` … の空きを探し、ログに「注意」を残す）。`meta.json` は一時ファイル（`.tmp`）に書いてから置き換える（`.tmp` は同期が無視する）。
+- 設定欄のパスに `< >` が残っていたら `check_setting_path` が実行を止める。
 - 1件ごとに `try/except` し、`export_log.csv` に記録して次へ進む。`adsk.doEvents()` と進捗ダイアログ（キャンセル可）で画面を固めない。
 - 形式ごと（f3d / STEP / STL / 3MF / thumb）に try し、1つ失敗しても残りを出す。失敗があれば `meta.json` を書かず、その作品を失敗にする。
 - モード2は、`version_id` → `datafile_id` → 対象プロジェクトの再走査の順でファイルを探し、ログの `detail` に「取得: …」と残す。古い版で引けたら `latestVersion` に替える。
-- STL は、ルートと全オカレンスの「表示中のソリッドボディ」を対象にし、ボディ名の重複は `_2` などで避ける。`STL_PER_BODY = False` で1ファイルにまとめる。
+- STL は、ルートと全オカレンスの「表示中のソリッドボディ」を対象にし、ファイル名はルート直下ならボディ名、オカレンス内なら `コンポーネント名_ボディ名`（`Occurrence.component.name`）。重複は `_2` などで避ける。`STL_PER_BODY = False` で1ファイルにまとめる。
 - `meta.json` の雛形の `note` に「Fusion元: プロジェクト/フォルダ/名前」を入れる。
+- 元々開いていたドキュメントに未保存の変更があるとき（`Document.isModified`）は、その状態で書き出し、ログの `detail` に注記する。サムネイルは `isSmoothTransition = False` で視点移動のアニメーション途中を撮らない。
 - 公式リファレンスの URL は、ページ名に名前空間の接頭辞（`core_` / `fusion_`）が付く形に変わっている（旧形式の接頭辞なしは 404）。
 
 ## Fusion API 照合表
@@ -322,10 +339,12 @@ AIや他の人が直したコードは、本番に出す前にテスト環境で
 | `DataFile.hasChildReferences` | 外部参照の判定（補助） | 「参照コンポーネントを含むか」 | 高 | [core_DataFile](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/core_DataFile.htm) |
 | `Documents.open(dataFile, visible)` | 開く | 戻り値は Document、失敗で null。visible の既定は True | 高 | [core_Documents_open](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/core_Documents_open.htm) |
 | `Document.activate()` / `.close(saveChanges)` / `.dataFile` / `.documentReferences` / `.isValid` | 前面化・閉じる・既に開いているかの判定 | `close(False)` は変更があっても破棄して閉じる。コマンドのイベント内では close できない（スクリプトの run からなので該当しない） | 高 | [core_Document](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/core_Document.htm), [core_Document_close](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/core_Document_close.htm) |
+| `Document.isModified` | 元々開いていて未保存の変更があるドキュメントを書き出したとき、ログに注記 | 「最後の保存以降に変更されたか」 | 高 | [core_Document](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/core_Document.htm) |
 | `FusionDocument.design` / `Design.cast(products.itemByProductType("DesignProductType"))` | Design を取る | `FusionDocument.design` を確認。後者はフォールバック | 高 | [fusion_FusionDocument](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_FusionDocument.htm) |
 | `Viewport.camera`（get/set） | 視点 | **取得はコピー**。変えたら代入し直す必要がある | 高 | [core_Viewport_camera](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/core_Viewport_camera.htm) |
 | `Camera.viewOrientation` = `ViewOrientations.IsoTopRightViewOrientation` (7) | 斜め視点 | ViewCube の現在の向きが基準なので、データによって向きが揃わないことがある | 高 | [core_Camera_viewOrientation](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/core_Camera_viewOrientation.htm), [core_ViewOrientations](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/core_ViewOrientations.htm) |
 | `Camera.isFitView` / `Viewport.fit()` / `Viewport.refresh()` | 全体表示 | 確認 | 高 | [core_Camera_isFitView](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/core_Camera_isFitView.htm), [core_Viewport_fit](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/core_Viewport_fit.htm) |
+| `Camera.isSmoothTransition` | 視点を一瞬で切り替える（アニメーション途中で撮らない） | true でアニメーション、false で即時。Viewport から取った Camera では既定 false だが、明示的に false を設定 | 高 | [core_Camera](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/core_Camera.htm) |
 | `Viewport.saveAsImageFile(filename, width, height)` | PNG 保存 | 戻り値 bool。形式は拡張子から。指定サイズで再描画 | 高 | [core_Viewport_saveAsImageFile](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/core_Viewport_saveAsImageFile.htm) |
 | `Design.exportManager` / `ExportManager.execute(options)` | 書き出し | 戻り値 bool | 高 | [fusion_ExportManager](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_ExportManager.htm), [fusion_ExportManager_execute](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_ExportManager_execute.htm) |
 | `createFusionArchiveExportOptions(filename, geometry=None)` | f3d | **引数は (ファイル名, 対象)**。対象省略でルート全体 | 高 | [fusion_ExportManager_createFusionArchiveExportOptions](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_ExportManager_createFusionArchiveExportOptions.htm) |
@@ -337,6 +356,7 @@ AIや他の人が直したコードは、本番に出す前にテスト環境で
 | `Component.bRepBodies` / `.allOccurrences` | ボディ収集 | `allOccurrences` は階層を問わず全オカレンス（読み取り専用リスト） | 高 | [fusion_Component_allOccurrences](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_Component_allOccurrences.htm) |
 | `Occurrence.bRepBodies` | オカレンス内のボディ | **ボディのプロキシを返す**（ルートから見た位置） | 高 | [fusion_Occurrence_bRepBodies](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_Occurrence_bRepBodies.htm) |
 | `Occurrence.isVisible` / `.isReferencedComponent` / `.name` | 表示判定・外部参照判定 | `isReferencedComponent` は「外部のコンポーネントを参照しているか」 | 高 | [fusion_Occurrence_isVisible](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_Occurrence_isVisible.htm), [fusion_Occurrence_isReferencedComponent](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_Occurrence_isReferencedComponent.htm) |
+| `Occurrence.component` | ボディごと STL の名前を「コンポーネント名_ボディ名」にする | 「このオカレンスが参照するコンポーネント」 | 高 | [fusion_Occurrence](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_Occurrence.htm) |
 | `BRepBody.isSolid` / `.isVisible` / `.name` / `.assemblyContext` / `.createForAssemblyContext(occ)` | 対象ボディの選別とプロキシ化 | `isVisible` は親の非表示も含めた最終結果。`createForAssemblyContext` はネイティブでなければ null | 高 | [fusion_BRepBody](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_BRepBody.htm), [fusion_BRepBody_createForAssemblyContext](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_BRepBody_createForAssemblyContext.htm) |
 | `UserInterface.createProgressDialog()` / `ProgressDialog.show(title, message, min, max, delay)` / `.isCancelButtonShown` / `.cancelButtonText` / `.progressValue` / `.maximumValue` / `.message` / `.wasCancelled` / `.hide()` | 進捗 | すべて確認 | 高 | [core_ProgressDialog](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/core_ProgressDialog.htm), [core_ProgressDialog_show](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/core_ProgressDialog_show.htm) |
 | `UserInterface.messageBox(text)` | まとめの表示 | 確認 | 高 | [core_UserInterface_messageBox](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/core_UserInterface_messageBox.htm) |

@@ -123,8 +123,9 @@ Git はローカルで `git init` して段階的にコミットする（push �
 - [x] 1・2 Code.gs とテスト（63件）。追加の決定：検査ルール（状態の選択肢・必須キー）を fingerprint に含め、ルール変更時は自動で全件読み直し
 - [x] 3 index.html / guide.html とプレビュー。ヘッドレス Chrome で PC幅・390px（iframe）を目視。hidden 属性が display 指定に負ける不具合を共通ルールで修正
 - [x] 4 fusion_export.py とテスト。追加の決定：triage.csv に version_id を持たせ、version_id → lineage ID → 再走査の順で開く／サムネイルは 1200×800（カード枠 3:2 に合わせる）／既存 triage.csv は上書きせず退避
-- [ ] 5 ドキュメント
-- [ ] 6 独立レビュー
-- [ ] 7 対処と HANDOFF.md
+- [x] 5 ドキュメント（tools/docs の5本）
+- [x] 6 独立レビュー（`docs/review-2026-10-30.md`。must 2 / should 12 / could 多数）
+- [x] 7 対処と HANDOFF.md。M2 対策で `appsscript.json` を追加（4ファイル目。採否はユーザー判断）。実機確認用のテスト作品は `dev/sample-items/make_samples.py`
+- [ ] 8 ユーザーによる実機確認（HANDOFF.md の C1〜C9、F1〜F6）→ 結果を受けて修正
 
 メモ：Claude in Chrome（拡張）からは localhost に届かないため、画面確認はローカルのヘッドレス Chrome（`chrome.exe --headless=new --screenshot`）で行う。390px 幅はヘッドレスの最小ウィンドウ幅を下回るので iframe に入れて撮る。

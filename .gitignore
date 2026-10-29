@@ -5,3 +5,4 @@ dev/preview/out/
 dev/**/out/
 .DS_Store
 Thumbs.db
+dev/sample-items/out/
