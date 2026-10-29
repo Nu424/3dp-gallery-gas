@@ -90,7 +90,7 @@ Oct 29, 2026 · @Nu424
 
 ## Fusion書き出しスクリプト
 
-FusionのPython APIで、クラウド上のf3dを開いて書き出すところまで自動化できる。RPAやComputer Useは使わない。必要なAPIは公式に揃っている：STEP・STL・3MF・f3dの書き出しは `ExportManager`（[ExportManager](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/ExportManager.htm)、[FusionArchiveExportOptions](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/FusionArchiveExportOptions.htm)）、サムネイルは画面を指定サイズで再描画して保存する `Viewport.saveAsImageFile`（[Viewport.saveAsImageFile](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/Viewport_saveAsImageFile.htm)）、クラウドのファイルは `DataFile` を `Documents.open` で開く。
+FusionのPython APIで、クラウド上のf3dを開いて書き出すところまで自動化できる。RPAやComputer Useは使わない。必要なAPIは公式に揃っている：STEP・STL・3MF・f3dの書き出しは `ExportManager`（[ExportManager](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_ExportManager.htm)、[FusionArchiveExportOptions](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_FusionArchiveExportOptions.htm)）、サムネイルは画面を指定サイズで再描画して保存する `Viewport.saveAsImageFile`（[Viewport.saveAsImageFile](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/core_Viewport_saveAsImageFile.htm)）、クラウドのファイルは `DataFile` を `Documents.open` で開く。
 
 **ファイル**：`fusion_export/fusion_export.py` 1本。冒頭の設定欄（出力先、モード、対象プロジェクト）を書き換えて、Fusionの「スクリプトとアドイン」から実行する。
 

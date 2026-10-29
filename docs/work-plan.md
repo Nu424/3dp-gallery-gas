@@ -119,4 +119,12 @@ Git はローカルで `git init` して段階的にコミットする（push �
 
 ## 進捗
 
-- [ ] 0 〜 7（未着手）
+- [x] 0 git init・作業計画
+- [x] 1・2 Code.gs とテスト（63件）。追加の決定：検査ルール（状態の選択肢・必須キー）を fingerprint に含め、ルール変更時は自動で全件読み直し
+- [x] 3 index.html / guide.html とプレビュー。ヘッドレス Chrome で PC幅・390px（iframe）を目視。hidden 属性が display 指定に負ける不具合を共通ルールで修正
+- [x] 4 fusion_export.py とテスト。追加の決定：triage.csv に version_id を持たせ、version_id → lineage ID → 再走査の順で開く／サムネイルは 1200×800（カード枠 3:2 に合わせる）／既存 triage.csv は上書きせず退避
+- [ ] 5 ドキュメント
+- [ ] 6 独立レビュー
+- [ ] 7 対処と HANDOFF.md
+
+メモ：Claude in Chrome（拡張）からは localhost に届かないため、画面確認はローカルのヘッドレス Chrome（`chrome.exe --headless=new --screenshot`）で行う。390px 幅はヘッドレスの最小ウィンドウ幅を下回るので iframe に入れて撮る。
