@@ -23,17 +23,23 @@ fusion_export.py — Fusion のクラウド上の f3d を開いて、3Dギャラ
 # 実行するモード。1 = サムネイルのみ（仕分け用の一覧を作る）、2 = フル書き出し
 MODE = 1
 
-# モード2の出力先。Googleドライブ（パソコン版）で同期している「3Dギャラリー/items」フォルダを指定する。
-# ここに書き出すと、そのままギャラリーへの登録になる。
-# Windows のパスは r"..." で囲む（\ をそのまま書けるようにするため）。
-OUTPUT_DIR = r"G:\マイドライブ\3Dギャラリー\items"
+# パスの書き方（下の3項目に共通）
+#   - Googleドライブ（パソコン版）で見える「共有ドライブ」内の 3Dギャラリー を指す。
+#     マイドライブにはしない（卒業で個人のアカウントが消えると、中身ごと消えるため）。
+#   - <共有ドライブ名> は研究室の共有ドライブの名前に書き換える（< > ごと消す）。
+#   - ドライブ文字は G: が多いが、PC によって違う。エクスプローラーで「Google Drive」の文字を確認する。
+#   - Windows のパスは r"..." で囲む（\ をそのまま書けるようにするため）。
 
-# モード1の出力先。triage.csv とサムネイル画像がここに書かれる。items の外の作業用フォルダにする。
-TRIAGE_DIR = r"C:\Users\自分のユーザー名\Desktop\fusion_triage"
+# モード2の出力先＝ギャラリーの items フォルダ。ここに書き出すと、そのままギャラリーへの登録になる。
+OUTPUT_DIR = r"G:\共有ドライブ\<共有ドライブ名>\3Dギャラリー\items"
+
+# モード1の出力先。triage.csv とサムネイル画像がここに書かれる。
+# items の外にする（items の中だと作品フォルダと間違えて同期されるため）。
+TRIAGE_DIR = r"G:\共有ドライブ\<共有ドライブ名>\3Dギャラリー\triage"
 
 # モード2で読む triage.csv のパス（モード1で作り、rank と folder_name を記入したもの）。
-# スプシで編集した場合は「ファイル → ダウンロード → CSV」で保存したものを指定する。
-TRIAGE_CSV = r"C:\Users\自分のユーザー名\Desktop\fusion_triage\triage.csv"
+# スプシで編集した場合は「ファイル → ダウンロード → カンマ区切り形式（.csv）」で保存し、このパスに置く。
+TRIAGE_CSV = r"G:\共有ドライブ\<共有ドライブ名>\3Dギャラリー\triage\triage.csv"
 
 # 対象にする Fusion のプロジェクト名のリスト。空のリスト [] なら全プロジェクトが対象。
 # 例: PROJECT_NAMES = ["研究室共有", "山田の試作"]
@@ -57,6 +63,7 @@ THUMB_HEIGHT = 800
 
 import csv
 import datetime
+import io
 import json
 import os
 import re
@@ -87,6 +94,7 @@ TRIAGE_FILENAME = "triage.csv"
 LOG_FILENAME = "export_log.csv"
 LOG_COLUMNS = ["time", "mode", "name", "result", "detail"]
 META_FILENAME = "meta.json"
+SOURCE_PREFIX = "Fusion元: "      # meta.json の note に入れる元の場所の見出し。済み判定にも使う
 THUMB_FILENAME = "thumb.png"
 EXPORT_RANKS = ("A", "B")          # モード2で書き出すランク
 FOLDER_NAME_PATTERN = re.compile(r"^(\d{8})_(.+)$")  # GAS の同期と同じ規則
@@ -205,7 +213,7 @@ def build_meta(project, folder_path, name):
         "purpose": "",
         "status": "",
         "tags": [],
-        "note": ["Fusion元: " + source_text(project, folder_path, name)],
+        "note": [SOURCE_PREFIX + source_text(project, folder_path, name)],
     }
 
 
@@ -230,6 +238,49 @@ def write_meta_json(folder, meta):
 def is_done(folder):
     """作品フォルダが書き出し済みか。meta.json があれば完了（最後に書くので）。"""
     return os.path.isfile(os.path.join(folder, META_FILENAME))
+
+
+def folder_state(folder, source):
+    """出力先フォルダの状態を返す。
+
+      "new"      : フォルダが無い（新しく作る）
+      "partial"  : フォルダはあるが meta.json が無い（途中で止まった。やり直す）
+      "done"     : meta.json があり、note に「Fusion元: <source>」がある（このスクリプトで書き出し済み）
+      "conflict" : meta.json はあるが元が違う・読めない（手作りの同名フォルダなど。触らない）
+    meta.json は人が記入していくので、note の他の行や他のキーは問わない。「Fusion元」の行だけを見る。
+    """
+    meta_path = os.path.join(folder, META_FILENAME)
+    if not os.path.isfile(meta_path):
+        return "partial" if os.path.isdir(folder) else "new"
+    try:
+        with open(meta_path, encoding="utf-8-sig") as f:
+            note = json.load(f).get("note")
+    except Exception:
+        return "conflict"
+    lines = [note] if isinstance(note, str) else note if isinstance(note, list) else []
+    expected = SOURCE_PREFIX + source
+    return "done" if any(isinstance(x, str) and x.strip() == expected for x in lines) else "conflict"
+
+
+def resolve_output_folder(base_dir, folder_name, source, reserved):
+    """書き出し先のフォルダ名を決める。戻り値: (フォルダ名, 状態, 避けたフォルダ名のリスト)
+
+    folder_name が別の作品（conflict）なら、-v2, -v3 … の空きを探す。
+    reserved は triage.csv の他の行が使うフォルダ名（小文字）。それと重ならない番号を選び、
+    選んだ名前も reserved に足す（後の行と取り合わないように）。
+    再実行しても同じ順に調べるので、前回 -v2 に書いた作品は -v2 で「done」と判定される。
+    """
+    avoided = []
+    for n in range(1, 1000):
+        cand = folder_name if n == 1 else f"{folder_name}-v{n}"
+        if n > 1 and cand.lower() in reserved:
+            continue
+        state = folder_state(os.path.join(base_dir, cand), source)
+        if state != "conflict":
+            reserved.add(cand.lower())
+            return cand, state, avoided
+        avoided.append(cand)
+    raise ValueError("空いているフォルダ名が見つかりません: " + folder_name)
 
 
 def write_triage_csv(path, rows):
@@ -258,7 +309,8 @@ def read_triage_csv(path):
             continue
     else:
         raise ValueError("triage.csv の文字コードが読めません（UTF-8 で保存し直してください）")
-    reader = csv.DictReader(text.splitlines())
+    # セル内の改行（備考欄など）を壊さないよう、newline="" の StringIO で csv に渡す
+    reader = csv.DictReader(io.StringIO(text, newline=""))
     rows = []
     for r in reader:
         rows.append({(k or "").strip(): (v or "").strip() if isinstance(v, str) else "" for k, v in r.items()})
@@ -363,18 +415,22 @@ def collect_visible_solid_bodies(root_component):
       - 非表示（電球オフ、親が非表示を含む）と、閉じていない面だけのボディは除く
     allOccurrences は入れ子のオカレンスも含む一覧なので、再帰しなくても全部たどれる。
     同じ部品が複数配置されていれば、配置の数だけボディが出る（それぞれの位置で）。
+
+    戻り値: [(ボディ, STL のファイル名の元), ...]
+      ルート直下はボディ名のまま、オカレンス内は「コンポーネント名_ボディ名」（例 lid_Body1）。
+      部品ごとに Body1 が並ぶのが普通なので、ボディ名だけでは区別がつかないため。
     """
     bodies = []
 
-    def take(body):
+    def take(body, prefix):
         try:
             if body.isSolid and body.isVisible:
-                bodies.append(body)
+                bodies.append((body, (prefix + "_" + body.name) if prefix else body.name))
         except Exception:
             pass  # 一時ボディなど、isVisible が取れないものは対象外
 
     for b in _iter(root_component.bRepBodies):
-        take(b)
+        take(b, "")
     for occ in _iter(root_component.allOccurrences):
         try:
             if not occ.isVisible:
@@ -382,6 +438,10 @@ def collect_visible_solid_bodies(root_component):
             occ_bodies = occ.bRepBodies
         except Exception:
             continue
+        try:
+            prefix = occ.component.name
+        except Exception:
+            prefix = getattr(occ, "name", "")
         for b in _iter(occ_bodies):
             # 念のため: プロキシになっていなければ自分でプロキシを作る
             try:
@@ -389,7 +449,7 @@ def collect_visible_solid_bodies(root_component):
                     b = b.createForAssemblyContext(occ) or b
             except Exception:
                 pass
-            take(b)
+            take(b, prefix)
     return bodies
 
 
@@ -593,6 +653,14 @@ def close_document(doc, opened_by_us):
     _do_events()
 
 
+def is_modified(doc):
+    """ドキュメントに未保存の変更があるか（Document.isModified）。取れなければ False。"""
+    try:
+        return bool(doc.isModified)
+    except Exception:
+        return False
+
+
 def get_design(doc):
     """ドキュメントから Design（モデルの本体）を取り出す。"""
     design = None
@@ -623,6 +691,7 @@ def save_thumbnail(app, path):
     cam = vp.camera  # コピーが返るので、変えたら代入し直す必要がある
     cam.viewOrientation = adsk.core.ViewOrientations.IsoTopRightViewOrientation
     cam.isFitView = True
+    cam.isSmoothTransition = False  # 視点移動のアニメーション途中で撮らないよう、一瞬で切り替える
     vp.camera = cam
     _do_events(2)
     vp.fit()
@@ -740,8 +809,8 @@ def export_item(app, design, folder, base_name):
     else:
         if STL_PER_BODY:
             used = set()
-            for body in bodies:
-                fname = unique_name(sanitize_filename(body.name) + ".stl", used)
+            for body, label in bodies:
+                fname = unique_name(sanitize_filename(label) + ".stl", used)
                 attempt("STL " + fname, lambda b=body, f=fname: export_stl(design, b, os.path.join(folder, f)))
         else:
             attempt("STL", lambda: export_stl(design, root, os.path.join(folder, base + ".stl")))
@@ -785,9 +854,19 @@ class Progress:
             pass
 
 
-def _ensure_dir(path, label):
+def check_setting_path(path, label):
+    """設定欄のパスが書き換え済みかを確かめる。問題があれば日本語の説明を返す（無ければ空文字）。"""
     if not path:
-        raise ValueError(label + " が設定されていません")
+        return label + " が設定されていません"
+    if "<" in path or ">" in path:
+        return label + " の <共有ドライブ名> などの部分を、実際の名前に書き換えてください（< > も消す）"
+    return ""
+
+
+def _ensure_dir(path, label):
+    problem = check_setting_path(path, label)
+    if problem:
+        raise ValueError(problem)
     os.makedirs(path, exist_ok=True)
 
 
@@ -888,6 +967,8 @@ def run_mode2(app, ui):
       - 1件ずつ try し、失敗してもログに書いて次へ進む
     """
     _ensure_dir(OUTPUT_DIR, "OUTPUT_DIR")
+    if check_setting_path(TRIAGE_CSV, "TRIAGE_CSV"):
+        raise ValueError(check_setting_path(TRIAGE_CSV, "TRIAGE_CSV"))
     log_path = os.path.join(OUTPUT_DIR, LOG_FILENAME)
     rows, warnings = select_rows_for_export(read_triage_csv(TRIAGE_CSV))
     for w in warnings:
@@ -896,6 +977,7 @@ def run_mode2(app, ui):
         ui.messageBox("rank が A か B の行がありません。\n" + TRIAGE_CSV)
         return
 
+    reserved = {r["folder_name"].lower() for r in rows}  # 他の行が使うフォルダ名（空き名探しで避ける）
     finder = FileFinder(app)
     progress = Progress(ui, "モード2: 書き出し", len(rows))
     counts = {"ok": 0, "check": 0, "fail": 0, "skip": 0}
@@ -905,11 +987,19 @@ def run_mode2(app, ui):
             if progress.cancelled():
                 cancelled = True
                 break
-            name, folder_name = row.get("name", ""), row["folder_name"]
+            name = row.get("name", "")
+            source = source_text(row.get("project", ""), row.get("folder_path", ""), name)
+            progress.update(i, f"{i + 1}/{len(rows)}  {row['folder_name']}")
+            # 済み判定: meta.json の「Fusion元」がこの行と一致するときだけ済み。
+            # 別の作品の同名フォルダ（手作りなど）があれば上書きせず、-v2 などの空き名に書く。
+            folder_name, state, avoided = resolve_output_folder(OUTPUT_DIR, row["folder_name"], source, reserved)
             label = f"{folder_name}（{name}）"
-            progress.update(i, f"{i + 1}/{len(rows)}  {folder_name}")
             folder = os.path.join(OUTPUT_DIR, folder_name)
-            if is_done(folder):
+            if avoided:
+                append_log(log_path, label, "注意",
+                           "同名のフォルダ（{}）が別の作品のため、{} に書き出します".format("、".join(avoided), folder_name),
+                           mode=2)
+            if state == "done":
                 counts["skip"] += 1
                 append_log(log_path, label, RESULT_SKIP, "meta.json があるため（書き出し済み）", mode=2)
                 continue
@@ -928,6 +1018,8 @@ def run_mode2(app, ui):
                 write_meta_json(folder, build_meta(row.get("project", ""), row.get("folder_path", ""),
                                                    name or df.name))
                 notes.insert(0, found_by)
+                if not ours and is_modified(doc):
+                    notes.append("開いていたドキュメントに未保存の変更があり、その状態で書き出しました")
                 if refs:
                     notes.insert(1, "外部参照あり: " + ", ".join(refs))
                     counts["check"] += 1

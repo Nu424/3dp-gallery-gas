@@ -224,6 +224,11 @@ class TestTriageCsv(TmpDirCase):
         r = fe.read_triage_csv(path)[0]
         self.assertEqual((r["project"], r["name"], r["rank"], r["メモ"]), ("P", "n", "a", "自由記述"))
 
+    def test_read_newline_in_cell(self):
+        path = os.path.join(self.tmp, "t.csv")
+        fe.write_triage_csv(path, [_row(name="行1" + chr(13) + chr(10) + "行2", rank="A")])
+        self.assertEqual(fe.read_triage_csv(path)[0]["name"], "行1" + chr(13) + chr(10) + "行2")
+
     def test_read_short_row(self):
         path = os.path.join(self.tmp, "t.csv")
         with open(path, "w", encoding="utf-8", newline="") as f:
@@ -348,6 +353,58 @@ class TestFileFinder(unittest.TestCase):
         self.assertEqual(self._finder({}).find({}), (None, ""))
 
 
+class TestFolderState(TmpDirCase):
+    def _make(self, name, meta=None, raw=None):
+        folder = os.path.join(self.tmp, name)
+        os.makedirs(folder)
+        if meta is not None:
+            fe.write_meta_json(folder, meta)
+        if raw is not None:
+            with open(os.path.join(folder, "meta.json"), "w", encoding="utf-8") as f:
+                f.write(raw)
+        return folder
+
+    def test_states(self):
+        self.assertEqual(fe.folder_state(os.path.join(self.tmp, "none"), "P/x"), "new")
+        self.assertEqual(fe.folder_state(self._make("a"), "P/x"), "partial")
+        self.assertEqual(fe.folder_state(self._make("b", fe.build_meta("P", "", "x")), "P/x"), "done")
+        self.assertEqual(fe.folder_state(self._make("c", {"note": "Fusion元: P/x"}), "P/x"), "done")  # 文字列の note
+        self.assertEqual(fe.folder_state(self._make("d", {"note": ["Fusion元: P/y"]}), "P/x"), "conflict")
+        self.assertEqual(fe.folder_state(self._make("e", {"author": "a"}), "P/x"), "conflict")
+        self.assertEqual(fe.folder_state(self._make("f", raw="{壊れた"), "P/x"), "conflict")
+        self.assertEqual(fe.folder_state(self._make("g", raw="[]"), "P/x"), "conflict")
+
+    def test_done_with_bom_and_edited_note(self):
+        folder = self._make("h")
+        with open(os.path.join(folder, "meta.json"), "w", encoding="utf-8-sig") as f:
+            json.dump({"author": "山田", "note": ["追記", " Fusion元: P/x "]}, f, ensure_ascii=False)
+        self.assertEqual(fe.folder_state(folder, "P/x"), "done")
+
+    def test_resolve(self):
+        self._make("20250612_x", {"note": "手作り"})
+        self._make("20250612_x-v2", {"note": "別"})
+        reserved = {"20250612_x", "20250612_x-v3"}  # -v3 は他の行が使う
+        self.assertEqual(fe.resolve_output_folder(self.tmp, "20250612_x", "P/x", reserved),
+                         ("20250612_x-v4", "new", ["20250612_x", "20250612_x-v2"]))
+        self.assertIn("20250612_x-v4", reserved)
+
+    def test_resolve_plain(self):
+        self.assertEqual(fe.resolve_output_folder(self.tmp, "20250612_y", "P/y", set()), ("20250612_y", "new", []))
+
+
+class TestSettingPath(unittest.TestCase):
+    def test_check(self):
+        ok = os.path.join("G:" + os.sep, "共有ドライブ", "研究室", "3Dギャラリー", "items")
+        self.assertEqual(fe.check_setting_path(ok, "OUTPUT_DIR"), "")
+        self.assertIn("書き換え", fe.check_setting_path(fe.OUTPUT_DIR, "OUTPUT_DIR"))  # 既定値のままは止める
+        self.assertIn("設定されていません", fe.check_setting_path("", "OUTPUT_DIR"))
+
+    def test_defaults_are_shared_drive(self):
+        for p in (fe.OUTPUT_DIR, fe.TRIAGE_DIR, fe.TRIAGE_CSV):
+            self.assertIn("共有ドライブ", p)
+            self.assertNotIn("マイドライブ", p)
+
+
 class TestSelectProjects(unittest.TestCase):
     def test_empty_means_all(self):
         self.assertEqual(fe.select_projects(["a", "b"], []), (["a", "b"], []))
@@ -413,6 +470,7 @@ class FakeBody:
 class FakeOcc:
     def __init__(self, name, bodies, visible=True):
         self.name, self.isVisible = name, visible
+        self.component = types.SimpleNamespace(name=name)
         self.bRepBodies = FakeCollection(bodies)
 
 
@@ -435,8 +493,8 @@ class TestCollectBodies(unittest.TestCase):
         occ1 = FakeOcc("o1", [FakeBody("p1", context="o1"), FakeBody("hidden", visible=False, context="o1")])
         occ_hidden = FakeOcc("o2", [FakeBody("p2", context="o2")], visible=False)
         root = FakeRoot([FakeBody("root"), FakeBody("surface", solid=False)], [occ1, occ_hidden])
-        names = [b.name for b in fe.collect_visible_solid_bodies(root)]
-        self.assertEqual(names, ["root", "p1"])
+        labels = [label for _b, label in fe.collect_visible_solid_bodies(root)]
+        self.assertEqual(labels, ["root", "o1_p1"])  # オカレンス内はコンポーネント名_ボディ名
 
     def test_native_body_is_wrapped_in_proxy(self):
         class Native(FakeBody):
@@ -444,8 +502,8 @@ class TestCollectBodies(unittest.TestCase):
                 return FakeBody(self.name + "@" + occ.name, context=occ)
 
         occ = FakeOcc("o1", [Native("p")])
-        names = [b.name for b in fe.collect_visible_solid_bodies(FakeRoot([], [occ]))]
-        self.assertEqual(names, ["p@o1"])
+        bodies = fe.collect_visible_solid_bodies(FakeRoot([], [occ]))
+        self.assertEqual([b.name for b, _l in bodies], ["p@o1"])
 
     def test_broken_body_ignored(self):
         class Broken:
@@ -457,7 +515,13 @@ class TestCollectBodies(unittest.TestCase):
                 raise RuntimeError("transient")
 
         root = FakeRoot([Broken(), FakeBody("ok")], [])
-        self.assertEqual([b.name for b in fe.collect_visible_solid_bodies(root)], ["ok"])
+        self.assertEqual([label for _b, label in fe.collect_visible_solid_bodies(root)], ["ok"])
+
+    def test_same_body_name_in_components(self):
+        lid = FakeOcc("lid", [FakeBody("Body1", context="lid")])
+        base = FakeOcc("base", [FakeBody("Body1", context="base")])
+        bodies = fe.collect_visible_solid_bodies(FakeRoot([FakeBody("Body1")], [lid, base]))
+        self.assertEqual([label for _b, label in bodies], ["Body1", "lid_Body1", "base_Body1"])
 
 
 # ---------------------------------------------------------------------------
@@ -487,10 +551,17 @@ class TestMode2Flow(TmpDirCase):
             _row(name="失敗", rank="A", datafile_id="urn:fail"),
             _row(name="外部参照", rank="A", datafile_id="urn:ref"),
             _row(name="無い", rank="A", datafile_id="urn:missing"),
+            _row(name="手作り", rank="A", datafile_id="urn:hand"),
+            _row(name="開いていた", rank="A", datafile_id="urn:open"),
             _row(name="対象外", rank="C", datafile_id="urn:c"),
         ])
         os.makedirs(os.path.join(self.out, "20250612_済み"))
-        fe.write_meta_json(os.path.join(self.out, "20250612_済み"), {"author": "手で記入済み"})
+        self.done_meta = {"author": "手で記入済み", "note": ["メモ", "Fusion元: P/済み"]}
+        fe.write_meta_json(os.path.join(self.out, "20250612_済み"), self.done_meta)
+        # 同名だが別の作品（手作り）のフォルダ。触らずに -v2 へ書き出すはず
+        os.makedirs(os.path.join(self.out, "20250612_手作り"))
+        self.hand_meta = {"author": "誰か", "note": "手で作った"}
+        fe.write_meta_json(os.path.join(self.out, "20250612_手作り"), self.hand_meta)
         os.makedirs(os.path.join(self.out, "20250612_途中"))  # meta.json 無し＝途中で止まった
 
         self.saved = {k: getattr(fe, k) for k in
@@ -512,6 +583,8 @@ class TestMode2Flow(TmpDirCase):
 
         def open_document(app, df):
             test.opened.append(df.id)
+            if df.id == "urn:open":  # 元々開いていて、未保存の変更がある
+                return types.SimpleNamespace(id=df.id, isModified=True), False
             return df, True
 
         def export_item(app, design, folder, name):
@@ -534,19 +607,24 @@ class TestMode2Flow(TmpDirCase):
 
     def _log(self):
         with open(os.path.join(self.out, "export_log.csv"), encoding="utf-8-sig") as f:
-            return {r["name"]: r for r in csv.DictReader(f)}
+            return {(r["name"], r["result"]): r for r in csv.DictReader(f)}
 
     def test_flow(self):
         ui = FakeUI()
         fe.run_mode2(object(), ui)
 
         # 済みは開かない。C ランクは対象外
-        self.assertEqual(self.opened, ["urn:partial", "urn:fail", "urn:ref"])
-        # 開いたものは失敗しても閉じる
-        self.assertEqual(self.closed, ["urn:partial", "urn:fail", "urn:ref"])
+        self.assertEqual(self.opened, ["urn:partial", "urn:fail", "urn:ref", "urn:hand", "urn:open"])
+        # 開いたものは失敗しても close_document を通る（自分で開いたかの判断は close_document 側）
+        self.assertEqual(self.closed, ["urn:partial", "urn:fail", "urn:ref", "urn:hand", "urn:open"])
         # 手で記入済みの meta.json は上書きしない
         with open(os.path.join(self.out, "20250612_済み", "meta.json"), encoding="utf-8") as f:
-            self.assertEqual(json.load(f), {"author": "手で記入済み"})
+            self.assertEqual(json.load(f), self.done_meta)
+        # 別の作品の同名フォルダには触らず、-v2 に書く
+        with open(os.path.join(self.out, "20250612_手作り", "meta.json"), encoding="utf-8") as f:
+            self.assertEqual(json.load(f), self.hand_meta)
+        self.assertEqual(os.listdir(os.path.join(self.out, "20250612_手作り")), ["meta.json"])
+        self.assertTrue(fe.is_done(os.path.join(self.out, "20250612_手作り-v2")))
         # 途中のものはやり直して meta.json を書く
         self.assertTrue(fe.is_done(os.path.join(self.out, "20250612_途中")))
         # 失敗したものは meta.json を書かない（次回やり直す）
@@ -556,21 +634,23 @@ class TestMode2Flow(TmpDirCase):
             self.assertEqual(json.load(f)["note"], ["Fusion元: P/途中"])
 
         log = self._log()
-        self.assertEqual(log["20250612_済み（済み）"]["result"], "スキップ")
-        self.assertEqual(log["20250612_途中（途中）"]["result"], "成功")
-        self.assertIn("取得: datafile_id", log["20250612_途中（途中）"]["detail"])
-        self.assertIn("取得: datafile_id", log["20250612_失敗（失敗）"]["detail"])
-        self.assertEqual(log["20250612_失敗（失敗）"]["result"], "失敗")
-        self.assertIn("STL", log["20250612_失敗（失敗）"]["detail"])
-        self.assertEqual(log["20250612_外部参照（外部参照）"]["result"], "成功（要目視確認）")
-        self.assertIn("部品A", log["20250612_外部参照（外部参照）"]["detail"])
-        self.assertEqual(log["20250612_無い（無い）"]["result"], "失敗")
+        self.assertIn(("20250612_済み（済み）", "スキップ"), log)
+        self.assertIn("取得: datafile_id", log[("20250612_途中（途中）", "成功")]["detail"])
+        fail = log[("20250612_失敗（失敗）", "失敗")]["detail"]
+        self.assertIn("取得: datafile_id", fail)
+        self.assertIn("STL", fail)
+        self.assertIn("部品A", log[("20250612_外部参照（外部参照）", "成功（要目視確認）")]["detail"])
+        self.assertIn(("20250612_無い（無い）", "失敗"), log)
+        self.assertIn("20250612_手作り", log[("20250612_手作り-v2（手作り）", "注意")]["detail"])
+        self.assertIn(("20250612_手作り-v2（手作り）", "成功"), log)
+        self.assertIn("未保存の変更", log[("20250612_開いていた（開いていた）", "成功")]["detail"])
+        self.assertNotIn("未保存", log[("20250612_途中（途中）", "成功")]["detail"])
 
         summary = ui.messages[-1]
-        for s in ("成功: 1 件", "要目視確認・外部参照あり）: 1 件", "失敗: 2 件", "スキップ（書き出し済み）: 1 件"):
+        for s in ("成功: 3 件", "要目視確認・外部参照あり）: 1 件", "失敗: 2 件", "スキップ（書き出し済み）: 1 件"):
             self.assertIn(s, summary)
 
-        # 再実行: 失敗・見つからないものだけやり直す
+        # 再実行: 失敗・見つからないものだけやり直す。-v2 に書いたものは -v2 で済みと判定される
         self.opened.clear()
         fe.run_mode2(object(), FakeUI())
         self.assertEqual(self.opened, ["urn:fail"])
