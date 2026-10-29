@@ -23,7 +23,9 @@ class FakeDrive {
     this.seq = 0;
     this.blobReads = []; // getBlob() されたファイル名（meta.json を読んだか調べる用）
     this.clock = Date.UTC(2026, 0, 1);
-    this.getByIdErrors = {}; // { フォルダID: メッセージ } で、そのIDの getFolderById が例外を投げる
+    this.getByIdErrors = {}; // { ID: メッセージ } で、そのIDの getFolderById / getFileById が例外を投げる
+    this.thumbReads = []; // getThumbnail() されたファイルID
+    this.byteReads = [];  // getBlob().getBytes() されたファイルID（元のファイルを読んだか調べる用）
   }
   newId(prefix) { return prefix + String(++this.seq).padStart(4, '0'); }
   addFolder(name, parentId) {
@@ -38,6 +40,8 @@ class FakeDrive {
       kind: 'file', id, name, parents: [parentId], trashed: false,
       content,
       mimeType: opts.mimeType || guessMime(name),
+      // getThumbnail() が返す縮小画像の中身。null なら縮小画像なし（Drive が作れなかった場合）
+      thumbnail: opts.thumbnail !== undefined ? opts.thumbnail : 'thumb-of-' + name,
       size: opts.size !== undefined ? opts.size : Buffer.byteLength(content, 'utf8'),
       updated: opts.updated !== undefined ? opts.updated : this.clock,
     });
@@ -78,7 +82,14 @@ class FakeDrive {
       getLastUpdated: () => new Date(node.updated),
       getBlob: () => ({
         getDataAsString: () => { drive.blobReads.push(node.name); return node.content; },
+        getBytes: () => { drive.byteReads.push(node.id); return toBytes(node.content); },
+        getContentType: () => node.mimeType,
       }),
+      getThumbnail: () => {
+        drive.thumbReads.push(node.id);
+        if (node.thumbnail === null) return null;
+        return { getBytes: () => toBytes(node.thumbnail), getContentType: () => 'image/png' };
+      },
     };
   }
   api() {
@@ -91,8 +102,21 @@ class FakeDrive {
         }
         return this.wrap(n);
       },
+      getFileById: (id) => {
+        if (this.getByIdErrors[id]) throw new Error(this.getByIdErrors[id]);
+        const n = this.nodes.get(id);
+        if (!n || n.kind !== 'file') {
+          throw new Error('No item with the given ID could be found, or you do not have permission to access it.');
+        }
+        return this.wrap(n);
+      },
     };
   }
+}
+
+/** 文字列 → GAS と同じ形のバイト列（-128〜127 の配列） */
+function toBytes(text) {
+  return [...Buffer.from(String(text), 'utf8')].map((b) => (b > 127 ? b - 256 : b));
 }
 
 function guessMime(name) {
@@ -290,6 +314,9 @@ const Utilities = {
     const buf = crypto.createHash('sha256').update(String(value), 'utf8').digest();
     return [...buf].map((b) => (b > 127 ? b - 256 : b)); // GAS と同じく -128〜127
   },
+  base64Encode(bytes) {
+    return Buffer.from(bytes.map((b) => b & 255)).toString('base64');
+  },
   formatDate(date, tz, fmt) {
     // テストでは JST 固定の簡易版
     const d = new Date(date.getTime() + 9 * 3600 * 1000);
@@ -298,6 +325,35 @@ const Utilities = {
     return iso.slice(0, 19) + '+09:00';
   },
 };
+
+/** CacheService（getScriptCache だけ）。実物と同じく1件 100KB を超える値は putAll ごと失敗する */
+function makeCache() {
+  const store = new Map();
+  const state = { store, puts: [], failGet: false };
+  const LIMIT = 100 * 1024;
+  return {
+    state,
+    api: {
+      getScriptCache: () => ({
+        get: (k) => (store.has(k) ? store.get(k) : null),
+        getAll: (keys) => {
+          if (state.failGet) throw new Error('Service error: Cache');
+          const out = {};
+          keys.forEach((k) => { if (store.has(k)) out[k] = store.get(k); });
+          return out;
+        },
+        put: (k, v, sec) => { state.puts.push({ values: { [k]: String(v) }, sec }); store.set(k, String(v)); },
+        putAll: (values, sec) => {
+          Object.keys(values).forEach((k) => {
+            if (String(values[k]).length > LIMIT) throw new Error('Argument too large: value');
+          });
+          state.puts.push({ values: { ...values }, sec });
+          Object.keys(values).forEach((k) => store.set(k, String(values[k])));
+        },
+      }),
+    },
+  };
+}
 
 function makeHtmlService() {
   const calls = [];
@@ -324,7 +380,7 @@ function makeHtmlService() {
 
 /**
  * 偽物一式を用意して Code.gs を読み込む。
- * @return {{ctx, drive, ss, props, lock, script, html, itemsId}}
+ * @return {{ctx, drive, ss, props, lock, script, html, cache, itemsId, logs}}
  */
 function setupEnv({ withItemsFolder = true, props: initialProps } = {}) {
   const drive = new FakeDrive();
@@ -335,6 +391,7 @@ function setupEnv({ withItemsFolder = true, props: initialProps } = {}) {
   const lock = makeLock();
   const script = makeScriptApp();
   const html = makeHtmlService();
+  const cache = makeCache();
   const logs = [];
 
   const sandbox = {
@@ -348,6 +405,7 @@ function setupEnv({ withItemsFolder = true, props: initialProps } = {}) {
     LockService: lock.api,
     ScriptApp: script.api,
     HtmlService: html.api,
+    CacheService: cache.api,
     Utilities,
     Session: { getScriptTimeZone: () => 'Asia/Tokyo' },
     Logger: { log: (m) => logs.push(m) },
@@ -355,7 +413,7 @@ function setupEnv({ withItemsFolder = true, props: initialProps } = {}) {
   };
   const ctx = vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(CODE_PATH, 'utf8'), ctx, { filename: 'Code.gs' });
-  return { ctx, drive, ss, props, lock, script, html, itemsId, logs };
+  return { ctx, drive, ss, props, lock, script, html, cache, itemsId, logs };
 }
 
 /** vm の中で作られたオブジェクトを、テスト側の普通のオブジェクトにする（deepStrictEqual 用） */

@@ -8,11 +8,13 @@
 ================================================================================
  3Dプリント作品ギャラリー　一覧と詳細の画面（GAS Webアプリ用）
 ================================================================================
- - 見た目と振る舞いは docs/gallery_mock.html を正とする。サンプルデータは持たない。
+ - 見た目と振る舞いは docs/gallery_mock.html をもとにしている。ただし第2ラウンド（docs/work-plan.md の R2・R4）で、
+   リストの行の並び（タグ・状態・日付を右寄せ）と、一覧のタグを押せないただの文字にした点はモックと違う。今はこのファイルが正。
+   サンプルデータは持たない。
  - 「作品を追加する」パネルの中身は guide.html（下の guide-template の中で include する）。
  - 外部ライブラリなし。フォントだけ Google Fonts（Zen Kaku Gothic New）。
- - GASとの境目は loadData / syncNow / resyncItem の3関数だけ。
-   google.script.run.getGalleryData() / syncNow() / resyncItem(folderId) を呼ぶ。
+ - GASとの境目は loadData / syncNow / resyncItem と、画像の取り直し（flushThumbs）だけ。
+   google.script.run.getGalleryData() / syncNow() / resyncItem(folderId) / getThumbnails(ids, large) を呼ぶ。
 
  サーバーとの約束
    getGalleryData() の戻り値
@@ -25,6 +27,8 @@
    }
    syncNow() / resyncItem(folderId) の戻り値は { done: boolean, message: string }。
    message はそのまま画面に出す。done=false は時間切れで途中まで、の意味。
+   getThumbnails(ids /* ファイルID。1回10件まで */, large /* 詳細の大きな画像なら true */) の戻り値は
+   { ID: data URL または null }。Drive の URL で読めなかった画像（スマホ）だけ頼む。
    失敗は Error（message は日本語）。withFailureHandler で画面に出す。
 ================================================================================
 -->
@@ -94,6 +98,9 @@ a{color:var(--accent)}a:hover{color:#174A84}
 
 /* 中央：一覧 */
 .main{flex:1 1 0;min-width:0;padding:16px 20px 32px;display:flex;flex-direction:column;gap:14px}
+/* 中身を縮めない。.list は overflow:hidden（角丸で切るため）なので min-height が 0 扱いになり、
+   縮めると .main の高さに押し込まれて下が切れ、スクロールもできなくなる */
+.main > *{flex-shrink:0}
 .issues{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;padding:10px 14px;background:var(--warn-bg);border:1px solid var(--warn-line);border-radius:10px;font-size:14px}
 .issues strong{font-weight:700}
 .issues .issue-text{color:var(--ink-3)}
@@ -115,41 +122,54 @@ a{color:var(--accent)}a:hover{color:#174A84}
 .st-ret{background:var(--st-ret-bg);color:var(--st-ret-fg);border-color:var(--st-ret-bd)}
 .st-other{background:var(--st-oth-bg);color:var(--st-oth-fg);border-color:var(--st-oth-bd);border-style:dashed}
 
+/* 一覧（カード・リスト）のタグはただの文字。押せず、ホバーでも変わらない（行やカード全体が1つのボタン） */
+.tag{font-size:12.5px;line-height:1.4;padding:3px 9px;border-radius:12px;background:#EDF1F4;color:var(--ink-2);white-space:nowrap}
+.tag.on{background:var(--accent);color:#fff}   /* いま絞り込みに使っているタグ */
+/* 詳細ペインのタグは、押すとそのタグで絞り込むボタン */
 .tag-btn{min-height:40px;padding:0 3px;background:none;border:none;cursor:pointer;display:inline-flex;align-items:center}
-.tag-btn span{font-size:12.5px;padding:3px 9px;border-radius:12px;background:#EDF1F4;color:var(--ink-2)}
-.tag-btn:hover span{background:#E1E7EC}
-.tag-btn[aria-pressed="true"] span{background:var(--accent);color:#fff}
+.tag-btn span{font-size:13.5px;padding:3px 10px;border-radius:14px;background:#EDF1F4;color:var(--ink-2);border:1px solid transparent}
+.tag-btn:hover span{background:#D3E2F5;color:var(--accent-ink);border-color:#7FA3D3}
+.tag-btn[aria-pressed="true"] span{background:var(--accent);color:#fff;border-color:var(--accent)}
+.tag-btn[aria-pressed="true"]:hover span{background:var(--accent-ink);border-color:var(--accent-ink)}
 
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(208px,1fr));gap:14px}
-.card{display:flex;flex-direction:column;background:#fff;border-radius:12px;border:1px solid var(--line);overflow:hidden}
-.card.selected{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
-.card-main{display:flex;flex-direction:column;gap:8px;padding:10px 10px 4px;text-align:left;background:transparent;border:none;cursor:pointer}
+/* カードは全体（タグも含む）が1つのボタン。選択中は aria-current（クラス名を変えないのは、描き直しでフォーカスを戻すため） */
+.card{display:flex;flex-direction:column;gap:8px;padding:10px 10px 12px;font-size:inherit;text-align:left;background:#fff;border-radius:12px;border:1px solid var(--line);cursor:pointer}
+.card:hover{border-color:var(--chip-line)}
+.card[aria-current="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
 .thumb{position:relative;display:flex;height:132px;align-items:center;justify-content:center;background:var(--thumb);border-radius:8px;overflow:hidden}
-.card-main:hover .thumb{background:var(--thumb-hover)}
+.card:hover .thumb{background:var(--thumb-hover)}
 .thumb img{width:100%;height:100%;object-fit:cover}
 .thumb svg{width:150px;height:112px}
 .thumb .status-badge{position:absolute;top:8px;left:8px}
 .card-name{font-size:15.5px;font-weight:700;line-height:1.35}
 .card-purpose{font-size:13px;line-height:1.55;color:var(--ink-3);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.card-tags{display:flex;flex-wrap:wrap;column-gap:4px;padding:0 6px}
-.card-date{padding:0 10px 12px;font-size:12.5px;color:var(--faint)}
+.card-tags{display:flex;flex-wrap:wrap;gap:4px}
+.card-date{margin-top:auto;font-size:12.5px;color:var(--faint)}
 
-.list{display:flex;flex-direction:column;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
-.row{display:flex;flex-wrap:wrap;align-items:center;border-top:1px solid var(--line-2)}
+/* リスト：行は全体が1つのボタン。並びは [画像][名前・用途（伸びる）][タグ（右寄せ・折り返し）][状態][日付]。
+   状態と日付は幅を決めてあるので、タグの数によらず右端の列がそろう。
+   幅の判定は画面ではなく一覧の枠の幅で行う（絞り込み欄の開閉で一覧の幅が変わるため） */
+.list{display:flex;flex-direction:column;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;container-type:inline-size}
+.row{width:100%;display:grid;grid-template-columns:64px minmax(0,1fr) auto 56px 86px;grid-template-areas:"th text tags st date";align-items:center;column-gap:14px;padding:8px 12px;font-size:inherit;text-align:left;background:transparent;border:none;border-top:1px solid var(--line-2);cursor:pointer}
 .row:first-child{border-top:none}
-.row.selected{background:var(--accent-row);box-shadow:inset 3px 0 0 var(--accent)}
-.row-main{flex:1 1 320px;min-width:0;display:flex;align-items:center;gap:14px;padding:8px 12px;text-align:left;background:transparent;border:none;cursor:pointer}
-.row:not(.selected) .row-main:hover{background:var(--soft)}
-.row-thumb{flex:none;width:64px;height:48px;border-radius:6px;background:var(--thumb);overflow:hidden;display:flex;align-items:center;justify-content:center}
+.row:hover{background:var(--soft)}
+.row[aria-current="true"]{background:var(--accent-row);box-shadow:inset 3px 0 0 var(--accent)}
+.row-thumb{grid-area:th;width:64px;height:48px;border-radius:6px;background:var(--thumb);overflow:hidden;display:flex;align-items:center;justify-content:center}
 .row-thumb img{width:100%;height:100%;object-fit:cover}
 .row-thumb svg{width:64px;height:48px}
-.row-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-.row-name{font-size:15px;font-weight:700}
+.row-text{grid-area:text;min-width:0;display:flex;flex-direction:column;gap:2px}
+.row-name{font-size:15px;font-weight:700;overflow-wrap:anywhere}
 .row-purpose{font-size:13px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.row .status-badge{flex:none;width:56px;text-align:center;padding:2px 0}
-.row-date{flex:none;width:86px;font-size:13px;color:var(--muted);text-align:right}
-.row-tags{display:flex;flex-wrap:wrap;column-gap:2px;padding-right:10px}
-.row-tags .tag-btn{min-height:44px}
+.row-tags{grid-area:tags;max-width:min(240px,30cqi);display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px}
+.row .status-badge{grid-area:st;width:56px;text-align:center;padding:2px 0}
+.row-date{grid-area:date;font-size:13px;color:var(--muted);text-align:right;white-space:nowrap}
+/* 狭いとき（スマホなど）は、タグを名前・用途の下に回し、日付を状態の下に置く */
+@container (max-width: 560px){
+  .row{grid-template-columns:64px minmax(0,1fr) auto;grid-template-areas:"th text st" "th tags date";row-gap:6px;column-gap:12px}
+  .row .status-badge{justify-self:end}
+  .row-tags{max-width:none;justify-content:flex-start}
+}
 .empty{background:#fff;border-radius:12px;padding:48px 24px;display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center}
 .empty p{margin:0;font-size:16px;font-weight:500}
 
@@ -161,9 +181,9 @@ a{color:var(--accent)}a:hover{color:#174A84}
 .detail h2{margin:0;font-size:24px;font-weight:700;line-height:1.3}
 .detail .purpose{margin:0;font-size:16px;line-height:1.65;font-weight:500}
 .detail .tags{display:flex;flex-wrap:wrap;column-gap:4px;margin-top:-8px}
-.detail .tags .tag-btn span{font-size:13.5px;padding:4px 11px;border-radius:14px}
 .hero{height:220px;display:flex;align-items:center;justify-content:center;background:var(--thumb);border-radius:10px;overflow:hidden}
 .hero img{width:100%;height:100%;object-fit:contain}
+img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる間は空けておく */
 .hero svg{width:280px;max-width:90%;height:200px}
 .photos{display:flex;flex-wrap:wrap;gap:8px;margin-top:-10px}
 .photos figure{margin:0;display:flex;flex-direction:column;gap:4px}
@@ -437,9 +457,6 @@ function restoreFocus(k) {
 }
 const keepFocus = (fn) => { const k = focusKey(); fn(); restoreFocus(k); };
 
-/* 読み込みに失敗した画像URL。次の描画からは最初からアイコンにして、ちらつきを防ぐ */
-const failedImg = new Set();
-
 const extOf = (name) => String(name).split('.').pop().toLowerCase();
 
 function fileGroups(files) {
@@ -480,16 +497,103 @@ function seedLook(seed) {
 }
 const itemSeed = (it) => it.folderId || it.folderName || it.name;
 const glyphFor = (it) => { const l = seedLook(itemSeed(it)); return glyph(l.shape, l.color); };
-/* 画像があれば <img>、無いか読み込みに失敗したらアイコン。失敗時は img を差し替える */
-const thumbHTML = (it, alt) => it.thumbUrl && !failedImg.has(it.thumbUrl)
-  ? `<img src="${esc(it.thumbUrl)}" alt="${esc(alt || '')}" loading="lazy" referrerpolicy="no-referrer" data-seed="${esc(itemSeed(it))}" onerror="imgFail(this)">`
-  : glyphFor(it);
-function imgFail(img) {
-  failedImg.add(img.getAttribute('src'));
-  if (img.dataset.kind === 'photo') { img.insertAdjacentHTML('afterend', ICON.photo); img.remove(); return; }
-  const l = seedLook(img.dataset.seed);
-  img.insertAdjacentHTML('afterend', glyph(l.shape, l.color));
+
+/* ============================================================
+   画像（Drive の URL で読めなければ、サーバーの getThumbnails で取り直す）
+   スマホのブラウザは、GAS の iframe の中から drive.google.com の画像を読むときに Cookie を
+   送らないため、画像が出ない（PC では出る）。そこで、まず今までどおり URL で読み、失敗した
+   画像だけ ID を少しの間ためて、まとめてサーバーに頼む。サーバーでも取れなければアイコン。
+   一度サーバーで取れた端末は、以降は URL を試さず最初からサーバーに頼む（ちらつきを減らす）。
+   ============================================================ */
+const failedImg = new Set();     // URL で読めなかった画像の URL
+const serverImg = new Map();     // サーバーに頼んだ結果。キーは thumbKey、値は data URL か null（取れなかった）
+const thumbAsked = new Set();    // 頼むためにためているキー
+const thumbSent = new Set();     // サーバーに送って返事を待っているキー
+let thumbTimer = null;
+let serverFirst = false;         // true なら URL を試さず最初からサーバーに頼む
+const THUMB_WAIT_MS = 50;        // 失敗した画像をためる時間
+const THUMB_BATCH = 10;          // 1回に頼む件数（Code.gs の THUMB_BATCH_MAX 以下）
+/* Drive の URL（…/thumbnail?id=<ID>&sz=…）からファイルIDを取り出す */
+const driveIdOf = (url) => { const m = /[?&]id=([\w-]+)/.exec(String(url || '')); return m ? m[1] : ''; };
+/* 縮小画像（S）と詳細の大きな画像（L）は別に頼む。ID には : が入らない */
+const thumbKey = (id, large) => id + (large ? ':L' : ':S');
+
+/* 画像が無い・取れないときの代わり。写真は写真のアイコン、それ以外は作品ごとの形 */
+function fallbackHTML(kind, seed) {
+  if (kind === 'photo') return ICON.photo;
+  const l = seedLook(seed);
+  return glyph(l.shape, l.color);
+}
+/* 画像の <img>。o: { url, alt, large, kind: 'photo' か未指定, seed }
+   サーバーの結果があればそれを使い、URL で読めないと分かっていれば最初からサーバーに頼む */
+function imgHTML(o) {
+  const id = driveIdOf(o.url);
+  const key = id ? thumbKey(id, o.large) : '';
+  const attrs = `alt="${esc(o.alt || '')}"${key ? ` data-key="${key}"` : ''}${o.kind ? ` data-kind="${o.kind}"` : ''} data-seed="${esc(o.seed || '')}" onerror="imgFail(this)"`;
+  if (key && serverImg.has(key)) {
+    const src = serverImg.get(key);
+    return src ? `<img src="${esc(src)}" ${attrs}>` : fallbackHTML(o.kind, o.seed);
+  }
+  if (key && (serverFirst || failedImg.has(o.url))) { askServer(key); return `<img ${attrs} data-wait="1">`; }
+  if (failedImg.has(o.url)) return fallbackHTML(o.kind, o.seed);
+  return `<img src="${esc(o.url)}" ${attrs} loading="lazy" referrerpolicy="no-referrer">`;
+}
+/* 作品の代表画像。large は詳細の大きな画像（サーバーに頼むとき、元のファイルを返してもらう） */
+const thumbHTML = (it, alt, large) => it.thumbUrl ? imgHTML({ url: it.thumbUrl, alt, large, seed: itemSeed(it) }) : glyphFor(it);
+function showFallback(img) {
+  img.insertAdjacentHTML('afterend', fallbackHTML(img.dataset.kind, img.dataset.seed));
   img.remove();
+}
+/* img の onerror。URL で読めなければサーバーに頼む（その間は空けておく）。サーバーでもだめならアイコン */
+function imgFail(img) {
+  const src = img.getAttribute('src');
+  if (!src) return;
+  const fromServer = src.startsWith('data:');
+  if (!fromServer) failedImg.add(src);
+  const key = img.dataset.key;
+  if (key && !fromServer) {
+    const got = serverImg.get(key);
+    if (got) { img.src = got; return; }
+    if (got === undefined) { img.removeAttribute('src'); img.dataset.wait = '1'; askServer(key); return; }
+  }
+  showFallback(img);
+}
+function askServer(key) {
+  if (thumbAsked.has(key) || thumbSent.has(key) || serverImg.has(key)) return;
+  thumbAsked.add(key);
+  if (!thumbTimer) thumbTimer = setTimeout(flushThumbs, THUMB_WAIT_MS);
+}
+/* ためた分を、大きさごとに THUMB_BATCH 件ずつサーバーに頼む */
+function flushThumbs() {
+  thumbTimer = null;
+  const keys = [...thumbAsked];
+  thumbAsked.clear();
+  keys.forEach((k) => thumbSent.add(k));
+  [false, true].forEach((large) => {
+    const ids = keys.filter((k) => k.endsWith(large ? ':L' : ':S')).map((k) => k.split(':')[0]);
+    for (let i = 0; i < ids.length; i += THUMB_BATCH) {
+      const chunk = ids.slice(i, i + THUMB_BATCH);
+      google.script.run
+        .withSuccessHandler((res) => gotThumbs(chunk, large, res || {}))
+        .withFailureHandler(() => gotThumbs(chunk, large, {}))   // 失敗は「取れなかった」と同じ扱い（何度も頼まない）
+        .getThumbnails(chunk, large);
+    }
+  });
+}
+/* サーバーの返事を記憶し、待っている画像に入れる。null・返事なしはアイコンにする */
+function gotThumbs(ids, large, res) {
+  ids.forEach((id) => {
+    const key = thumbKey(id, large);
+    const v = res[id];
+    const src = typeof v === 'string' && v.startsWith('data:image/') ? v : null;
+    thumbSent.delete(key);
+    serverImg.set(key, src);
+    if (src) serverFirst = true;
+    document.querySelectorAll(`img[data-key="${key}"][data-wait]`).forEach((img) => {
+      if (src) { img.src = src; img.removeAttribute('data-wait'); }
+      else showFallback(img);
+    });
+  });
 }
 
 const ICON = {
@@ -523,6 +627,9 @@ function activeFilters() {
   if (state.q.trim()) a.push({ key: 'q', label: '「' + state.q.trim() + '」', aria: 'キーワードを消す' });
   return a;
 }
+/* 一覧（カード・リスト）のタグ：ただの文字。絞り込みに使っているタグだけ色を付ける */
+const tagLabels = (tags) => tags.map((t) => `<span class="tag${state.tag === t ? ' on' : ''}">#${esc(t)}</span>`).join('');
+/* 詳細ペインのタグ：押すとそのタグで絞り込む（もう一度押すと解除） */
 const tagButtons = (tags) => tags.map((t) => {
   const on = state.tag === t;
   return `<button class="tag-btn" type="button" data-tag="${esc(t)}" aria-pressed="${on}" aria-label="${on ? 'タグ「' + esc(t) + '」の絞り込みを解除' : 'タグ「' + esc(t) + '」で絞り込む'}"><span>#${esc(t)}</span></button>`;
@@ -646,28 +753,24 @@ function renderMainBody() {
   } else if (state.view === 'gallery') {
     body = `<div class="grid">${list.map((it) => {
       const on = it.folderId === state.selId;
-      return `<div class="card${on ? ' selected' : ''}">
-        <button class="card-main" type="button" data-select="${esc(it.folderId)}"${on ? ' aria-current="true"' : ''}>
-          <span class="thumb">${thumbHTML(it)}<span class="status-badge st-${stClass(it.status)}">${esc(it.status)}</span></span>
-          <span class="card-name">${esc(it.name)}</span>
-          <span class="card-purpose">${esc(it.purpose)}</span>
-        </button>
-        <div class="card-tags">${tagButtons(it.tags)}</div>
+      return `<button class="card" type="button" data-select="${esc(it.folderId)}"${on ? ' aria-current="true"' : ''}>
+        <span class="thumb">${thumbHTML(it)}<span class="status-badge st-${stClass(it.status)}">${esc(it.status)}</span></span>
+        <span class="card-name">${esc(it.name)}</span>
+        <span class="card-purpose">${esc(it.purpose)}</span>
+        ${it.tags.length ? `<span class="card-tags">${tagLabels(it.tags)}</span>` : ''}
         <span class="card-date">${dateLong(it.date)}作成</span>
-      </div>`;
+      </button>`;
     }).join('')}</div>`;
   } else {
     body = `<div class="list">${list.map((it) => {
       const on = it.folderId === state.selId;
-      return `<div class="row${on ? ' selected' : ''}">
-        <button class="row-main" type="button" data-select="${esc(it.folderId)}"${on ? ' aria-current="true"' : ''}>
-          <span class="row-thumb">${thumbHTML(it)}</span>
-          <span class="row-text"><span class="row-name">${esc(it.name)}</span><span class="row-purpose">${esc(it.purpose)}</span></span>
-          <span class="status-badge st-${stClass(it.status)}">${esc(it.status)}</span>
-          <span class="row-date">${dateDot(it.date)}</span>
-        </button>
-        <div class="row-tags">${tagButtons(it.tags)}</div>
-      </div>`;
+      return `<button class="row" type="button" data-select="${esc(it.folderId)}"${on ? ' aria-current="true"' : ''}>
+        <span class="row-thumb">${thumbHTML(it)}</span>
+        <span class="row-text"><span class="row-name">${esc(it.name)}</span><span class="row-purpose">${esc(it.purpose)}</span></span>
+        <span class="row-tags">${tagLabels(it.tags)}</span>
+        <span class="status-badge st-${stClass(it.status)}">${esc(it.status)}</span>
+        <span class="row-date">${dateDot(it.date)}</span>
+      </button>`;
     }).join('')}</div>`;
   }
   main.innerHTML = issuesHTML + toolbar + body;
@@ -683,7 +786,7 @@ function renderDetailBody() {
   }
   // 写真：クリックで Drive のファイルを新しいタブで開く（photos には url しか無いので、files から同名を探す）
   const photos = (it.photos || []).map((p) => {
-    const inner = p.url && !failedImg.has(p.url) ? `<img src="${esc(p.url)}" alt="${esc(p.name)}" loading="lazy" referrerpolicy="no-referrer" data-kind="photo" onerror="imgFail(this)">` : ICON.photo;
+    const inner = p.url ? imgHTML({ url: p.url, alt: p.name, kind: 'photo' }) : ICON.photo;
     const f = (it.files || []).find((x) => x.name === p.name);
     const box = f && f.url ? `<a class="ph" href="${esc(f.url)}" target="_blank" rel="noopener" aria-label="${esc(p.name)}をDriveで開く">${inner}</a>` : `<div class="ph">${inner}</div>`;
     return `<figure>${box}<figcaption>${esc(p.name)}</figcaption></figure>`;
@@ -699,7 +802,7 @@ function renderDetailBody() {
       <h2>${esc(it.name)}</h2>
       <p class="purpose" style="margin-top:-12px">${esc(it.purpose)}</p>
       <div class="tags">${tagButtons(it.tags)}</div>
-      <div class="hero">${thumbHTML(it, it.name)}</div>
+      <div class="hero">${thumbHTML(it, it.name, true)}</div>
       ${photos ? `<div class="photos">${photos}</div>` : ''}
       ${it.note && it.note.length ? `<section class="d-section"><h3>メモ</h3><ul class="note">${it.note.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></section>` : ''}
       <section class="d-section" style="gap:10px"><h3>ファイル</h3>${groups || '<p class="small">ファイルはありません。</p>'}</section>

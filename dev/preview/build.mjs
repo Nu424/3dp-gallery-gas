@@ -3,10 +3,20 @@
 // google.script.run の偽物（サンプルデータを返す）を注入して dev/preview/out/index.html を出す。
 // 使い方：node dev/preview/build.mjs
 // 場面の切り替え：out/index.html?scenario=empty | error | partial | syncfail | readonly（canSync:false）| status（未知の状態あり）
+//                 | many（作品30件）| thumbfail（getThumbnails が失敗する）
+// プレビュー専用の指定（ヘッドレス Chrome の --screenshot で、操作した後の状態を撮るため）：
+//   &view=list|gallery    読み込み後に表示方法を切り替える
+//   &select=<folderId>    読み込み後にその作品を選ぶ
+//   &click=<CSSセレクタ>  読み込み後にその要素を押す（例 .card .tag で、カードの中のタグを押す）
+//   &scroll=end           一覧の最後の作品が見えるところまでスクロールする（PC は一覧の枠、スマホ幅はページ）
+//   &scroll=bottom        一覧の枠とページを、どちらも一番下までスクロールする
+// 撮るときは --virtual-time-budget=5000 を付ける（読み込みの待ち時間を進めるため）。
+// getThumbnails の呼び出しは <html data-thumb-calls="[...]"> に残す（--dump-dom で確かめる用）。
+// あわせて out/frame-390.html（390px 幅の iframe に入れて撮るための入れ物）も出す。
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SAMPLE_DATA } from './sample-data.js';
+import { SAMPLE_DATA, MORE_ITEMS } from './sample-data.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const gasDir = join(here, '..', '..', 'tools', 'gas');
@@ -25,8 +35,40 @@ const fake = `<script>
 /* ===== プレビュー用の google.script.run（本番では GAS が提供する） ===== */
 (function () {
   const DATA = ${JSON.stringify(SAMPLE_DATA).replace(/</g, '\\u003c')};
-  const scenario = new URLSearchParams(location.search).get('scenario') || '';
+  const MORE = ${JSON.stringify(MORE_ITEMS).replace(/</g, '\\u003c')};
+  const params = new URLSearchParams(location.search);
+  const scenario = params.get('scenario') || '';
   const wait = (ms, fn) => setTimeout(fn, ms);
+  if (scenario === 'many') DATA.items = DATA.items.concat(MORE);
+  // サーバーで取り直した画像の代わり（どの画像か分かるように、IDの末尾と大きさを描く）
+  const serverThumb = (id, large) => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 180"><rect width="240" height="180" fill="#FBE9C8"/>' +
+    '<rect x="10" y="10" width="220" height="160" rx="10" fill="none" stroke="#C98A1B" stroke-width="4" stroke-dasharray="10 6"/>' +
+    '<text x="120" y="80" text-anchor="middle" font-size="26" font-family="sans-serif" fill="#7A5300">SERVER ' + (large ? 'L' : 'S') + '</text>' +
+    '<text x="120" y="118" text-anchor="middle" font-size="16" font-family="sans-serif" fill="#7A5300">' + id.slice(-12) + '</text></svg>');
+  const thumbCalls = [];
+  // 読み込み後の操作（プレビュー専用）。一覧を描いた後に1回だけ行う
+  let applied = false;
+  function applyPreviewParams() {
+    if (applied) return; applied = true;
+    const click = (sel) => { const el = document.querySelector(sel); if (el) el.click(); };
+    if (params.get('view')) click('[data-view="' + params.get('view') + '"]');
+    if (params.get('select')) click('[data-select="' + params.get('select') + '"]');
+    if (params.get('click')) click(params.get('click'));   // 任意の要素を押す（CSS セレクタ）
+    const scroll = params.get('scroll');
+    if (!scroll) return;
+    wait(50, () => {
+      const main = document.getElementById('main');
+      if (scroll === 'end') {
+        const box = document.querySelector('.list, .grid');
+        if (box && box.lastElementChild) box.lastElementChild.scrollIntoView({ block: 'end' });
+      } else {
+        main.scrollTop = main.scrollHeight;
+        document.scrollingElement.scrollTop = document.scrollingElement.scrollHeight;
+      }
+      document.documentElement.dataset.scroll = JSON.stringify({ main: main.scrollTop, mainMax: main.scrollHeight - main.clientHeight, page: document.scrollingElement.scrollTop, pageMax: document.scrollingElement.scrollHeight - document.scrollingElement.clientHeight });
+    });
+  }
   if (scenario === 'readonly') DATA.canSync = false;
   if (scenario === 'status') { DATA.statuses = ['使用中', '参考', '引退', '検討中']; DATA.items[1].status = '検討中'; }
   const impl = {
@@ -35,6 +77,17 @@ const fake = `<script>
         if (scenario === 'error') return fail(new Error('スプレッドシートを開けませんでした（プレビュー用の疑似エラー）'));
         if (scenario === 'empty') return ok({ syncedAt: null, sheetUrl: DATA.sheetUrl, items: [], issues: [] });
         ok(JSON.parse(JSON.stringify(DATA)));
+        wait(0, applyPreviewParams);
+      });
+    },
+    getThumbnails(ok, fail, ids, large) {
+      thumbCalls.push({ ids: ids, large: !!large });
+      document.documentElement.dataset.thumbCalls = JSON.stringify(thumbCalls);
+      wait(300, () => {
+        if (scenario === 'thumbfail') return fail(new Error('画像を読み込めませんでした（プレビュー用の疑似エラー）'));
+        const out = {};
+        ids.slice(0, 10).forEach((id) => { out[id] = /nothumb/.test(id) ? null : serverThumb(id, large); });
+        ok(out);
       });
     },
     syncNow(ok, fail) {
@@ -77,3 +130,20 @@ const outDir = join(here, 'out');
 mkdirSync(outDir, { recursive: true });
 writeFileSync(join(outDir, 'index.html'), out, 'utf8');
 console.log('出力しました：' + join(outDir, 'index.html') + '（' + out.length + ' 文字）');
+
+// 390px 幅で撮るための入れ物。ヘッドレス Chrome はウィンドウをこの幅まで狭められないので iframe に入れる。
+// 使い方：out/frame-390.html?src=<index.html に付けるクエリ>（例 ?src=scenario%3Dmany%26view%3Dlist）
+//         ウィンドウは 420x900 程度で撮る。iframe の高さは &h= で変えられる（既定 844）
+const frame = `<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>390px プレビュー</title>
+<style>body{margin:0;padding:8px;background:#555}iframe{display:block;width:390px;border:0;background:#fff}</style></head>
+<body><iframe id="f" title="プレビュー"></iframe>
+<script>
+const p = new URLSearchParams(location.search);
+const f = document.getElementById('f');
+f.style.height = (p.get('h') || 844) + 'px';
+f.src = 'index.html?' + (p.get('src') || '');
+</script></body></html>
+`;
+writeFileSync(join(outDir, 'frame-390.html'), frame, 'utf8');
+console.log('出力しました：' + join(outDir, 'frame-390.html'));
