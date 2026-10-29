@@ -43,6 +43,50 @@ test('getThumbnails：large は 2MB 以下なら元のファイル、超えた�
   assert.deepEqual(env.drive.byteReads, [a['thumb.jpg']]);
 });
 
+test('getThumbnails：large で元のファイルを返すのは png・jpeg・gif・webp だけ。HEIC・TIFF などは縮小画像', () => {
+  const env = setupEnv();
+  const a = addItem(env, '20250101_a', { 'photo_a.gif': { mimeType: 'image/gif' }, 'photo_b.webp': { mimeType: 'image/webp' } });
+  // HEIC・TIFF は、代表画像（thumb.* が無いときの最初の画像。MIME で画像と判定）として一覧に出る
+  const c = addItem(env, '20250102_c', { 'scan.heic': { mimeType: 'image/heic' } });
+  const d = addItem(env, '20250103_d', { 'scan.tif': { mimeType: 'image/tiff' } });
+  env.ctx.syncNow();
+  const r1 = call(env, [a['photo_a.gif'], a['photo_b.webp']], true);
+  assert.ok(r1[a['photo_a.gif']].startsWith('data:image/gif;base64,'));
+  assert.ok(r1[a['photo_b.webp']].startsWith('data:image/webp;base64,'));
+  const r2 = call(env, [c['scan.heic'], d['scan.tif']], true);
+  assert.deepEqual(r2, { [c['scan.heic']]: thumbUrl('scan.heic'), [d['scan.tif']]: thumbUrl('scan.tif') });
+  assert.deepEqual(env.drive.byteReads, [a['photo_a.gif'], a['photo_b.webp']]); // HEIC・TIFF の元は読まない
+  assert.equal(env.ctx.isBrowserImageMime('IMAGE/JPEG; charset=binary'), true);
+  assert.equal(env.ctx.isBrowserImageMime('image/svg+xml'), false);
+  assert.equal(env.ctx.isBrowserImageMime(null), false);
+});
+
+test('getThumbnails：large は1回2件まで（3件目以降は戻り値に入らない）', () => {
+  const env = setupEnv();
+  const a = addItem(env, '20250101_a', { 'photo_1.png': {}, 'photo_2.png': {}, 'photo_3.png': {} });
+  env.ctx.syncNow();
+  const ids = [a['photo_1.png'], a['photo_2.png'], a['photo_3.png']];
+  assert.deepEqual(Object.keys(call(env, ids, true)), ids.slice(0, 2));
+  assert.deepEqual(env.drive.byteReads, ids.slice(0, 2));
+  assert.deepEqual(Object.keys(call(env, ids)), ids); // 縮小画像は10件まで
+});
+
+test('getThumbnails：一覧から外れた ID は、キャッシュにあっても null（Drive もキャッシュも見ない）', () => {
+  const env = setupEnv();
+  const a = addItem(env, '20250101_a', { 'thumb.png': {}, 'photo_old.png': {} });
+  env.ctx.syncNow();
+  const first = call(env, [a['thumb.png'], a['photo_old.png']]);
+  assert.ok(first[a['photo_old.png']]);
+  assert.equal(env.cache.state.store.has('thumb:S:' + a['photo_old.png']), true);
+
+  env.drive.trash(a['photo_old.png']); // 写真を消して同期 → 一覧から外れる
+  env.ctx.syncNow();
+  const reads = env.drive.thumbReads.length;
+  const r = call(env, [a['thumb.png'], a['photo_old.png']]);
+  assert.deepEqual(r, { [a['thumb.png']]: first[a['thumb.png']], [a['photo_old.png']]: null });
+  assert.equal(env.drive.thumbReads.length, reads); // thumb.png はキャッシュから。外れた写真は読まない
+});
+
 test('getThumbnails：取れない件だけ null（縮小画像なし・読み込み失敗・一覧に無いID・要対応の作品）', () => {
   const env = setupEnv();
   const a = addItem(env, '20250101_a', { 'thumb.png': {}, 'photo_none.png': { thumbnail: null }, 'photo_err.png': {}, 'base.stl': {} });

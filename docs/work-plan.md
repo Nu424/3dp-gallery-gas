@@ -127,7 +127,8 @@ Git はローカルで `git init` して段階的にコミットする（push �
 - [x] 6 独立レビュー（`docs/review-2026-10-30.md`。must 2 / should 12 / could 多数）
 - [x] 7 対処と HANDOFF.md。M2 対策で `appsscript.json` を追加（4ファイル目。採否はユーザー判断）。実機確認用のテスト作品は `dev/sample-items/make_samples.py`
 - [x] 8 ユーザーによる実機確認（HANDOFF.md の C1〜C9、F1〜F6）。結果と対応は下の「第2ラウンド」
-- [ ] 9 第2ラウンドの修正（下記 R1〜R10）
+- [x] 9 第2ラウンドの修正（R1〜R10）と独立レビューの対処（`docs/review-2026-10-30-r2.md`。must 0 / should 7 すべて対処）。テスト GAS 94件・Fusion 138件
+- [ ] 10 ユーザーによる実機確認（HANDOFF.md §2b の G1〜G4、F7〜F11）
 
 ## 第2ラウンド（2026-10-30、実機確認の結果を受けて）
 

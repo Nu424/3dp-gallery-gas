@@ -13,7 +13,7 @@
    サンプルデータは持たない。
  - 「作品を追加する」パネルの中身は guide.html（下の guide-template の中で include する）。
  - 外部ライブラリなし。フォントだけ Google Fonts（Zen Kaku Gothic New）。
- - GASとの境目は loadData / syncNow / resyncItem と、画像の取り直し（flushThumbs）だけ。
+ - GASとの境目は loadData / syncNow / resyncItem と、画像の取り直し（pumpThumbs）だけ。
    google.script.run.getGalleryData() / syncNow() / resyncItem(folderId) / getThumbnails(ids, large) を呼ぶ。
 
  サーバーとの約束
@@ -27,7 +27,7 @@
    }
    syncNow() / resyncItem(folderId) の戻り値は { done: boolean, message: string }。
    message はそのまま画面に出す。done=false は時間切れで途中まで、の意味。
-   getThumbnails(ids /* ファイルID。1回10件まで */, large /* 詳細の大きな画像なら true */) の戻り値は
+   getThumbnails(ids /* ファイルID。1回10件まで（large なら2件まで） */, large /* 詳細の大きな画像なら true */) の戻り値は
    { ID: data URL または null }。Drive の URL で読めなかった画像（スマホ）だけ頼む。
    失敗は Error（message は日本語）。withFailureHandler で画面に出す。
 ================================================================================
@@ -153,6 +153,8 @@ a{color:var(--accent)}a:hover{color:#174A84}
 .list{display:flex;flex-direction:column;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;container-type:inline-size}
 .row{width:100%;display:grid;grid-template-columns:64px minmax(0,1fr) auto 56px 86px;grid-template-areas:"th text tags st date";align-items:center;column-gap:14px;padding:8px 12px;font-size:inherit;text-align:left;background:transparent;border:none;border-top:1px solid var(--line-2);cursor:pointer}
 .row:first-child{border-top:none}
+/* .list は overflow:hidden なので、フォーカス枠は内側に描く（外側だと切れる） */
+.row:focus-visible{outline-offset:-3px}
 .row:hover{background:var(--soft)}
 .row[aria-current="true"]{background:var(--accent-row);box-shadow:inset 3px 0 0 var(--accent)}
 .row-thumb{grid-area:th;width:64px;height:48px;border-radius:6px;background:var(--thumb);overflow:hidden;display:flex;align-items:center;justify-content:center}
@@ -502,17 +504,32 @@ const glyphFor = (it) => { const l = seedLook(itemSeed(it)); return glyph(l.shap
    画像（Drive の URL で読めなければ、サーバーの getThumbnails で取り直す）
    スマホのブラウザは、GAS の iframe の中から drive.google.com の画像を読むときに Cookie を
    送らないため、画像が出ない（PC では出る）。そこで、まず今までどおり URL で読み、失敗した
-   画像だけ ID を少しの間ためて、まとめてサーバーに頼む。サーバーでも取れなければアイコン。
+   画像だけサーバーに頼む。サーバーでも取れなければアイコン。
    一度サーバーで取れた端末は、以降は URL を試さず最初からサーバーに頼む（ちらつきを減らす）。
+   決まり：
+   - 頼むのは、画面に見えている画像とその少し先（THUMB_MARGIN）だけ。IntersectionObserver で見張る
+   - getThumbnails の同時実行は THUMB_PARALLEL 本まで。残りは順番待ち（送る前に画面から離れたら取り消す）
+   - 取り込み済み・順番待ち・返事待ちのキーは頼み直さない（描き直しのたびに全件を頼まない）
+   - 返ってきた data URL は Blob にして blob: の URL で表示する（1キーにつき1回だけ作る）。
+     blob: の画像が表示できなければ（CSP など）、その端末では以降 data URL で表示する（useDataUrl）。
+     そのため data URL の文字列も持っておく（メモリより確実さを優先）
+   - 詳細の大きな画像（L）が表示できなければ（HEIC など）、一度だけ縮小画像（S）で頼み直す。
+     S も表示できなければアイコン（data URL でも表示できなかったときだけ、この流れに進む）
    ============================================================ */
 const failedImg = new Set();     // URL で読めなかった画像の URL
-const serverImg = new Map();     // サーバーに頼んだ結果。キーは thumbKey、値は data URL か null（取れなかった）
-const thumbAsked = new Set();    // 頼むためにためているキー
+const serverImg = new Map();     // サーバーに頼んだ結果。キーは thumbKey、値は { blob, data }（blob: の URL と data URL）か null（取れなかった）
+let useDataUrl = false;          // true なら blob: ではなく data URL で表示する（blob: が表示できなかった端末）
+const thumbQueue = new Set();    // 頼む順番待ちのキー（画面に近い画像のもの）
 const thumbSent = new Set();     // サーバーに送って返事を待っているキー
+const brokenL = new Set();       // L を表示できなかったファイルID（以降は S を使う）
 let thumbTimer = null;
+let thumbRunning = 0;            // 実行中の getThumbnails の数
 let serverFirst = false;         // true なら URL を試さず最初からサーバーに頼む
-const THUMB_WAIT_MS = 50;        // 失敗した画像をためる時間
-const THUMB_BATCH = 10;          // 1回に頼む件数（Code.gs の THUMB_BATCH_MAX 以下）
+const THUMB_WAIT_MS = 50;        // 頼む画像をためる時間
+const THUMB_BATCH = 10;          // 1回に頼む件数（S。Code.gs の THUMB_BATCH_MAX 以下）
+const THUMB_BATCH_L = 2;         // 1回に頼む件数（L。Code.gs の THUMB_LARGE_BATCH_MAX 以下）
+const THUMB_PARALLEL = 2;        // getThumbnails の同時実行数
+const THUMB_MARGIN = '200px';    // 画面のこれだけ先までは、見える前に頼んでおく
 /* Drive の URL（…/thumbnail?id=<ID>&sz=…）からファイルIDを取り出す */
 const driveIdOf = (url) => { const m = /[?&]id=([\w-]+)/.exec(String(url || '')); return m ? m[1] : ''; };
 /* 縮小画像（S）と詳細の大きな画像（L）は別に頼む。ID には : が入らない */
@@ -525,74 +542,169 @@ function fallbackHTML(kind, seed) {
   return glyph(l.shape, l.color);
 }
 /* 画像の <img>。o: { url, alt, large, kind: 'photo' か未指定, seed }
-   サーバーの結果があればそれを使い、URL で読めないと分かっていれば最初からサーバーに頼む */
+   サーバーの結果があればそれを使う。URL で読めないと分かっていれば data-wait を付けて描き、
+   画面に近づいたら（watchThumbs の見張りが）サーバーに頼む */
 function imgHTML(o) {
   const id = driveIdOf(o.url);
-  const key = id ? thumbKey(id, o.large) : '';
+  const key = id ? thumbKey(id, !!o.large && !brokenL.has(id)) : '';
   const attrs = `alt="${esc(o.alt || '')}"${key ? ` data-key="${key}"` : ''}${o.kind ? ` data-kind="${o.kind}"` : ''} data-seed="${esc(o.seed || '')}" onerror="imgFail(this)"`;
   if (key && serverImg.has(key)) {
-    const src = serverImg.get(key);
-    return src ? `<img src="${esc(src)}" ${attrs}>` : fallbackHTML(o.kind, o.seed);
+    const got = serverImg.get(key);
+    return got ? `<img src="${esc(srcOf(got))}" ${attrs}>` : fallbackHTML(o.kind, o.seed);
   }
-  if (key && (serverFirst || failedImg.has(o.url))) { askServer(key); return `<img ${attrs} data-wait="1">`; }
+  if (key && (serverFirst || failedImg.has(o.url))) return `<img ${attrs} data-wait="1">`;
   if (failedImg.has(o.url)) return fallbackHTML(o.kind, o.seed);
   return `<img src="${esc(o.url)}" ${attrs} loading="lazy" referrerpolicy="no-referrer">`;
 }
+/* サーバーの結果の、表示に使う URL（blob: が使えない端末・作れなかったときは data URL） */
+const srcOf = (got) => (useDataUrl || !got.blob ? got.data : got.blob);
 /* 作品の代表画像。large は詳細の大きな画像（サーバーに頼むとき、元のファイルを返してもらう） */
 const thumbHTML = (it, alt, large) => it.thumbUrl ? imgHTML({ url: it.thumbUrl, alt, large, seed: itemSeed(it) }) : glyphFor(it);
 function showFallback(img) {
+  unwatchImg(img);
   img.insertAdjacentHTML('afterend', fallbackHTML(img.dataset.kind, img.dataset.seed));
   img.remove();
 }
-/* img の onerror。URL で読めなければサーバーに頼む（その間は空けておく）。サーバーでもだめならアイコン */
+/* <img> にキーの結果を入れる。null ならアイコン。まだ無ければ待つ（画面に近づいたら頼む） */
+function fillImg(img, key) {
+  img.dataset.key = key;
+  const got = serverImg.get(key);
+  if (got) { img.removeAttribute('data-wait'); unwatchImg(img); img.src = srcOf(got); return; }
+  if (got === null) { showFallback(img); return; }
+  img.removeAttribute('src');
+  img.dataset.wait = '1';
+  watchThumbs();
+}
+/* img の onerror。
+   - Drive の URL で読めない → サーバーに頼む（その間は空けておく）
+   - blob: が表示できない（CSP など）→ 以降は data URL で表示する。表示中のほかの blob: の画像も替える
+   - data URL でも L が表示できない（HEIC など）→ 一度だけ S で頼み直す
+   - data URL でも S が表示できない → アイコン（以降もアイコン。頼み直さない） */
 function imgFail(img) {
   const src = img.getAttribute('src');
   if (!src) return;
-  const fromServer = src.startsWith('data:');
-  if (!fromServer) failedImg.add(src);
   const key = img.dataset.key;
-  if (key && !fromServer) {
-    const got = serverImg.get(key);
-    if (got) { img.src = got; return; }
-    if (got === undefined) { img.removeAttribute('src'); img.dataset.wait = '1'; askServer(key); return; }
+  const fromServer = /^(blob|data):/.test(src);
+  if (!fromServer) failedImg.add(src);
+  if (!key) { showFallback(img); return; }
+  if (!fromServer) { fillImg(img, key); return; }
+  if (src.startsWith('blob:')) {   // data URL に替えるのは各画像1回だけ（替えた後の src は data:）
+    useDataUrl = true;
+    document.querySelectorAll('img[data-key][src^="blob:"]').forEach((x) => {
+      const got = serverImg.get(x.dataset.key);
+      if (got) x.src = got.data;
+    });
+    if (img.getAttribute('src') === src) showFallback(img);   // 念のため（結果が見つからない）
+    return;
   }
+  const id = key.split(':')[0];
+  if (key.endsWith(':L') && !brokenL.has(id)) {
+    brokenL.add(id);
+    fillImg(img, thumbKey(id, false));
+    return;
+  }
+  const got = serverImg.get(key);
+  if (got && got.data === src) { if (got.blob) URL.revokeObjectURL(got.blob); serverImg.set(key, null); }
   showFallback(img);
 }
-function askServer(key) {
-  if (thumbAsked.has(key) || thumbSent.has(key) || serverImg.has(key)) return;
-  thumbAsked.add(key);
-  if (!thumbTimer) thumbTimer = setTimeout(flushThumbs, THUMB_WAIT_MS);
+
+/* 画面に近いかの見張り。スクロールする枠（PC は各ペイン、スマホ幅はページ）ごとに1つ。
+   rootMargin は見張りの枠にしか効かないので、枠をペインにしておく */
+const thumbIO = new Map();       // スクロールの枠（null は画面）→ IntersectionObserver
+const watchedImg = new Set();    // 見張っている <img>
+const nearImg = new Set();       // 画面に近い <img>
+function scrollRootOf(el) {
+  const pane = el.closest('.pane');
+  if (!pane) return null;
+  const oy = getComputedStyle(pane).overflowY;
+  return oy === 'auto' || oy === 'scroll' ? pane : null;
 }
-/* ためた分を、大きさごとに THUMB_BATCH 件ずつサーバーに頼む */
-function flushThumbs() {
-  thumbTimer = null;
-  const keys = [...thumbAsked];
-  thumbAsked.clear();
-  keys.forEach((k) => thumbSent.add(k));
-  [false, true].forEach((large) => {
-    const ids = keys.filter((k) => k.endsWith(large ? ':L' : ':S')).map((k) => k.split(':')[0]);
-    for (let i = 0; i < ids.length; i += THUMB_BATCH) {
-      const chunk = ids.slice(i, i + THUMB_BATCH);
-      google.script.run
-        .withSuccessHandler((res) => gotThumbs(chunk, large, res || {}))
-        .withFailureHandler(() => gotThumbs(chunk, large, {}))   // 失敗は「取れなかった」と同じ扱い（何度も頼まない）
-        .getThumbnails(chunk, large);
-    }
+function observerFor(root) {
+  if (!thumbIO.has(root)) thumbIO.set(root, new IntersectionObserver(onThumbSeen, { root, rootMargin: THUMB_MARGIN }));
+  return thumbIO.get(root);
+}
+function unwatchImg(img) {
+  if (!watchedImg.delete(img)) return;
+  nearImg.delete(img);
+  thumbIO.forEach((io) => io.unobserve(img));
+}
+/* 描き直しの後に呼ぶ。新しく描いた「待っている画像」だけを見張りに加え、消えた要素は外す */
+function watchThumbs() {
+  watchedImg.forEach((img) => { if (!img.isConnected) unwatchImg(img); });
+  const waiting = document.querySelectorAll('img[data-wait]');
+  if (!('IntersectionObserver' in window)) { waiting.forEach((img) => askServer(img.dataset.key)); return; }
+  waiting.forEach((img) => {
+    if (watchedImg.has(img)) return;
+    watchedImg.add(img);
+    observerFor(scrollRootOf(img)).observe(img);
   });
+}
+function onThumbSeen(entries) {
+  entries.forEach((e) => {
+    const img = e.target;
+    if (!img.isConnected || !img.dataset.wait) { unwatchImg(img); return; }
+    if (e.isIntersecting) { nearImg.add(img); askServer(img.dataset.key); return; }
+    nearImg.delete(img);
+    // 送る前に画面から離れたら、順番待ちから外す（同じキーの画像が他で見えていれば残す）
+    const key = img.dataset.key;
+    if (thumbQueue.has(key) && ![...nearImg].some((x) => x.dataset.key === key)) thumbQueue.delete(key);
+  });
+}
+/* スマホ幅との切り替えでスクロールの枠が変わるので、見張りをやり直す */
+function rewatchThumbs() {
+  thumbIO.forEach((io) => io.disconnect());
+  thumbIO.clear(); watchedImg.clear(); nearImg.clear();
+  watchThumbs();
+}
+const narrowMq = window.matchMedia('(max-width: 960px)');
+if (narrowMq.addEventListener) narrowMq.addEventListener('change', rewatchThumbs); else narrowMq.addListener(rewatchThumbs); // 古い Safari
+
+function askServer(key) {
+  if (!key || thumbQueue.has(key) || thumbSent.has(key) || serverImg.has(key)) return;
+  thumbQueue.add(key);
+  if (!thumbTimer) thumbTimer = setTimeout(() => { thumbTimer = null; pumpThumbs(); }, THUMB_WAIT_MS);
+}
+/* 順番待ちの先頭と同じ大きさのものを THUMB_BATCH 件（L は THUMB_BATCH_L 件）ずつ、
+   同時に THUMB_PARALLEL 本までサーバーに頼む。返事が来たら続きを送る */
+function pumpThumbs() {
+  while (thumbRunning < THUMB_PARALLEL && thumbQueue.size) {
+    const large = thumbQueue.values().next().value.endsWith(':L');
+    const keys = [...thumbQueue].filter((k) => k.endsWith(large ? ':L' : ':S')).slice(0, large ? THUMB_BATCH_L : THUMB_BATCH);
+    keys.forEach((k) => { thumbQueue.delete(k); thumbSent.add(k); });
+    const ids = keys.map((k) => k.split(':')[0]);
+    thumbRunning++;
+    const done = (res) => { thumbRunning--; gotThumbs(ids, large, res || {}); pumpThumbs(); };
+    google.script.run
+      .withSuccessHandler(done)
+      .withFailureHandler(() => done({}))   // 失敗は「取れなかった」と同じ扱い（何度も頼まない）
+      .getThumbnails(ids, large);
+  }
+}
+/* サーバーの返事が画像の data URL（base64）か */
+const isImageDataUrl = (v) => typeof v === 'string' && /^data:image\/[\w.+-]+;base64,/.test(v);
+/* data URL（base64）→ blob: の URL。innerHTML に長い data URL を入れないため。作れなければ null */
+function toBlobUrl(v) {
+  const m = /^data:(image\/[\w.+-]+);base64,/.exec(v);
+  try {
+    const bin = atob(v.slice(m[0].length));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return URL.createObjectURL(new Blob([bytes], { type: m[1] }));
+  } catch (_) {
+    return null;
+  }
 }
 /* サーバーの返事を記憶し、待っている画像に入れる。null・返事なしはアイコンにする */
 function gotThumbs(ids, large, res) {
   ids.forEach((id) => {
     const key = thumbKey(id, large);
-    const v = res[id];
-    const src = typeof v === 'string' && v.startsWith('data:image/') ? v : null;
     thumbSent.delete(key);
-    serverImg.set(key, src);
-    if (src) serverFirst = true;
-    document.querySelectorAll(`img[data-key="${key}"][data-wait]`).forEach((img) => {
-      if (src) { img.src = src; img.removeAttribute('data-wait'); }
-      else showFallback(img);
-    });
+    if (serverImg.has(key)) return;   // 同じキーの blob: を2つ作らない
+    const v = res[id];
+    const got = isImageDataUrl(v) ? { blob: useDataUrl ? null : toBlobUrl(v), data: v } : null;
+    serverImg.set(key, got);
+    if (got) serverFirst = true;
+    document.querySelectorAll(`img[data-key="${key}"][data-wait]`).forEach((img) => fillImg(img, key));
   });
 }
 
@@ -703,7 +815,15 @@ function issuesBar() {
     </div>`;
 }
 
-function renderMain() { keepFocus(renderMainBody); }
+/* カード・行のボタンの読み上げ用の id。名前を aria-labelledby、用途・状態・日付を aria-describedby に
+   向けて、中のタグなどを全部読み上げないようにする。id はフォルダIDから作る（英数字と - _ だけにする） */
+function ariaIds(prefix, it) {
+  const base = prefix + '-' + String(it.folderId || itemSeed(it)).replace(/[^\w-]/g, '_');
+  const a = { name: base + '-nm', pp: base + '-pp', st: base + '-st', dt: base + '-dt' };
+  a.desc = [it.purpose ? a.pp : '', a.st, a.dt].filter(Boolean).join(' ');
+  return a;
+}
+function renderMain() { keepFocus(renderMainBody); watchThumbs(); }
 function renderMainBody() {
   const main = document.getElementById('main');
   // 初回の読み込み中／失敗
@@ -753,30 +873,32 @@ function renderMainBody() {
   } else if (state.view === 'gallery') {
     body = `<div class="grid">${list.map((it) => {
       const on = it.folderId === state.selId;
-      return `<button class="card" type="button" data-select="${esc(it.folderId)}"${on ? ' aria-current="true"' : ''}>
-        <span class="thumb">${thumbHTML(it)}<span class="status-badge st-${stClass(it.status)}">${esc(it.status)}</span></span>
-        <span class="card-name">${esc(it.name)}</span>
-        <span class="card-purpose">${esc(it.purpose)}</span>
+      const a = ariaIds('c', it);
+      return `<button class="card" type="button" data-select="${esc(it.folderId)}"${on ? ' aria-current="true"' : ''} aria-labelledby="${a.name}" aria-describedby="${a.desc}">
+        <span class="thumb">${thumbHTML(it)}<span class="status-badge st-${stClass(it.status)}" id="${a.st}">${esc(it.status)}</span></span>
+        <span class="card-name" id="${a.name}">${esc(it.name)}</span>
+        <span class="card-purpose" id="${a.pp}">${esc(it.purpose)}</span>
         ${it.tags.length ? `<span class="card-tags">${tagLabels(it.tags)}</span>` : ''}
-        <span class="card-date">${dateLong(it.date)}作成</span>
+        <span class="card-date" id="${a.dt}">${dateLong(it.date)}作成</span>
       </button>`;
     }).join('')}</div>`;
   } else {
     body = `<div class="list">${list.map((it) => {
       const on = it.folderId === state.selId;
-      return `<button class="row" type="button" data-select="${esc(it.folderId)}"${on ? ' aria-current="true"' : ''}>
+      const a = ariaIds('r', it);
+      return `<button class="row" type="button" data-select="${esc(it.folderId)}"${on ? ' aria-current="true"' : ''} aria-labelledby="${a.name}" aria-describedby="${a.desc}">
         <span class="row-thumb">${thumbHTML(it)}</span>
-        <span class="row-text"><span class="row-name">${esc(it.name)}</span><span class="row-purpose">${esc(it.purpose)}</span></span>
+        <span class="row-text"><span class="row-name" id="${a.name}">${esc(it.name)}</span><span class="row-purpose" id="${a.pp}">${esc(it.purpose)}</span></span>
         <span class="row-tags">${tagLabels(it.tags)}</span>
-        <span class="status-badge st-${stClass(it.status)}">${esc(it.status)}</span>
-        <span class="row-date">${dateDot(it.date)}</span>
+        <span class="status-badge st-${stClass(it.status)}" id="${a.st}">${esc(it.status)}</span>
+        <span class="row-date" id="${a.dt}">${dateDot(it.date)}</span>
       </button>`;
     }).join('')}</div>`;
   }
   main.innerHTML = issuesHTML + toolbar + body;
 }
 
-function renderDetail() { keepFocus(renderDetailBody); }
+function renderDetail() { keepFocus(renderDetailBody); watchThumbs(); }
 function renderDetailBody() {
   const el = document.getElementById('detail');
   const it = state.data.items.find((x) => x.folderId === state.selId);

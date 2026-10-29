@@ -62,7 +62,7 @@
 | `isPermissionError` / `isNotFoundError` | 例外が権限不足／見つからないらしいかの判定 |
 | `driveFolderUrl` / `driveFileUrl` / `driveDownloadUrl` / `driveThumbnailUrl` | URLの組み立て |
 | `buildSyncMessage(r, mode)` | 同期結果の文（mode: web / menu / trigger） |
-| `normalizeThumbIds` / `galleryImageIds` / `thumbCacheKey` / `blobToDataUrl` | 画像の取り直し：IDの整理（重複除去・上限10件）／一覧に出ている画像のIDの集合／キャッシュのキー／data URL 化 |
+| `normalizeThumbIds(ids, max)` / `galleryImageIds` / `thumbCacheKey` / `blobToDataUrl` / `isBrowserImageMime` | 画像の取り直し：IDの整理（重複除去・上限件数）／一覧に出ている画像のIDの集合／キャッシュのキー／data URL 化／ブラウザで出せる画像形式か |
 | `nowMs` / `nowIso_` | 現在時刻（テストで差し替え） |
 
 ### I/O（Drive・シート・Properties・Lock・Trigger に触る）
@@ -141,17 +141,28 @@ URLの形：サムネイル `…/thumbnail?id=<id>&sz=w600`、ファイル `…/
 
 ### 画像の取り直し `getThumbnails(ids, large)`
 
-スマホのブラウザは、GAS の iframe の中から drive.google.com の画像を読むときに Cookie を送らないため、サムネイルURLが失敗する（2026-10-30 の実機確認。PC の Chrome では出る）。そこで画面は、失敗した画像のファイルIDを 50ms ためてから、まとめてサーバーに頼む。
+スマホのブラウザは、GAS の iframe の中から drive.google.com の画像を読むときに Cookie を送らないため、サムネイルURLが失敗する（2026-10-30 の実機確認。PC の Chrome では出る）。そこで画面は、URL で読めなかった画像をサーバーに頼む。
 
 ```js
 getThumbnails(["<ファイルID>", …], large) → { "<ファイルID>": "data:image/png;base64,…" | null }
 ```
 
-- 1回に最大10件（`THUMB_BATCH_MAX`）。それを超えた分は戻り値に入らない（画面は10件ずつ分けて呼ぶ）。
-- 通常は `getThumbnail()`（Driveの縮小画像。幅220px程度）。`large=true`（詳細の大きな画像）は、元が画像で 2MB（`THUMB_LARGE_MAX_BYTES`）以下なら元のファイル、超えれば縮小画像。
-- **一覧に出ている作品の代表画像と写真のIDしか読まない**（それ以外は null）。キャッシュ（`CacheService.getScriptCache()`、6時間）は利用者全員で共有なので、任意のIDを読ませると、見る権限の無い人にキャッシュ経由で渡ってしまうため。100KB を超える値はキャッシュしない。
-- 1件の失敗は、その件だけ null にする。画面は、一度サーバーで取れた端末では以降 URL を試さず最初からサーバーに頼む（ちらつきを減らすため）。
+サーバー側（`Code.gs`）：
+
+- 1回に最大10件（`THUMB_BATCH_MAX`）。`large=true` は2件まで（`THUMB_LARGE_BATCH_MAX`。元のファイルは大きいので）。超えた分は戻り値に入らない。
+- 通常は `getThumbnail()`（Driveの縮小画像。幅220px程度）。`large=true`（詳細の大きな画像）は、MIME が `image/png`・`image/jpeg`・`image/gif`・`image/webp`（`THUMB_LARGE_MIME_TYPES`、判定は `isBrowserImageMime`）で 2MB（`THUMB_LARGE_MAX_BYTES`）以下のときだけ元のファイル。HEIC・TIFF などブラウザで出せない形式や、大きいものは縮小画像。
+- **一覧に出ている作品の代表画像と写真のIDしか読まない**（それ以外は null）。**キャッシュを引く前に**シートを1回読んで一覧で絞るので、一覧から外れたIDはキャッシュにあっても null。キャッシュ（`CacheService.getScriptCache()`、6時間）は利用者全員で共有なので、絞らないと、見る権限の無い人にキャッシュ経由で渡ってしまうため。100KB を超える値はキャッシュしない。
+- 1件の失敗は、その件だけ null にする。
 - 新しい許可（スコープ）は要らない（`drive.readonly` で足りる）。
+
+画面側（`index.html`）：
+
+- 頼むのは、**画面に見えている画像とその 200px 先まで**だけ（IntersectionObserver。見張りの枠は、PC は各ペイン、960px 以下はページ）。同時実行は2本まで（`THUMB_PARALLEL`）で、残りは順番待ち（`pumpThumbs`）。送る前に画面から離れたものは取り消す。取り込み済み・順番待ち・返事待ちのものは頼み直さない。縮小画像は10件、大きな画像は2件ずつ分けて呼ぶ。
+- 一度サーバーで取れた端末では、以降 URL を試さず最初からサーバーに頼む（ちらつきを減らすため）。
+- 返ってきた data URL は Blob にして `blob:` の URL で表示する（1キーにつき1回だけ作る。描き直しの innerHTML を短くするため）。`blob:` の画像が表示できなければ（GAS の iframe の制限に備えて）、その端末では以降 data URL で表示する（`useDataUrl`。そのため data URL の文字列も持つ）。data URL でも表示できないときだけ、次の項目に進む。
+- 大きな画像が表示できなければ、一度だけ縮小画像で頼み直す。それも表示できなければ形のアイコンにし、以降は頼み直さない。
+
+アクセシビリティ：カードとリストの行は全体が1つのボタンで、`aria-labelledby` が名前、`aria-describedby` が用途・状態・日付を指す。リストの行のフォーカス枠は内側に描く（`.list` の `overflow:hidden` で切れるため）。
 
 ### `syncNow()` / `resyncItem(folderId)` の戻り値
 
@@ -293,7 +304,7 @@ getThumbnails(["<ファイルID>", …], large) → { "<ファイルID>": "data:
 | `fusion_export.py` | `python -m unittest discover -s dev/fusion-test -v` | 偽の `adsk` を差し込んで import し、Fusionを要しない部分（命名、CSV、行の選別、名前での絞り込み、triage.csv の引き継ぎ、パスの解決、済み判定、meta.json の生成、外部参照の判定）と、`break_external_links` を偽のオカレンスでテストする |
 | 画面 | `node dev/preview/build.mjs` | `index.html` の `include('guide')` を `guide.html` で置き換え、`google.script.run` の偽物（サンプルデータを返す）を注入して `dev/preview/out/index.html` を出す。ブラウザで開いて見た目を確認する |
 
-プレビューの場面は URL の `?scenario=` で切り替えられる：`out/index.html?scenario=empty`（作品ゼロ）、`error`（読み込み失敗）、`partial`（時間切れ）、`syncfail`（同期失敗）、`readonly`（同期できない人）、`status`（未知の状態）、`many`（30件。画像の取り直しを含む）、`thumbfail`（取り直しも失敗）。読み込み後の操作もクエリで指定できる（プレビュー専用）：`&view=list|gallery`、`&select=<folderId>`、`&click=<CSSセレクタ>`、`&scroll=end|bottom`。スマホ幅は `out/frame-390.html?src=<クエリ>` で 390px の iframe に入れて見る。サンプルデータは `dev/preview/sample-data.js`。GASのテンプレート構文が残っているとビルドが失敗する。
+プレビューの場面は URL の `?scenario=` で切り替えられる：`out/index.html?scenario=empty`（作品ゼロ）、`error`（読み込み失敗）、`partial`（時間切れ）、`syncfail`（同期失敗）、`readonly`（同期できない人）、`status`（未知の状態）、`many`（30件。画像の取り直しを含む）、`thumbfail`（取り直しも失敗）、`heic`（大きな画像が表示できず縮小画像で取り直す）。画像の取り直し（IntersectionObserver）は `--virtual-time-budget` のスクショでは途中で止まるので、実時間で調べる `node --experimental-websocket dev/preview/cdp-check.mjs "scenario=many;view=list" 1400,900 5000 [shot.png]` で確かめる（Windows ではクエリの区切りに `;` を使う。drive.google.com は Chrome の `--host-resolver-rules` で 127.0.0.1:9 に向けてすぐ失敗させる）。読み込み後の操作もクエリで指定できる（プレビュー専用）：`&view=list|gallery`、`&select=<folderId>`、`&click=<CSSセレクタ>`、`&scroll=end|bottom`。スマホ幅は `out/frame-390.html?src=<クエリ>` で 390px の iframe に入れて見る。サンプルデータは `dev/preview/sample-data.js`。GASのテンプレート構文が残っているとビルドが失敗する。
 
 ローカルで確かめられないこと：GAS実環境での動作（許可画面、共有ドライブ上の挙動、実行時間）、Driveのサムネイル表示（ブラウザのCookie制限）、Fusion APIの実際の挙動。これらは次の「本番での確認」と、Fusionの実機で確かめる。
 

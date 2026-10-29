@@ -130,7 +130,10 @@ var APP_TITLE = '3Dプリント作品ギャラリー';
  * Cookie を送らないため画像が出ない。画面は読めなかった画像だけ、サーバーに data URL で頼む。
  */
 var THUMB_BATCH_MAX = 10;                    // 1回に受け付ける件数（これより後ろの ID は戻り値に入らない）
+var THUMB_LARGE_BATCH_MAX = 2;               // large=true のときの1回の件数（元のファイルは1件で最大約2.7MBの data URL になるため）
 var THUMB_LARGE_MAX_BYTES = 2 * 1024 * 1024; // 詳細の大きな画像で、元のファイルをそのまま返す大きさの上限
+// 元のファイルをそのまま返してよい形式（ブラウザがそのまま表示できるもの）。HEIC・TIFF などは縮小画像を返す
+var THUMB_LARGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
 var THUMB_CACHE_SECONDS = 6 * 60 * 60;       // キャッシュの保存時間（CacheService の上限の6時間）
 var THUMB_CACHE_MAX_CHARS = 100000;          // CacheService の1件の上限（100KB）。余裕を見てこれを超える data URL はキャッシュしない
 
@@ -533,15 +536,21 @@ function sheetRowUrl(sheetUrl, gid, rowNumber) {
 
 /**
  * getThumbnails に渡された ID を整える。ID らしい形の文字列だけを、重複を除いて
- * 先頭から THUMB_BATCH_MAX 件まで残す（配列でなければ空配列）。
+ * 先頭から max 件（省略時は THUMB_BATCH_MAX 件）まで残す（配列でなければ空配列）。
  */
-function normalizeThumbIds(ids) {
+function normalizeThumbIds(ids, max) {
   if (!Array.isArray(ids)) return [];
   var out = [];
   ids.forEach(function (id) {
     if (typeof id === 'string' && /^[A-Za-z0-9_-]+$/.test(id) && out.indexOf(id) < 0) out.push(id);
   });
-  return out.slice(0, THUMB_BATCH_MAX);
+  return out.slice(0, max || THUMB_BATCH_MAX);
+}
+
+/** 元のファイルをそのまま返してよい形式か（THUMB_LARGE_MIME_TYPES。大文字小文字と ; 以降は無視） */
+function isBrowserImageMime(mime) {
+  var m = String(mime || '').split(';')[0].trim().toLowerCase();
+  return THUMB_LARGE_MIME_TYPES.indexOf(m) >= 0;
 }
 
 /**
@@ -1113,43 +1122,46 @@ function resyncItem(folderId) {
 /**
  * 画面が Drive の URL で読めなかった画像を data URL にして返す（スマホ向け。設定の THUMB_* を参照）。
  * - 通常は Drive が作る縮小画像（getThumbnail。幅220px程度）
- * - large=true（詳細の大きな画像）は、元のファイルが画像で THUMB_LARGE_MAX_BYTES 以下ならそのまま、
- *   それより大きければ縮小画像
- * - 一覧に出ている画像の ID だけを読む（galleryImageIds の説明）。それ以外は null
+ * - large=true（詳細の大きな画像）は、元のファイルが THUMB_LARGE_MIME_TYPES の形式で
+ *   THUMB_LARGE_MAX_BYTES 以下ならそのまま、それ以外（大きい・HEIC や TIFF など）は縮小画像
+ * - 一覧に出ている画像の ID だけを読む（galleryImageIds の説明）。それ以外は、キャッシュにあっても null。
+ *   そのため、キャッシュを引く前に毎回シートを1回読む
  * - 結果はスクリプトのキャッシュに6時間置く。1件の失敗では全体を落とさず、その件を null にする
  * 新しい権限は要らない（drive.readonly の範囲。CacheService は権限なしで使える）。
- * @param {string[]} ids ファイルID。1回に THUMB_BATCH_MAX 件まで（超えた分は戻り値に入らない）
+ * @param {string[]} ids ファイルID。1回に THUMB_BATCH_MAX 件（large なら THUMB_LARGE_BATCH_MAX 件）まで
+ *                       （超えた分は戻り値に入らない）
  * @param {boolean} large 詳細の大きな画像用なら true
  * @return {Object} { ID: data URL または null }
  */
 function getThumbnails(ids, large) {
   return withUserErrors_(function () {
-    var list = normalizeThumbIds(ids);
+    var big = large === true;
+    var list = normalizeThumbIds(ids, big ? THUMB_LARGE_BATCH_MAX : THUMB_BATCH_MAX);
     var result = {};
     if (!list.length) return result;
-    var big = large === true;
+
+    // 先に一覧で絞る。一覧から外れた画像を、キャッシュ経由で渡さないため
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+    var allowedIds = sheet ? galleryImageIds(readRecords_(sheet)) : {};
+    var allowed = [];
+    list.forEach(function (id) {
+      result[id] = null;
+      if (allowedIds[id]) allowed.push(id);
+    });
+    if (!allowed.length) return result;
+
     var cache = CacheService.getScriptCache();
     var cached = {};
     try {
-      cached = cache.getAll(list.map(function (id) { return thumbCacheKey(id, big); })) || {};
+      cached = cache.getAll(allowed.map(function (id) { return thumbCacheKey(id, big); })) || {};
     } catch (e) {
       cached = {}; // キャッシュが読めなくても Drive から読めばよい
     }
 
-    var missing = [];
-    list.forEach(function (id) {
-      var hit = cached[thumbCacheKey(id, big)];
-      if (hit) result[id] = hit;
-      else missing.push(id);
-    });
-    if (!missing.length) return result;
-
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
-    var allowed = sheet ? galleryImageIds(readRecords_(sheet)) : {};
     var toCache = {};
-    missing.forEach(function (id) {
-      result[id] = null;
-      if (!allowed[id]) return;
+    allowed.forEach(function (id) {
+      var hit = cached[thumbCacheKey(id, big)];
+      if (hit) { result[id] = hit; return; }
       try {
         result[id] = readThumbDataUrl_(id, big);
       } catch (e) {
@@ -1171,7 +1183,7 @@ function getThumbnails(ids, large) {
 /** 画像1件を data URL で返す（getThumbnails の中身）。縮小画像が無ければ null */
 function readThumbDataUrl_(id, large) {
   var file = DriveApp.getFileById(id);
-  if (large && file.getSize() <= THUMB_LARGE_MAX_BYTES && String(file.getMimeType()).indexOf('image/') === 0) {
+  if (large && file.getSize() <= THUMB_LARGE_MAX_BYTES && isBrowserImageMime(file.getMimeType())) {
     return blobToDataUrl(file.getBlob());
   }
   var thumb = file.getThumbnail();

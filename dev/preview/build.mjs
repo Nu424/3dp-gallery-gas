@@ -4,14 +4,19 @@
 // 使い方：node dev/preview/build.mjs
 // 場面の切り替え：out/index.html?scenario=empty | error | partial | syncfail | readonly（canSync:false）| status（未知の状態あり）
 //                 | many（作品30件）| thumbfail（getThumbnails が失敗する）
+//                 | heic（作品30件。large=true の返事がブラウザで表示できない画像 → 画面は S で頼み直す）
 // プレビュー専用の指定（ヘッドレス Chrome の --screenshot で、操作した後の状態を撮るため）：
 //   &view=list|gallery    読み込み後に表示方法を切り替える
 //   &select=<folderId>    読み込み後にその作品を選ぶ
 //   &click=<CSSセレクタ>  読み込み後にその要素を押す（例 .card .tag で、カードの中のタグを押す）
 //   &scroll=end           一覧の最後の作品が見えるところまでスクロールする（PC は一覧の枠、スマホ幅はページ）
+//   &blobfail=1           URL.createObjectURL が壊れた blob: の URL を返す（本物の GAS で blob: が表示できない場合の再現）
 //   &scroll=bottom        一覧の枠とページを、どちらも一番下までスクロールする
 // 撮るときは --virtual-time-budget=5000 を付ける（読み込みの待ち時間を進めるため）。
 // getThumbnails の呼び出しは <html data-thumb-calls="[...]"> に残す（--dump-dom で確かめる用）。
+//   各呼び出しは { ids, large, tops }。tops は呼ばれた時点での、その画像の <img> の上端の位置（画面の上から。px）。
+//   あわせて data-thumb-max-parallel（同時に返事待ちだった最大数）と data-thumb-vh（画面の高さ）を残す。
+// 実時間での確かめ（IntersectionObserver を含む）は dev/preview/cdp-check.mjs（使い方はそのファイルの先頭）。
 // あわせて out/frame-390.html（390px 幅の iframe に入れて撮るための入れ物）も出す。
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -39,14 +44,18 @@ const fake = `<script>
   const params = new URLSearchParams(location.search);
   const scenario = params.get('scenario') || '';
   const wait = (ms, fn) => setTimeout(fn, ms);
-  if (scenario === 'many') DATA.items = DATA.items.concat(MORE);
+  if (scenario === 'many' || scenario === 'heic') DATA.items = DATA.items.concat(MORE);
   // サーバーで取り直した画像の代わり（どの画像か分かるように、IDの末尾と大きさを描く）
-  const serverThumb = (id, large) => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
+  // 本物のサーバーと同じく base64 の data URL で返す
+  const serverThumb = (id, large) => 'data:image/svg+xml;base64,' + btoa(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 180"><rect width="240" height="180" fill="#FBE9C8"/>' +
     '<rect x="10" y="10" width="220" height="160" rx="10" fill="none" stroke="#C98A1B" stroke-width="4" stroke-dasharray="10 6"/>' +
     '<text x="120" y="80" text-anchor="middle" font-size="26" font-family="sans-serif" fill="#7A5300">SERVER ' + (large ? 'L' : 'S') + '</text>' +
     '<text x="120" y="118" text-anchor="middle" font-size="16" font-family="sans-serif" fill="#7A5300">' + id.slice(-12) + '</text></svg>');
+  // HEIC の代わり：ブラウザが表示できない画像（heic 場面の large=true の返事）
+  const undisplayable = 'data:image/heic;base64,AAAAGGZ0eXBoZWljAAAAAG1pZjFoZWlj';
   const thumbCalls = [];
+  let inFlight = 0, maxInFlight = 0;
   // 読み込み後の操作（プレビュー専用）。一覧を描いた後に1回だけ行う
   let applied = false;
   function applyPreviewParams() {
@@ -69,6 +78,10 @@ const fake = `<script>
       document.documentElement.dataset.scroll = JSON.stringify({ main: main.scrollTop, mainMax: main.scrollHeight - main.clientHeight, page: document.scrollingElement.scrollTop, pageMax: document.scrollingElement.scrollHeight - document.scrollingElement.clientHeight });
     });
   }
+  if (params.get('blobfail')) {
+    let n = 0;
+    URL.createObjectURL = () => 'blob:null/preview-broken-' + (++n);   // 読めない blob: の URL
+  }
   if (scenario === 'readonly') DATA.canSync = false;
   if (scenario === 'status') { DATA.statuses = ['使用中', '参考', '引退', '検討中']; DATA.items[1].status = '検討中'; }
   const impl = {
@@ -81,12 +94,23 @@ const fake = `<script>
       });
     },
     getThumbnails(ok, fail, ids, large) {
-      thumbCalls.push({ ids: ids, large: !!large });
-      document.documentElement.dataset.thumbCalls = JSON.stringify(thumbCalls);
+      const tops = ids.map((id) => {
+        const img = document.querySelector('img[data-key="' + id + (large ? ':L' : ':S') + '"]');
+        return img ? Math.round(img.getBoundingClientRect().top) : null;
+      });
+      thumbCalls.push({ ids: ids, large: !!large, tops: tops });
+      inFlight++; maxInFlight = Math.max(maxInFlight, inFlight);
+      const root = document.documentElement.dataset;
+      root.thumbCalls = JSON.stringify(thumbCalls);
+      root.thumbMaxParallel = String(maxInFlight);
+      root.thumbVh = String(innerHeight);
       wait(300, () => {
+        inFlight--;
         if (scenario === 'thumbfail') return fail(new Error('画像を読み込めませんでした（プレビュー用の疑似エラー）'));
         const out = {};
-        ids.slice(0, 10).forEach((id) => { out[id] = /nothumb/.test(id) ? null : serverThumb(id, large); });
+        ids.slice(0, large ? 2 : 10).forEach((id) => {   // 本物と同じく、large は2件・縮小は10件まで
+          out[id] = /nothumb/.test(id) ? null : scenario === 'heic' && large ? undisplayable : serverThumb(id, large);
+        });
         ok(out);
       });
     },
