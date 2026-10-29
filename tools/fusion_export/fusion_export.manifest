@@ -1,0 +1,14 @@
+{
+  "autodeskProduct": "Fusion",
+  "type": "script",
+  "id": "82bbf56c-f5f3-42bb-8ce1-0f2be1f6a44c",
+  "author": "3Dギャラリー",
+  "description": {
+    "": "Export cloud f3d designs for the 3D print gallery (mode 1: thumbnails + triage.csv, mode 2: f3d/STEP/STL/3MF/thumb/meta.json).",
+    "1041": "クラウド上の f3d を3Dギャラリー用に書き出す（モード1: サムネイルと triage.csv、モード2: f3d/STEP/STL/3MF/thumb/meta.json）。設定はスクリプト冒頭の設定欄で。"
+  },
+  "version": "1.0.0",
+  "runOnStartup": false,
+  "supportedOS": "windows|mac",
+  "editEnabled": true
+}
