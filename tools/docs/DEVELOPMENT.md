@@ -36,7 +36,7 @@
 | ファイル | 役割 |
 | --- | --- |
 | `tools/gas/Code.gs` | サーバー側。同期処理、`doGet`、画面から呼ぶ関数、トリガー、スプシのメニュー、`setup()` |
-| `tools/gas/index.html` | 画面（一覧と詳細）。見た目とブラウザ側の処理はすべてここ。`<?!= include('guide') ?>` で `guide.html` を読み込む。GASとの境目は `loadData` / `syncNow` / `resyncItem` の3関数だけ |
+| `tools/gas/index.html` | 画面（一覧と詳細）。見た目とブラウザ側の処理はすべてここ。`<?!= include('guide') ?>` で `guide.html` を読み込む。GASとの境目は `loadData` / `syncNow` / `resyncItem` と、画像の取り直し（`getThumbnails`）だけ |
 | `tools/gas/appsscript.json` | GASの設定ファイル（マニフェスト）。`oauthScopes`（`drive.readonly` / `spreadsheets` / `script.scriptapp` / `script.container.ui`）で許可の範囲を絞り、`webapp`（`executeAs: USER_ACCESSING`、`access: DOMAIN`）を決める。エディタでは「プロジェクトの設定」で表示をオンにして編集する。貼り方は [SETUP.md](SETUP.md#4つ目appsscriptjson-を置き換える許可の範囲を絞る) |
 | `tools/gas/guide.html` | 「作品を追加する」パネルの本文（HTMLの断片）。文章の修正はこのファイルだけで済む。AIに渡すプロンプトは `#ai-prompt` の1か所にまとめてある。**スクリプトレット（`<?` で始まる構文）は書かない** |
 
@@ -62,6 +62,7 @@
 | `isPermissionError` / `isNotFoundError` | 例外が権限不足／見つからないらしいかの判定 |
 | `driveFolderUrl` / `driveFileUrl` / `driveDownloadUrl` / `driveThumbnailUrl` | URLの組み立て |
 | `buildSyncMessage(r, mode)` | 同期結果の文（mode: web / menu / trigger） |
+| `normalizeThumbIds` / `galleryImageIds` / `thumbCacheKey` / `blobToDataUrl` | 画像の取り直し：IDの整理（重複除去・上限10件）／一覧に出ている画像のIDの集合／キャッシュのキー／data URL 化 |
 | `nowMs` / `nowIso_` | 現在時刻（テストで差し替え） |
 
 ### I/O（Drive・シート・Properties・Lock・Trigger に触る）
@@ -87,6 +88,7 @@
 | `getGalleryData()` | 画面 | 一覧を返す（シートを読むだけ） |
 | `syncNow()` | 画面の「今すぐ同期」 | 同期（続きのトリガーは作らない） |
 | `resyncItem(folderId)` | 詳細の「この作品だけ再同期」 | 1件の再同期 |
+| `getThumbnails(ids, large)` | 画面（Driveの画像URLが読めなかったとき） | 画像を data URL で返す（下の「画像の取り直し」） |
 | `dailySync()` / `continueSync()` | トリガー | 毎日の同期／時間切れの続き |
 | `onOpen()` | スプシを開いたとき | メニュー「ギャラリー」を追加 |
 | `menuSyncNow` / `menuRebuild` / `menuSetup` | メニュー | 今すぐ同期／全部作り直す／初期設定 |
@@ -105,7 +107,7 @@
 
 ## 画面とサーバーの約束
 
-画面（`index.html`）はサーバーを `google.script.run` 経由で3つの関数だけ呼ぶ。失敗時は日本語のメッセージ入りの `Error` が投げられ、`withFailureHandler` の `err.message` で表示される。
+画面（`index.html`）はサーバーを `google.script.run` 経由で4つの関数（`getGalleryData` / `syncNow` / `resyncItem` / `getThumbnails`）だけ呼ぶ。失敗時は日本語のメッセージ入りの `Error` が投げられ、`withFailureHandler` の `err.message` で表示される。
 
 ### `getGalleryData()` の戻り値
 
@@ -135,7 +137,21 @@
 
 `getGalleryData` の失敗は日本語のメッセージ入りの `Error`（権限不足なら「一覧を読み込めません。スプシを閲覧する権限があるか確認してください」）。画面は `statuses` を使い、items にだけある未知の状態もグレーの破線枠（`st-other`）で表示する（色が付くのは既知の3種）。
 
-URLの形：サムネイル `…/thumbnail?id=<id>&sz=w600`、ファイル `…/file/d/<id>/view`、ダウンロード `…/uc?export=download&id=<id>`、フォルダ `…/drive/folders/<id>`。画像が読めないときは `index.html` 側の `onerror` が、フォルダIDから決めた形と色のアイコンに差し替える。
+URLの形：サムネイル `…/thumbnail?id=<id>&sz=w600`、ファイル `…/file/d/<id>/view`、ダウンロード `…/uc?export=download&id=<id>`、フォルダ `…/drive/folders/<id>`。画像が読めないときは、下の「画像の取り直し」を1回試し、それでもだめなら `index.html` 側でフォルダIDから決めた形と色のアイコンに差し替える。
+
+### 画像の取り直し `getThumbnails(ids, large)`
+
+スマホのブラウザは、GAS の iframe の中から drive.google.com の画像を読むときに Cookie を送らないため、サムネイルURLが失敗する（2026-10-30 の実機確認。PC の Chrome では出る）。そこで画面は、失敗した画像のファイルIDを 50ms ためてから、まとめてサーバーに頼む。
+
+```js
+getThumbnails(["<ファイルID>", …], large) → { "<ファイルID>": "data:image/png;base64,…" | null }
+```
+
+- 1回に最大10件（`THUMB_BATCH_MAX`）。それを超えた分は戻り値に入らない（画面は10件ずつ分けて呼ぶ）。
+- 通常は `getThumbnail()`（Driveの縮小画像。幅220px程度）。`large=true`（詳細の大きな画像）は、元が画像で 2MB（`THUMB_LARGE_MAX_BYTES`）以下なら元のファイル、超えれば縮小画像。
+- **一覧に出ている作品の代表画像と写真のIDしか読まない**（それ以外は null）。キャッシュ（`CacheService.getScriptCache()`、6時間）は利用者全員で共有なので、任意のIDを読ませると、見る権限の無い人にキャッシュ経由で渡ってしまうため。100KB を超える値はキャッシュしない。
+- 1件の失敗は、その件だけ null にする。画面は、一度サーバーで取れた端末では以降 URL を試さず最初からサーバーに頼む（ちらつきを減らすため）。
+- 新しい許可（スコープ）は要らない（`drive.readonly` で足りる）。
 
 ### `syncNow()` / `resyncItem(folderId)` の戻り値
 
@@ -211,6 +227,7 @@ URLの形：サムネイル `…/thumbnail?id=<id>&sz=w600`、ファイル `…/
 | `status` | 必須 | 文字列 | `使用中` / `参考` / `引退` のいずれか |
 | `tags` | 任意 | 文字列の配列 | 絞り込み用（装置名、種類など） |
 | `note` | 任意 | 文字列、または文字列の配列 | 上記以外すべて。配列なら1要素＝1行、文字列なら改行で行に分ける |
+| `fusion_id` | 任意（Fusion書き出しが入れる。**手で書かない**） | 文字列 | Fusion の `DataFile.id`（版・名前・置き場所が変わっても同じ）。`fusion_export.py` が書き出し済みかを判定するための印。同期は未知のキーとして無視するので、スプシにもギャラリーの画面にも出ない（`meta.json` の中にだけ残る） |
 
 ```json
 {
@@ -218,9 +235,12 @@ URLの形：サムネイル `…/thumbnail?id=<id>&sz=w600`、ファイル `…/
   "purpose": "流路セルを顕微鏡ステージに固定する",
   "status": "使用中",
   "tags": ["顕微鏡", "治具"],
-  "note": ["M3ネジ×4で固定。", "縦向きで刷らないと爪が折れる。", "v2で穴径を0.2mm拡大。"]
+  "note": ["M3ネジ×4で固定。", "縦向きで刷らないと爪が折れる。", "v2で穴径を0.2mm拡大。"],
+  "fusion_id": "urn:adsk.wipprod:dm.lineage:xxxxxxxxxxxxxxxxxxxxxx"
 }
 ```
+
+`fusion_id` はFusion書き出しスクリプトが入れる（手で作った作品には無い）。人が `meta.json` を埋め直すときも、既存のキーはそのまま残す（消すと再実行で飛ばされ、書き換えると別の作品として `-v2` に書かれる。判定の詳細は「Fusionスクリプトの構成」）。
 
 絞り込み・並び替えに使う情報だけを項目にし、それ以外は `note` に寄せる。`note` を配列でも書けるのは、手書きで `\n` を打つ手間を省くため。
 
@@ -246,8 +266,8 @@ URLの形：サムネイル `…/thumbnail?id=<id>&sz=w600`、ファイル `…/
 
 | 変えること | 直す箇所 |
 | --- | --- |
-| 状態の選択肢（例：「保管中」を足す） | `Code.gs` の `STATUS_CHOICES`（検査と指紋に効き、`getGalleryData` の `statuses` として画面にも渡る）／`index.html` の状態の色（既知の3種の色対応。`DEFAULT_STATUSES` は `statuses` が無いときの予備。色が無い新しい状態はグレーの破線枠で出る）／`guide.html` の表（`status` の行）と `#ai-prompt` の status の文／`_template/README.txt`／`fusion_export.py` は status を空で出すので通常は不要／**この文書のデータ仕様** |
-| 必須キーを足す・外す | `Code.gs` の `REQUIRED_META_KEYS` と `checkMeta`（キーごとの検査）／`guide.html` の meta 例・キー一覧・`#ai-prompt`／`_template/meta.json` と `README.txt`／`fusion_export.py` の `build_meta` の雛形／この文書。**古い作品が一斉に要対応にならないか**を考える（必須にするなら既存作品を直す手間が出る。基本は任意キーとして足す） |
+| 状態の選択肢（例：「保管中」を足す） | `Code.gs` の `STATUS_CHOICES`（検査と指紋に効き、`getGalleryData` の `statuses` として画面にも渡る）／`index.html` の状態の色（既知の3種の色対応。`DEFAULT_STATUSES` は `statuses` が無いときの予備。色が無い新しい状態はグレーの破線枠で出る）／`guide.html` の表（`status` の行）と `#ai-prompt` の status の文／`_template/README.txt`／`fusion_export.py` は status を `DEFAULT_STATUS`（既定は空）で出すので、選択肢を変えたら設定欄のコメントの選択肢も直す／**この文書のデータ仕様** |
+| 必須キーを足す・外す | `Code.gs` の `REQUIRED_META_KEYS` と `checkMeta`（キーごとの検査）／`guide.html` の meta 例・キー一覧・`#ai-prompt`／`_template/meta.json` と `README.txt`／`fusion_export.py` の `build_meta` の雛形（`fusion_id` は済み判定に使うので、外さない）／この文書。**古い作品が一斉に要対応にならないか**を考える（必須にするなら既存作品を直す手間が出る。基本は任意キーとして足す） |
 | 任意キーを足す | `checkMeta`（型の検査と整形）／シートの列を足すなら `HEADERS`・`buildRecord`・`recordToGalleryEntry`（そして「全部作り直す」）／`getGalleryData` の戻り値を変えるなら `index.html`／`guide.html`／`_template`／`build_meta`／この文書 |
 | フォルダ名の形式 | `Code.gs` の `parseFolderName`／`fusion_export.py` の `FOLDER_NAME_PATTERN`・`make_folder_name`・`is_valid_folder_name`・`date_part`／`guide.html`／`_template/README.txt`／この文書 |
 | 代表画像・写真の規則 | `Code.gs` の `THUMB_FILE_NAMES`・`PHOTO_PREFIX`・`pickThumbFile`・`pickPhotoFiles`／`fusion_export.py` の `THUMB_FILENAME`／`guide.html`／この文書 |
@@ -269,11 +289,11 @@ URLの形：サムネイル `…/thumbnail?id=<id>&sz=w600`、ファイル `…/
 
 | 対象 | コマンド | 内容 |
 | --- | --- | --- |
-| `Code.gs` | `cd dev/gas-test && node --test` | `Code.gs` を Node で読み込み、偽の `DriveApp` / `SpreadsheetApp` / `PropertiesService` などで検証する。純粋な関数（フォルダ名、検査、指紋など）と、同期の通し（追加・変更・削除・リネーム・時間切れからの再開・二重実行・1件再同期・`getGalleryData`・`setup`） |
-| `fusion_export.py` | `python -m unittest discover -s dev/fusion-test -v` | 偽の `adsk` を差し込んで import し、Fusionを要しない部分（命名、CSV、行の選別、スキップ判定、meta.json の生成）をテストする |
+| `Code.gs` | `cd dev/gas-test && node --test` | `Code.gs` を Node で読み込み、偽の `DriveApp` / `SpreadsheetApp` / `PropertiesService` などで検証する。純粋な関数（フォルダ名、検査、指紋など）と、同期の通し（追加・変更・削除・リネーム・時間切れからの再開・二重実行・1件再同期・`getGalleryData`・`setup`・`getThumbnails`） |
+| `fusion_export.py` | `python -m unittest discover -s dev/fusion-test -v` | 偽の `adsk` を差し込んで import し、Fusionを要しない部分（命名、CSV、行の選別、名前での絞り込み、triage.csv の引き継ぎ、パスの解決、済み判定、meta.json の生成、外部参照の判定）と、`break_external_links` を偽のオカレンスでテストする |
 | 画面 | `node dev/preview/build.mjs` | `index.html` の `include('guide')` を `guide.html` で置き換え、`google.script.run` の偽物（サンプルデータを返す）を注入して `dev/preview/out/index.html` を出す。ブラウザで開いて見た目を確認する |
 
-プレビューの場面は URL の `?scenario=` で切り替えられる：`out/index.html?scenario=empty`（作品ゼロ）、`error`（読み込み失敗）、`partial`（時間切れ）、`syncfail`（同期失敗）。サンプルデータは `dev/preview/sample-data.js`。GASのテンプレート構文が残っているとビルドが失敗する。
+プレビューの場面は URL の `?scenario=` で切り替えられる：`out/index.html?scenario=empty`（作品ゼロ）、`error`（読み込み失敗）、`partial`（時間切れ）、`syncfail`（同期失敗）、`readonly`（同期できない人）、`status`（未知の状態）、`many`（30件。画像の取り直しを含む）、`thumbfail`（取り直しも失敗）。読み込み後の操作もクエリで指定できる（プレビュー専用）：`&view=list|gallery`、`&select=<folderId>`、`&click=<CSSセレクタ>`、`&scroll=end|bottom`。スマホ幅は `out/frame-390.html?src=<クエリ>` で 390px の iframe に入れて見る。サンプルデータは `dev/preview/sample-data.js`。GASのテンプレート構文が残っているとビルドが失敗する。
 
 ローカルで確かめられないこと：GAS実環境での動作（許可画面、共有ドライブ上の挙動、実行時間）、Driveのサムネイル表示（ブラウザのCookie制限）、Fusion APIの実際の挙動。これらは次の「本番での確認」と、Fusionの実機で確かめる。
 
@@ -299,23 +319,43 @@ AIや他の人が直したコードは、本番に出す前にテスト環境で
 
 | 区画 | 内容 |
 | --- | --- |
-| 設定欄 | `MODE` `OUTPUT_DIR` `TRIAGE_DIR` `TRIAGE_CSV` `PROJECT_NAMES` `STL_PER_BODY` `MESH_QUALITY` `THUMB_WIDTH/HEIGHT` |
-| 定数 | `TRIAGE_COLUMNS`、ファイル名、ランク（`EXPORT_RANKS = ("A","B")`）、ログの result の語、`FOLDER_NAME_PATTERN`（GASの同期と同じ規則） |
-| 純粋な関数 | `sanitize_filename` `epoch_to_text` `date_part` `make_folder_name` `is_valid_folder_name` `unique_name` `source_text` `build_meta` `meta_json_text` `write_meta_json` `is_done` `folder_state` `resolve_output_folder` `check_setting_path` `write_triage_csv` `read_triage_csv` `normalize_rank` `select_rows_for_export` `select_projects` `lookup_candidates` `append_log` `backup_path` `collect_visible_solid_bodies`（`[(ボディ, STLの名前の元), …]` を返す） |
+| 設定欄 | 「共通 → モード1だけ → モード2だけ → 細かい設定」の順。共通：`MODE` `PROJECT_NAMES` `TARGET_NAMES`／モード1だけ：`TRIAGE_DIR`（既定はローカルの `ドキュメント\3Dギャラリー_仕分け`）／モード2だけ：`TRIAGE_CSV`（既定は空＝`TRIAGE_DIR\triage.csv`）`OUTPUT_DIR` `DEFAULT_AUTHOR` `DEFAULT_STATUS` `DEFAULT_TAGS`／細かい設定：`STL_PER_BODY` `MESH_QUALITY` `THUMB_WIDTH/HEIGHT`。Googleドライブ上でなければならず、`<共有ドライブ名>` の書き換えが要るのはモード2の `OUTPUT_DIR` だけ |
+| 定数 | `TRIAGE_COLUMNS`、ファイル名、`FUSION_ID_KEY`（`"fusion_id"`）、`SOURCE_PREFIX`（旧版の「Fusion元: 」。互換用）、`BREAK_LINK_MAX_ROUNDS`、ランク（`EXPORT_RANKS = ("A","B")`）、ログの result の語、`FOLDER_NAME_PATTERN`（GASの同期と同じ規則） |
+| 純粋な関数 | `sanitize_filename` `epoch_to_text` `date_part` `make_folder_name` `is_valid_folder_name` `unique_name` `source_text` `build_meta` `meta_json_text` `write_meta_json` `is_done` `folder_state` `resolve_output_folder` `check_setting_path` `write_triage_csv` `read_triage_csv` `normalize_rank` `select_rows_for_export` `select_projects` `normalize_name` `select_by_names` `names_in_use` `merge_triage_rows` `resolve_paths` `external_ref_outcome` `lookup_candidates` `append_log` `backup_path` `collect_visible_solid_bodies`（`[(ボディ, STLの名前の元), …]` を返す） `break_external_links`（Fusion のオブジェクトを受けるが、`count`/`item` と属性だけで判断するので偽物でテストできる） |
 | Fusionを使う関数 | `list_target_projects` `walk_f3d_files` `first_created_epoch` `FileFinder` `open_document` `close_document` `is_modified` `get_design` `save_thumbnail` `export_f3d/step/stl/3mf` `find_external_references` `export_item` `Progress` |
+| 純粋な関数の役割（第2ラウンドで追加） | `resolve_paths`：`~` の展開、`TRIAGE_CSV` が空なら `TRIAGE_DIR\triage.csv`、モードごとの設定の検査（`<共有ドライブ名>` の残りを止めるのは `OUTPUT_DIR` だけ）。`normalize_name`：前後の空白を除いて NFC 正規化。`select_by_names`：名前で絞り、見つからなかった名前も返す。`merge_triage_rows`：モード1の再実行で既存の行に合わせる。`names_in_use`：今回撮らない行が使う `folder_name` と画像名（撮り直す行の名前案が衝突しないように）。`external_ref_outcome`：ログを「要目視確認」にするかと注記を決める。`break_external_links`：外部参照の取り込み |
 | 実行 | `run_mode1` `run_mode2` `run(context)`（Fusionが呼ぶ入口） |
 
 設計の決まり：
 
 - 純粋な関数は Fusion を要しないので `dev/fusion-test` で検証する。Fusion を使う部分は薄く保つ。
 - `triage.csv` は BOM 付きUTF-8で書き、読むときは BOM の有無・Shift_JIS(cp932) のどれも受ける。モード1の再実行では既存の `triage.csv` を `triage_日時.csv` に退避する。
-- 完了の目印は **`meta.json` を最後に書くこと**。済み判定は `folder_state`：`meta.json` の `note` に「Fusion元: <この行の場所>」が一致すれば `done`（飛ばす）、`meta.json` が無ければ `partial`（やり直す）、`meta.json` はあるが元が違う・読めなければ `conflict`（手作りの同名フォルダなど。上書きせず `resolve_output_folder` が `-v2`、`-v3` … の空きを探し、ログに「注意」を残す）。`meta.json` は一時ファイル（`.tmp`）に書いてから置き換える（`.tmp` は同期が無視する）。
+- 完了の目印は **`meta.json` を最後に書くこと**。`meta.json` は一時ファイル（`.tmp`）に書いてから置き換える（`.tmp` は同期が無視する）。
+- 済み判定は `folder_state`。`meta.json` の **`fusion_id`**（`DataFile.id`）とこの行の `datafile_id` を照合する。`note` には何も入れない（空の配列。Fusion の場所を入れるとギャラリーに出てしまうため）。`fusion_id` は版・名前・置き場所が変わっても同じなので、Fusion 側で整理し直しても追跡できる。分岐は次のとおり。
+
+  | 出力先フォルダの状態 | `folder_state` | 動き |
+  | --- | --- | --- |
+  | フォルダが無い | `new` | 新しく作る |
+  | フォルダはあるが `meta.json` が無い | `partial` | 途中で止まったので、やり直す（そのフォルダに書く） |
+  | `fusion_id` が一致 | `done` | 済み。スキップ（ログに「スキップ」） |
+  | `fusion_id` がある、だが違う | `conflict` | 別の作品。上書きせず `resolve_output_folder` が `-v2`、`-v3` … の空きを探して書き、ログに「注意」を残す |
+  | `meta.json` が読めない・`{ }` でない | `conflict` | 同上（手作りの同名フォルダなど） |
+  | `fusion_id` が無く、`note` に旧版の「Fusion元: …」行がある | `done` / `conflict` | 旧版の出力との互換。行の場所が今回の行（`source_text`）と一致すれば `done`、違えば `conflict` |
+  | `fusion_id` も「Fusion元」行も無い | `done_no_id` | 念のためスキップ（ログに「fusion_id が無いため念のためスキップ」）。手で消した・手作りの同名フォルダ・旧版以前の出力は、同じ作品か分からないが、重複して書き出すより飛ばすほうが害が少ないため |
+
+  `datafile_id` が空の行は、`fusion_id` が決まらないので `select_rows_for_export` が選ばず、警告（ログの「注意」）を出す。書き出し直したいときは、人が作品フォルダを消してから再実行する（`meta.json` だけ消すと、フォルダが `partial` になって同じ場所に書き直される）。`meta.json` は人が記入していくので、照合に使うのは `fusion_id`（と旧版の「Fusion元」行）だけで、ほかのキーは問わない。
 - 設定欄のパスに `< >` が残っていたら `check_setting_path` が実行を止める。
 - 1件ごとに `try/except` し、`export_log.csv` に記録して次へ進む。`adsk.doEvents()` と進捗ダイアログ（キャンセル可）で画面を固めない。
 - 形式ごと（f3d / STEP / STL / 3MF / thumb）に try し、1つ失敗しても残りを出す。失敗があれば `meta.json` を書かず、その作品を失敗にする。
 - モード2は、`version_id` → `datafile_id` → 対象プロジェクトの再走査の順でファイルを探し、ログの `detail` に「取得: …」と残す。古い版で引けたら `latestVersion` に替える。
 - STL は、ルートと全オカレンスの「表示中のソリッドボディ」を対象にし、ファイル名はルート直下ならボディ名、オカレンス内なら `コンポーネント名_ボディ名`（`Occurrence.component.name`）。重複は `_2` などで避ける。`STL_PER_BODY = False` で1ファイルにまとめる。
-- `meta.json` の雛形の `note` に「Fusion元: プロジェクト/フォルダ/名前」を入れる。
+- `meta.json` の雛形（`build_meta`）は、`author` / `status` / `tags` に設定欄の `DEFAULT_AUTHOR` / `DEFAULT_STATUS` / `DEFAULT_TAGS` を入れ（既定は空）、`purpose` は作品ごとに違うので常に空、`note` は空の配列、`fusion_id` に `datafile_id` を入れる。`DEFAULT_STATUS` が選択肢外だと、同期で「要対応」になる。
+- **`TARGET_NAMES`**（空なら全部）：`select_by_names` が `normalize_name`（前後の空白を除き NFC 正規化）をかけて完全一致で選ぶ。同名のファイルは全部選び、見つからない名前は最後のメッセージとログ（「注意」）に出す。モード1は指定した名前のファイルだけ画像を撮り、モード2は `triage.csv` から指定した名前の行だけを書き出す（指定＝書き出すと決めたことなので、`rank` は問わない）。
+- **モード1の再実行**：既存の `triage.csv` を `triage_日時.csv` に退避したうえで、`merge_triage_rows` が `datafile_id` の同じ行の `rank` と `folder_name` を引き継ぐ（既存の行の位置に新しい行を入れる。今回撮らなかった行・Fusion から消えたファイルの行もそのまま残し、新しいファイルは最後に足す）。一部だけ撮り直しても、記入済みの仕分けは消えない。今回撮れなかった行は、前回の `image` を残す。`names_in_use` は、残す行が使う `folder_name` と画像名を、撮り直す行の名前案が避けるために使う。
+- **設定欄のパス**：`resolve_paths` が解決する。`TRIAGE_DIR` の既定はローカルの `ドキュメント\3Dギャラリー_仕分け`（仕分けの作業用で、共有しなくてよい）。`TRIAGE_CSV` は既定が空で、空なら `TRIAGE_DIR\triage.csv` を読む。`<共有ドライブ名>` が残っていると止めるのは、モード2の `OUTPUT_DIR` だけ（モード1は `OUTPUT_DIR` が未設定でも動く）。
+- **外部参照**：API の Fusion アーカイブ書き出しは参照先を含まず、外部参照のあるデザインの f3d は中身が空になる（実機で確認。上の「確認したFusionのバージョン」）。そこで `export_item` は **STEP → STL → 3MF → thumb.png → 取り込み（`before_f3d`）→ f3d** の順で書き出す。STEP/STL/3MF/サムネイルは取り込まなくても参照先ごと出ることを実機で確かめてあり、取り込みが失敗したり、取り込みで部品が置き換わって先に集めたボディ（プロキシ）が無効になったりしても、それらに影響しないようにするため。取り込みは**自分で開いたドキュメントに限り**、`break_external_links` が `Occurrence.breakLink()` で行う（対象を先にリストへ集めてから呼び、入れ子は `isReferencedComponent` が無くなるまで周回する。1周で1つも取り込めなければ止め、上限は `BREAK_LINK_MAX_ROUNDS` 周）。保存せずに `close(False)` で閉じるので、クラウド上の元データは変わらない。元々開いていたドキュメントは書き換えないので、取り込まずに書き出す。
+- **ログの判定**（`external_ref_outcome`）：外部参照が無い、または全部取り込めた（自分で開いたドキュメント）→「成功」（detail に「外部参照 N 件を取り込んで f3d を書き出し」）。次のどれかなら「成功（要目視確認）」：元々開いていたドキュメントで取り込まなかった／取り込めなかった配置が残った／印は立っているのに取り込める配置が無かった。いずれも f3d に参照先が入っていない可能性があるため。
+- **既知の制約**：API では、参照先を含む本物の f3z は作れない（Autodesk のフォーラムでも同じ回答）。取り込んだ f3d は、参照先がローカルのコンポーネントとして入った単体のデータになり、元の参照のつながり（参照先を直すと反映される関係）は失われる。つながりを保った形で残したいなら、Fusion の UI から f3z で書き出す（手作業）。
 - 元々開いていたドキュメントに未保存の変更があるとき（`Document.isModified`）は、その状態で書き出し、ログの `detail` に注記する。サムネイルは `isSmoothTransition = False` で視点移動のアニメーション途中を撮らない。
 - 公式リファレンスの URL は、ページ名に名前空間の接頭辞（`core_` / `fusion_`）が付く形に変わっている（旧形式の接頭辞なしは 404）。
 
@@ -368,7 +408,7 @@ AIや他の人が直したコードは、本番に出す前にテスト環境で
 1. **`Data.findFileById` でどの ID が引けるか**。モード2のログの detail「取得: …」を見る。`version_id` で常に引けるなら `datafile_id` と再走査は保険のまま残してよい。`datafile_id` でしか引けない／再走査ばかりなら、試す順（`lookup_candidates`）を見直す。古い triage.csv（version_id 列なし）は datafile_id → 再走査で引く。`?version=N` 付きで引いたとき `latestVersion` が期待どおり最新版を返すかも確認する。
 2. **オカレンス内ボディ（プロキシ）を STL 書き出ししたとき、組立上の位置で出るか**。リファレンスでは `Occurrence.bRepBodies` はプロキシを返すとあるが、STL の座標に変換が反映されるかは明記なし。多部品のアセンブリで、ボディごとの STL をスライサーに並べて確認する。
 3. **ルート単位の STL（`STL_PER_BODY=False`）と 3MF に、非表示のボディやサーフェスボディが含まれるか**。含まれるなら、表示中ボディだけを対象にする実装に変える。
-4. **外部参照を含むデザインの `.f3d` 書き出し**。UI では外部参照を含むと `.f3z` になる。API で `.f3d` 名を指定したときの中身（参照先を含むか）とエラーの有無を確認する。外部参照の判定（`isReferencedComponent` / `documentReferences` / `hasChildReferences`）が実際に立つかも見る。
+4. **外部参照を含むデザインの `.f3d` 書き出し**。第1回の実機で、参照先を含まず中身が空になると分かった。第2ラウンドの対策（取り込んでから書き出す）で、f3d を Fusion で開いて部品が入っているかを確かめる。取り込みが入れ子（参照の中の参照）まで効くか、`breakLink()` が False を返すものが残らないかも見る。
 5. **開いた直後のサムネイルが真っ白・描画途中にならないか**。`doEvents` を数回挟んでいるが足りなければ回数を増やすか、`time.sleep` を足す。ViewCube の向きが変えられているデータで斜め視点がばらつかないか。
 6. **`DataFolder.dataFiles` / `dataFolders` が初回アクセスで全部そろうか**（クラウドからの遅延読み込みで件数が欠けないか）。モード1の件数を Fusion のデータパネルの件数と比べる。
 7. **`DataFile.versions` の dateCreated が「最初の版」まで取れるか**、そして大量ファイルで遅くないか。遅ければ最新版の `dateCreated` だけにする。

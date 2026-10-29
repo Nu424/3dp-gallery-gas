@@ -37,6 +37,7 @@
         <div class="keyrow"><b>status</b><span class="req req-must">必須</span><span>使用中・参考・引退のどれか</span></div>
         <div class="keyrow"><b>tags</b><span class="req req-opt">任意</span><span>絞り込みに使うことば</span></div>
         <div class="keyrow"><b>note</b><span class="req req-opt">任意</span><span>そのほか全部。1行ずつ配列で</span></div>
+        <div class="keyrow"><b>fusion_id</b><span class="req req-opt">自動</span><span>Fusionから書き出すと入る。消さない・書き換えない</span></div>
       </div>
     </div>
   </section>
@@ -60,9 +61,9 @@
     </div>
     <ol class="steps tabpanel" role="tabpanel" id="panel-auto" aria-labelledby="tab-auto" hidden>
       <li><span class="no">1</span><span class="t">tools/fusion_export/fusion_export.py を、Fusionの「スクリプトとアドイン」に登録する</span></li>
-      <li><span class="no">2</span><span class="t">設定欄で対象プロジェクトと出力先を指定し、モード1（サムネイルのみ）で実行する。triage.csv と画像が出る</span></li>
+      <li><span class="no">2</span><span class="t">設定欄で対象プロジェクトを指定し、モード1（サムネイルのみ）で実行する。パソコンの「ドキュメント\3Dギャラリー_仕分け」に triage.csv と画像が出る（特定のファイルだけなら TARGET_NAMES に名前を書く）</span></li>
       <li><span class="no">3</span><span class="t">triage.csv をスプシで開き、ランク（A・B・C）とフォルダ名を書き込む</span></li>
-      <li><span class="no">4</span><span class="t">モード2（フル書き出し）で実行する。出力先が items/ なら、ここで登録まで終わる</span></li>
+      <li><span class="no">4</span><span class="t">設定欄の OUTPUT_DIR を items/ にして、モード2（フル書き出し）で実行する。ここで登録まで終わる</span></li>
       <li><span class="no">5</span><span class="t">各フォルダの meta.json を埋める（下のAI用の文を使うと楽）</span></li>
       <li><span class="no">6</span><span class="t">「今すぐ同期」を押し、一覧の上の「要対応」の表示が消えれば完了</span></li>
     </ol>
@@ -87,6 +88,8 @@
 - meta.json のキーは author, purpose, status, tags, note の5つだけ
   - status は「使用中」「参考」「引退」のいずれか
   - note は文字列の配列（1要素＝1行）
+  - 例外: Fusion から書き出したフォルダの meta.json には fusion_id がある。
+    これは消さず、値も変えない（書き出し済みの目印）
 
 ## 進め方
 1. ファイルを見て作品ごとにまとめる。どれが同じ作品か迷ったら聞く

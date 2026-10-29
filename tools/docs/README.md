@@ -73,7 +73,7 @@
 ギャラリー右上の「**作品を追加する**」に、図入りの手順と、AIに手伝ってもらうための文があります。要点だけ書きます。
 
 - **数件を手で**：`items/_template/` をコピーして `YYYYMMDD_名前`（日付はモデルの作成日）に改名し、f3d・STEP・STL（または3MF）・`thumb.png` を入れ、`meta.json` の `author` `purpose` `status` を埋めて `items/` に置く。
-- **まとめてFusionから**：`tools/fusion_export/fusion_export.py` で、Fusionのクラウドにあるf3dを一括で書き出す（手順は [OPERATION.md の「Fusion書き出しの運用」](OPERATION.md#fusion書き出しの運用)）。
+- **まとめてFusionから**：`tools/fusion_export/fusion_export.py` で、Fusionのクラウドにあるf3dを一括で書き出す（手順は [OPERATION.md の「Fusion書き出しの運用」](OPERATION.md#fusion書き出しの運用)）。書き出した `meta.json` の `fusion_id` は消さない・書き換えない（書き出し済みかの判定に使う印）。書き出し直したいときは作品フォルダを消してから再実行する。
 - 手順は、Google ドライブ（パソコン版）でフォルダを開いて作業する前提です。Webの画面だけで進める場合の補足もギャラリーの「作品を追加する」にあります。
 - 置いたあとにギャラリーの「**今すぐ同期**」を押すと一覧に出ます。出ないときは、一覧の上に理由（「一覧に出ていない作品」）が表示されるので、`meta.json` を直してもう一度同期してください。
 
