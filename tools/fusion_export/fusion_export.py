@@ -10,8 +10,10 @@ fusion_export.py — Fusion のクラウド上の f3d を開いて、3Dギャラ
 モードは2つ
   モード1（サムネイルのみ）: 対象プロジェクトの f3d を全部開いて画像を撮り、triage.csv（一覧）を作る。
                              triage.csv の rank 列に A/B/C を書いて仕分ける。
+                             既存の triage.csv は退避し、記入済みの rank と folder_name は引き継ぐ。
   モード2（フル書き出し）  : triage.csv の rank が A か B の行だけ、作品フォルダを作って
                              f3d / STEP / STL / 3MF / thumb.png / meta.json を書き出す。
+  TARGET_NAMES に名前を書くと、どちらのモードもその名前のファイルだけを扱う（モード2では rank を問わない）。
 
 このファイルは標準ライブラリと adsk（Fusion 付属）だけを使う。追加のインストールは要らない。
 """
@@ -20,39 +22,77 @@ fusion_export.py — Fusion のクラウド上の f3d を開いて、3Dギャラ
 # 設定欄（ここだけ書き換えればよい）
 # =============================================================================
 
+import os  # 下の既定値でパスを組み立てるため、ここで読み込む
+
+# パスの書き方（下のパスの項目に共通）
+#   - Windows のパスは r"..." で囲む（\ をそのまま書けるようにするため）。
+#   - "~" で始めると、このPCのユーザーのフォルダ（C:\Users\<名前>）を指す。
+
+# -----------------------------------------------------------------------------
+# 共通（モード1・モード2の両方で使う）
+# -----------------------------------------------------------------------------
 # 実行するモード。1 = サムネイルのみ（仕分け用の一覧を作る）、2 = フル書き出し
 MODE = 1
-
-# パスの書き方（下の3項目に共通）
-#   - Googleドライブ（パソコン版）で見える「共有ドライブ」内の 3Dギャラリー を指す。
-#     マイドライブにはしない（卒業で個人のアカウントが消えると、中身ごと消えるため）。
-#   - <共有ドライブ名> は研究室の共有ドライブの名前に書き換える（< > ごと消す）。
-#   - ドライブ文字は G: が多いが、PC によって違う。エクスプローラーで「Google Drive」の文字を確認する。
-#   - Windows のパスは r"..." で囲む（\ をそのまま書けるようにするため）。
-
-# モード2の出力先＝ギャラリーの items フォルダ。ここに書き出すと、そのままギャラリーへの登録になる。
-OUTPUT_DIR = r"G:\共有ドライブ\<共有ドライブ名>\3Dギャラリー\items"
-
-# モード1の出力先。triage.csv とサムネイル画像がここに書かれる。
-# items の外にする（items の中だと作品フォルダと間違えて同期されるため）。
-TRIAGE_DIR = r"G:\共有ドライブ\<共有ドライブ名>\3Dギャラリー\triage"
-
-# モード2で読む triage.csv のパス（モード1で作り、rank と folder_name を記入したもの）。
-# スプシで編集した場合は「ファイル → ダウンロード → カンマ区切り形式（.csv）」で保存し、このパスに置く。
-TRIAGE_CSV = r"G:\共有ドライブ\<共有ドライブ名>\3Dギャラリー\triage\triage.csv"
 
 # 対象にする Fusion のプロジェクト名のリスト。空のリスト [] なら全プロジェクトが対象。
 # 例: PROJECT_NAMES = ["研究室共有", "山田の試作"]
 # 対象は Fusion で今選んでいるチーム（データパネル左上のハブ）の中のプロジェクトだけ。
 PROJECT_NAMES = []
 
-# STL をボディごとに分けるか。True = ボディごとに1ファイル（<ボディ名>.stl）、False = 全体で1ファイル（<名前>.stl）
+# 扱うファイルを名前で絞る（Fusion 上のファイル名のリスト）。空のリスト [] なら全部。
+# 例: TARGET_NAMES = ["流路セルホルダー", "顕微鏡ステージ"]
+#   - 名前は完全一致（前後の空白は無視。濁点の表し方の違いもそろえて比べる）。
+#   - モード1: 指定した名前のファイルだけ画像を撮る。既存の triage.csv の他の行はそのまま残る。
+#   - モード2: triage.csv の中で指定した名前の行だけを書き出す。rank は問わない（空や C でも書き出す）。
+#   - 見つからなかった名前は、最後のメッセージとログ（export_log.csv）に出る。
+TARGET_NAMES = []
+
+# -----------------------------------------------------------------------------
+# モード1だけで使う
+# -----------------------------------------------------------------------------
+# モード1の出力先。triage.csv・サムネイル画像・ログがここに書かれる。
+# 既定は「ドキュメント\3Dギャラリー_仕分け」（このPCの中。仕分けの作業用なので共有しなくてよい）。
+# 共有ドライブに置きたければ書き換えてよい。その場合は items の外にする
+# （items の中だと作品フォルダと間違えて同期されるため）。
+# モード2の TRIAGE_CSV が空のときは、ここの triage.csv を読む。
+TRIAGE_DIR = os.path.join(os.path.expanduser("~"), "Documents", "3Dギャラリー_仕分け")
+
+# -----------------------------------------------------------------------------
+# モード2だけで使う
+# -----------------------------------------------------------------------------
+# モード2で読む triage.csv のパス（モード1で作り、rank と folder_name を記入したもの）。
+# 空文字 "" なら TRIAGE_DIR の中の triage.csv を読む（ふつうはこのままでよい）。
+# スプシで編集した場合は「ファイル → ダウンロード → カンマ区切り形式（.csv）」で保存し、
+# TRIAGE_DIR の triage.csv と置き換えるか、ここにそのパスを書く。
+TRIAGE_CSV = ""
+
+# モード2の出力先＝ギャラリーの items フォルダ。ここに書き出すと、そのままギャラリーへの登録になる。
+#   - Googleドライブ（パソコン版）で見える「共有ドライブ」内の 3Dギャラリー を指す。
+#     マイドライブにはしない（卒業で個人のアカウントが消えると、中身ごと消えるため）。
+#   - <共有ドライブ名> は研究室の共有ドライブの名前に書き換える（< > ごと消す）。残っていると止まる。
+#   - ドライブ文字は G: が多いが、PC によって違う。エクスプローラーで「Google Drive」の文字を確認する。
+OUTPUT_DIR = r"G:\共有ドライブ\<共有ドライブ名>\3Dギャラリー\items"
+
+# 書き出す meta.json に最初から入れておく値（全作品に同じ値が入る。空ならあとで各自が記入する）。
+#   DEFAULT_AUTHOR: 作成者。例 "山田"
+#   DEFAULT_STATUS: 状態。選択肢は "使用中" / "参考" / "引退" のどれか（ギャラリー側 Code.gs の STATUS_CHOICES と同じ）。
+#                   選択肢にない値を書くと、同期で「要対応」になる。
+#   DEFAULT_TAGS  : タグのリスト。例 ["治具", "PLA"]
+# 用途（purpose）は作品ごとに違うので、既定値は持たない（空のまま書き出す）。
+DEFAULT_AUTHOR = ""
+DEFAULT_STATUS = ""
+DEFAULT_TAGS = []
+
+# -----------------------------------------------------------------------------
+# 細かい設定（ふつうは変えなくてよい）
+# -----------------------------------------------------------------------------
+# STL をボディごとに分けるか（モード2）。True = ボディごとに1ファイル（<ボディ名>.stl）、False = 全体で1ファイル（<名前>.stl）
 STL_PER_BODY = True
 
-# STL / 3MF のメッシュの細かさ。"high"（細かい・ファイル大）/ "medium"（標準）/ "low"（粗い・ファイル小）
+# STL / 3MF のメッシュの細かさ（モード2）。"high"（細かい・ファイル大）/ "medium"（標準）/ "low"（粗い・ファイル小）
 MESH_QUALITY = "high"
 
-# サムネイル画像の大きさ（ピクセル）。ギャラリーのカードの画像枠がおよそ 3:2（はみ出しは切り取り）
+# サムネイル画像の大きさ（ピクセル。モード1の画像とモード2の thumb.png）。ギャラリーのカードの画像枠がおよそ 3:2（はみ出しは切り取り）
 # なので、3:2 にしておくと切れる部分が少ない
 THUMB_WIDTH = 1200
 THUMB_HEIGHT = 800
@@ -65,7 +105,6 @@ import csv
 import datetime
 import io
 import json
-import os
 import re
 import traceback
 import unicodedata
@@ -94,7 +133,8 @@ TRIAGE_FILENAME = "triage.csv"
 LOG_FILENAME = "export_log.csv"
 LOG_COLUMNS = ["time", "mode", "name", "result", "detail"]
 META_FILENAME = "meta.json"
-SOURCE_PREFIX = "Fusion元: "      # meta.json の note に入れる元の場所の見出し。済み判定にも使う
+SOURCE_PREFIX = "Fusion元: "      # 旧版が meta.json の note に入れていた元の場所の見出し。旧版の出力の済み判定にだけ使う
+FUSION_ID_KEY = "fusion_id"       # meta.json に入れる DataFile.id のキー（済み判定に使う。同期とギャラリーは無視する）
 THUMB_FILENAME = "thumb.png"
 EXPORT_RANKS = ("A", "B")          # モード2で書き出すランク
 FOLDER_NAME_PATTERN = re.compile(r"^(\d{8})_(.+)$")  # GAS の同期と同じ規則
@@ -104,6 +144,10 @@ RESULT_OK = "成功"
 RESULT_CHECK = "成功（要目視確認）"
 RESULT_FAIL = "失敗"
 RESULT_SKIP = "スキップ"
+RESULT_NOTE = "注意"
+
+# 外部参照の取り込み（breakLink）を繰り返す上限。入れ子1段ごとに1周するので、普通は数周で終わる
+BREAK_LINK_MAX_ROUNDS = 20
 
 
 # =============================================================================
@@ -201,19 +245,37 @@ def unique_name(name, used, style="file"):
 
 
 def source_text(project, folder_path, name):
-    """meta.json の note に入れる「Fusion元」の場所。空の部分は詰める。"""
+    """旧版が meta.json の note に入れていた「Fusion元」の場所。空の部分は詰める（旧版の出力の済み判定用）。"""
     parts = [p for p in [project, (folder_path or "").strip("/"), name] if p]
     return "/".join(parts)
 
 
-def build_meta(project, folder_path, name):
-    """meta.json の雛形（必須値は空のまま。同期で「未記入」として見えるようにするため）。"""
+def _as_tags(tags):
+    """タグの既定値をリストにそろえる。文字列1つが書かれていても受ける。空の要素は落とす。"""
+    if isinstance(tags, str):
+        tags = [tags]
+    try:
+        return [str(t).strip() for t in (tags or []) if str(t).strip()]
+    except TypeError:
+        return []
+
+
+def build_meta(fusion_id, author=None, status=None, tags=None):
+    """meta.json の雛形。
+
+    note は空の配列（Fusion の場所は入れない。ギャラリーに出てしまうため）。
+    代わりに fusion_id（DataFile.id。版・名前・置き場所が変わっても同じ）を入れ、済み判定に使う。
+    未知のキーは同期でもギャラリーでも無視されるので、画面には出ない。
+    author / status / tags は省略すると設定欄の DEFAULT_* を使う。purpose は作品ごとに違うので常に空
+    （必須値が空なら、同期で「未記入」として見える）。
+    """
     return {
-        "author": "",
+        "author": (DEFAULT_AUTHOR if author is None else author) or "",
         "purpose": "",
-        "status": "",
-        "tags": [],
-        "note": [SOURCE_PREFIX + source_text(project, folder_path, name)],
+        "status": (DEFAULT_STATUS if status is None else status) or "",
+        "tags": _as_tags(DEFAULT_TAGS if tags is None else tags),
+        "note": [],
+        FUSION_ID_KEY: fusion_id or "",
     }
 
 
@@ -240,29 +302,44 @@ def is_done(folder):
     return os.path.isfile(os.path.join(folder, META_FILENAME))
 
 
-def folder_state(folder, source):
+def folder_state(folder, fusion_id, source=""):
     """出力先フォルダの状態を返す。
 
-      "new"      : フォルダが無い（新しく作る）
-      "partial"  : フォルダはあるが meta.json が無い（途中で止まった。やり直す）
-      "done"     : meta.json があり、note に「Fusion元: <source>」がある（このスクリプトで書き出し済み）
-      "conflict" : meta.json はあるが元が違う・読めない（手作りの同名フォルダなど。触らない）
-    meta.json は人が記入していくので、note の他の行や他のキーは問わない。「Fusion元」の行だけを見る。
+      "new"        : フォルダが無い（新しく作る）
+      "partial"    : フォルダはあるが meta.json が無い（途中で止まった。やり直す）
+      "done"       : meta.json の fusion_id がこの行の datafile_id と一致（書き出し済み）。
+                     旧版の出力（fusion_id が無い）は、note の「Fusion元: <source>」行が一致すれば done
+      "done_no_id" : meta.json はあるが fusion_id も「Fusion元」行も無い（手で消した、手作りの同名フォルダなど）。
+                     同じ作品かどうか分からないが、重複して書き出すより飛ばすほうが害が少ないので、済み扱いで飛ばす
+      "conflict"   : fusion_id（または旧版の「Fusion元」行）が違う＝別の作品、または meta.json が読めない。
+                     触らずに -v2 などへ書く
+    meta.json は人が記入していくので、fusion_id と note の「Fusion元」行のほかは問わない。
     """
     meta_path = os.path.join(folder, META_FILENAME)
     if not os.path.isfile(meta_path):
         return "partial" if os.path.isdir(folder) else "new"
     try:
         with open(meta_path, encoding="utf-8-sig") as f:
-            note = json.load(f).get("note")
+            meta = json.load(f)
     except Exception:
         return "conflict"
+    if not isinstance(meta, dict):
+        return "conflict"
+    saved_id = meta.get(FUSION_ID_KEY)
+    saved_id = saved_id.strip() if isinstance(saved_id, str) else ""
+    if saved_id:
+        return "done" if saved_id == (fusion_id or "").strip() else "conflict"
+    # 旧版の出力: note の「Fusion元」行で照合する
+    note = meta.get("note")
     lines = [note] if isinstance(note, str) else note if isinstance(note, list) else []
-    expected = SOURCE_PREFIX + source
-    return "done" if any(isinstance(x, str) and x.strip() == expected for x in lines) else "conflict"
+    head = SOURCE_PREFIX.strip()  # "Fusion元:"
+    sources = [x.strip()[len(head):].strip() for x in lines if isinstance(x, str) and x.strip().startswith(head)]
+    if sources:
+        return "done" if (source or "").strip() in sources else "conflict"
+    return "done_no_id"
 
 
-def resolve_output_folder(base_dir, folder_name, source, reserved):
+def resolve_output_folder(base_dir, folder_name, fusion_id, source, reserved):
     """書き出し先のフォルダ名を決める。戻り値: (フォルダ名, 状態, 避けたフォルダ名のリスト)
 
     folder_name が別の作品（conflict）なら、-v2, -v3 … の空きを探す。
@@ -275,7 +352,7 @@ def resolve_output_folder(base_dir, folder_name, source, reserved):
         cand = folder_name if n == 1 else f"{folder_name}-v{n}"
         if n > 1 and cand.lower() in reserved:
             continue
-        state = folder_state(os.path.join(base_dir, cand), source)
+        state = folder_state(os.path.join(base_dir, cand), fusion_id, source)
         if state != "conflict":
             reserved.add(cand.lower())
             return cand, state, avoided
@@ -326,11 +403,13 @@ def normalize_rank(rank):
     return unicodedata.normalize("NFKC", rank or "").strip().upper()
 
 
-def select_rows_for_export(rows):
+def select_rows_for_export(rows, ignore_rank=False):
     """モード2で書き出す行を選び、作品フォルダ名を確定する。
 
     戻り値: (選んだ行のリスト, 注意メッセージのリスト)
-      - rank が A/B の行だけ選ぶ
+      - rank が A/B の行だけ選ぶ。ignore_rank=True（TARGET_NAMES で名前を指定したとき）は rank を問わない
+      - datafile_id が空の行は選ばず、注意を出す（済み判定に使う fusion_id が決まらず、
+        重複して書き出したり別の作品と取り違えたりしうるため。モード1で撮り直せば入る）
       - folder_name が空なら created と name から作る。書いてあれば使えない文字だけ置き換える
       - 同じフォルダ名が複数あれば2つ目以降に -v2, -v3 を付ける
         （そのままだと2つ目が1つ目の meta.json を見て「済み」と飛ばされてしまうため）
@@ -339,7 +418,11 @@ def select_rows_for_export(rows):
     """
     selected, warnings, used = [], [], set()
     for r in rows:
-        if normalize_rank(r.get("rank")) not in EXPORT_RANKS:
+        if not ignore_rank and normalize_rank(r.get("rank")) not in EXPORT_RANKS:
+            continue
+        if not (r.get("datafile_id") or "").strip():
+            warnings.append(f"「{r.get('name', '')}」は datafile_id が空のため書き出しません"
+                            "（済み判定ができないため。モード1で撮り直すと入ります）")
             continue
         fn = (r.get("folder_name") or "").strip()
         fn = sanitize_filename(fn) if fn else make_folder_name(r.get("created"), r.get("name"))
@@ -364,6 +447,150 @@ def select_projects(all_names, wanted):
     found = [n for n in all_names if n in wanted]
     missing = [n for n in wanted if n not in all_names]
     return found, missing
+
+
+def normalize_name(name):
+    """TARGET_NAMES の照合用に名前をそろえる（前後の空白を除き、NFC 正規化）。
+
+    NFC にするのは、Mac で付けた名前などで「が」が「か＋濁点」の2文字になっていても一致させるため。
+    全角・半角や大文字小文字は区別する（別の名前として付けられることがあるため）。
+    """
+    return unicodedata.normalize("NFC", str(name or "")).strip()
+
+
+def select_by_names(items, wanted, name_of=lambda x: x):
+    """items のうち、名前（name_of(item)）が wanted のどれかと一致するものを選ぶ。
+
+    戻り値: (選んだもののリスト（items の順）, 見つからなかった名前のリスト（wanted の順・書いたまま）)
+    wanted が空なら全部を返す。照合は normalize_name をかけたうえで完全一致。
+    同じ名前のファイルが複数あれば全部選ぶ（プロジェクトやフォルダが違う同名ファイル）。
+    """
+    if not wanted:
+        return list(items), []
+    keys = {normalize_name(w) for w in wanted if normalize_name(w)}
+    selected, hit = [], set()
+    for it in items:
+        key = normalize_name(name_of(it))
+        if key in keys:
+            selected.append(it)
+            hit.add(key)
+    missing, seen = [], set()
+    for w in wanted:
+        key = normalize_name(w)
+        if key and key not in hit and key not in seen:
+            seen.add(key)
+            missing.append(w.strip() if isinstance(w, str) else str(w))
+    return selected, missing
+
+
+def names_in_use(old_rows, ids_this_run):
+    """モード1で、今回撮らない既存の行が使っている folder_name と image の名前（小文字の集合）を返す。
+
+    戻り値: (フォルダ名の集合, 画像名の集合)
+    今回撮る行の名前案や画像のファイル名がこれと重なると、残す行の画像を上書きしてしまうので、避けるのに使う。
+    今回撮る行（datafile_id が ids_this_run にある行）の名前は、撮り直しで同じ名前を使ってよいので含めない。
+    """
+    folders, images = set(), set()
+    for r in old_rows:
+        if (r.get("datafile_id") or "").strip() in ids_this_run:
+            continue
+        for key, bucket in (("folder_name", folders), ("image", images)):
+            value = (r.get(key) or "").strip()
+            if value:
+                bucket.add(value.lower())
+    return folders, images
+
+
+def merge_triage_rows(old_rows, new_rows):
+    """モード1で、既存の triage.csv の行（old_rows）に今回撮った行（new_rows）を合わせる。
+
+    方針（記入済みの仕分けを消さないため）:
+      - datafile_id が同じ既存の行があれば、その行の位置に新しい行を入れる。
+        rank と folder_name は既存の行の値を引き継ぐ（既存が空なら新しい行の値）
+      - 今回撮れなかった（image が空の）ときは、既存の行の image を残す（前回の画像はフォルダに残っている）
+      - 今回撮らなかった既存の行はそのまま残す（TARGET_NAMES で絞ったとき・キャンセルしたとき・
+        Fusion から消えたファイル）
+      - 既存に無い新しい行は最後に足す（既存の行の並びは、人がスプシで並べ替えたものかもしれないので変えない）
+    datafile_id が空の行は照合できないので、どちらも別の行として残す。
+    同じ datafile_id の既存の行が複数あれば、最初の行に入れ、残りはそのまま残す。
+    入力は書き換えない。
+    """
+    new_by_id = {}
+    for r in new_rows:
+        fid = (r.get("datafile_id") or "").strip()
+        if fid and fid not in new_by_id:
+            new_by_id[fid] = r  # ID が空・2つ目以降の重複は照合しない
+    merged, used = [], set()
+    for old in old_rows:
+        fid = (old.get("datafile_id") or "").strip()
+        if fid and fid in new_by_id and fid not in used:
+            used.add(fid)
+            row = dict(new_by_id[fid])
+            for key in ("rank", "folder_name"):
+                if (old.get(key) or "").strip():
+                    row[key] = old[key]
+            if not (row.get("image") or "").strip() and (old.get("image") or "").strip():
+                row["image"] = old["image"]
+            merged.append(row)
+        else:
+            merged.append(dict(old))
+    for r in new_rows:
+        fid = (r.get("datafile_id") or "").strip()
+        if fid in used and new_by_id.get(fid) is r:
+            continue  # 既存の行の位置に入れた
+        merged.append(dict(r))
+    return merged
+
+
+def resolve_paths(mode, triage_dir, triage_csv, output_dir):
+    """設定欄のパスを解決し、問題を調べる。戻り値: ({"triage_dir", "triage_csv", "output_dir"}, 問題のリスト)
+
+      - "~" はユーザーのフォルダに展開する。前後の空白は除く
+      - triage_csv が空なら triage_dir の中の triage.csv
+      - モード1は triage_dir だけを調べる（OUTPUT_DIR が未設定でも動く）
+      - モード2は triage.csv の場所と OUTPUT_DIR を調べる。<共有ドライブ名> の残りを止めるのは
+        OUTPUT_DIR だけ（Googleドライブ上でなければならないのはここだけなので）
+    """
+    def clean(p):
+        p = (p or "").strip()
+        return os.path.expanduser(p) if p else ""
+
+    tdir, tcsv, odir = clean(triage_dir), clean(triage_csv), clean(output_dir)
+    if not tcsv and tdir:
+        tcsv = os.path.join(tdir, TRIAGE_FILENAME)
+    problems = []
+    if mode == 1 and not tdir:
+        problems.append("TRIAGE_DIR が設定されていません")
+    if mode == 2:
+        if not tcsv:
+            problems.append("TRIAGE_CSV（または TRIAGE_DIR）が設定されていません")
+        problem = check_setting_path(odir, "OUTPUT_DIR")
+        if problem:
+            problems.append(problem)
+    return {"triage_dir": tdir, "triage_csv": tcsv, "output_dir": odir}, problems
+
+
+def external_ref_outcome(refs, opened_by_us, broken, failed):
+    """外部参照の扱いの結果から、ログの result を「要目視確認」にするかと、detail に足す文を決める。
+
+    戻り値: (要目視確認にするか, 注記（無ければ空文字）)
+      refs        : find_external_references の結果（空なら外部参照なし）
+      opened_by_us: 自分で開いたドキュメントか（そのときだけ取り込む）
+      broken      : breakLink で取り込めた配置の数
+      failed      : 取り込めなかった配置の名前のリスト
+    取り込めた配置が無いのに外部参照の印があるとき（参照ドキュメントだけがある等）も、
+    f3d に参照先が入っていない可能性があるので要目視確認にする。
+    """
+    if not refs:
+        return False, ""
+    listed = ", ".join(refs)
+    if not opened_by_us:
+        return True, f"外部参照あり: {listed}（開いていたドキュメントのため取り込まずに書き出し。f3d に参照先が入っていない可能性）"
+    if failed:
+        return True, f"外部参照 {broken} 件を取り込んで f3d を書き出し / 取り込めなかった配置: {', '.join(failed)}"
+    if broken == 0:
+        return True, f"外部参照あり: {listed}（取り込める配置が無かった。f3d に参照先が入っていない可能性）"
+    return False, f"外部参照 {broken} 件を取り込んで f3d を書き出し"
 
 
 def lookup_candidates(row):
@@ -451,6 +678,62 @@ def collect_visible_solid_bodies(root_component):
                 pass
             take(b, prefix)
     return bodies
+
+
+def break_external_links(root_component, max_rounds=None):
+    """外部参照している配置（Occurrence）を、breakLink() でこのデザインのローカルなコンポーネントに取り込む。
+
+    戻り値: (取り込めた配置の数, 取り込めなかった配置の名前のリスト)
+
+    方針:
+      - 自分で開いたドキュメントにだけ使う（呼び出し側の責任）。保存せずに閉じるので、クラウドの元データは変わらない
+      - Autodesk の BreakLink サンプルにならい、対象を先にリストへ集めてから breakLink する
+        （取り込むとコレクションが変わり、回しながらだと正しくたどれないため）
+      - 入れ子（参照先の中にさらに参照がある）は、親を取り込むまで子は取り込めないことがある。
+        そのため allOccurrences を見直しながら、isReferencedComponent のものが無くなるまで周回する。
+        1周で1つも取り込めなかったら、それ以上は進まないので止める。上限 max_rounds 周（無限ループ防止）
+      - breakLink が False を返す・例外を出すものは、その周では飛ばし、次の周でもう一度試す
+        （親が取り込まれて取り込めるようになることがあるため）。最後まで残ったものを「取り込めなかった」とする
+    Fusion のオブジェクトを受けるが、判断は count/item と属性だけなので dev/fusion-test で偽物を使って検証している。
+    """
+    rounds = BREAK_LINK_MAX_ROUNDS if max_rounds is None else max_rounds
+    broken = 0
+
+    def referenced():
+        found = []
+        for occ in _iter(root_component.allOccurrences):
+            try:
+                if occ.isReferencedComponent:
+                    found.append(occ)
+            except Exception:
+                pass  # 取り込みで無効になった配置など
+        return found
+
+    for _ in range(rounds):
+        targets = referenced()  # 先にリストへ集める
+        if not targets:
+            break
+        progressed = False
+        for occ in targets:
+            try:
+                if not occ.isReferencedComponent:
+                    continue  # 同じ周で親を取り込んだときなどに、もう参照でなくなっている
+                if occ.breakLink():
+                    broken += 1
+                    progressed = True
+            except Exception:
+                pass  # 次の周で試し直す。最後まで残れば下で「取り込めなかった」に入る
+            _do_events()
+        if not progressed:
+            break
+
+    failed = []
+    for occ in referenced():
+        try:
+            failed.append(occ.name)
+        except Exception:
+            failed.append("（名前不明）")
+    return broken, failed
 
 
 def _iter(collection):
@@ -751,8 +1034,10 @@ def export_3mf(design, geometry, path):
 def find_external_references(design, doc, data_file):
     """外部参照（他のデザインを部品として挿入している）を探す。見つかった説明のリストを返す。
 
-    外部参照があると、書き出しが参照先の古い版になったり、f3d に参照先が含まれなかったり
-    しうるので、ログに「要目視確認」と残す。判定は次のどれか:
+    API の Fusion アーカイブ書き出しは参照先を含まない（実機で f3d が空になった。第2ラウンドの F4）。
+    自分で開いたドキュメントなら break_external_links で取り込んでから f3d を書き出し、
+    元々開いていたドキュメントなら取り込まずにログを「要目視確認」にする（external_ref_outcome）。
+    判定は次のどれか:
       - Occurrence.isReferencedComponent（その配置が外部のコンポーネントを参照している）
       - Document.documentReferences.count（このドキュメントが直接参照しているドキュメントの数）
       - DataFile.hasChildReferences（クラウド上で子の参照を持っているか）
@@ -782,12 +1067,19 @@ def find_external_references(design, doc, data_file):
     return found
 
 
-def export_item(app, design, folder, base_name):
-    """1作品ぶんの f3d / STEP / STL / 3MF / thumb.png を書き出す。meta.json は書かない（呼び出し側で最後に）。
+def export_item(app, design, folder, base_name, before_f3d=None):
+    """1作品ぶんの STEP / STL / 3MF / thumb.png / f3d を書き出す。meta.json は書かない（呼び出し側で最後に）。
 
     方針: 形式ごとに try して、1つ失敗しても残りは出す（手で補えるように）。
     失敗が1つでもあれば例外にまとめて投げ、meta.json を書かせない（再実行でやり直す）。
     戻り値: 補足メッセージのリスト（ボディが無かった等）。
+
+    順番: STEP → STL → 3MF → thumb.png → before_f3d() → f3d。
+      before_f3d は外部参照の取り込み（breakLink）に使う。f3d は API の書き出しに参照先が含まれないので、
+      取り込んでから書き出す必要がある。一方 STEP/STL/3MF/サムネイルは取り込まなくても参照先ごと出ることを
+      実機で確かめてある（第2ラウンドの F4）。そこで、それらを先に出し終えてから取り込む。
+      こうすると、取り込みが失敗したり、取り込みで部品が置き換わって先に集めたボディ（プロキシ）が
+      無効になったりしても、STEP/STL/3MF/サムネイルには影響しない。
     """
     errors, notes = [], []
     base = sanitize_filename(base_name)
@@ -799,7 +1091,6 @@ def export_item(app, design, folder, base_name):
             errors.append(f"{label}: {e}")
         _do_events()
 
-    attempt("f3d", lambda: export_f3d(design, os.path.join(folder, base + ".f3d")))
     attempt("STEP", lambda: export_step(design, os.path.join(folder, base + ".step")))
 
     root = design.rootComponent
@@ -817,6 +1108,10 @@ def export_item(app, design, folder, base_name):
         attempt("3MF", lambda: export_3mf(design, root, os.path.join(folder, base + ".3mf")))
 
     attempt("thumb.png", lambda: save_thumbnail(app, os.path.join(folder, THUMB_FILENAME)))
+
+    if before_f3d is not None:
+        attempt("外部参照の取り込み", before_f3d)
+    attempt("f3d", lambda: export_f3d(design, os.path.join(folder, base + ".f3d")))
 
     if errors:
         raise RuntimeError(" / ".join(errors))
@@ -863,27 +1158,50 @@ def check_setting_path(path, label):
     return ""
 
 
-def _ensure_dir(path, label):
-    problem = check_setting_path(path, label)
-    if problem:
-        raise ValueError(problem)
-    os.makedirs(path, exist_ok=True)
+def _resolved_paths(mode):
+    """設定欄のパスを解決する（resolve_paths）。問題があれば日本語の説明で止める。"""
+    paths, problems = resolve_paths(mode, TRIAGE_DIR, TRIAGE_CSV, OUTPUT_DIR)
+    if problems:
+        raise ValueError("設定欄を確認してください:\n" + "\n".join(problems))
+    return paths
+
+
+def _missing_names_text(missing):
+    """TARGET_NAMES で見つからなかった名前を、最後のメッセージに足す文にする。"""
+    if not missing:
+        return ""
+    return "\n\nTARGET_NAMES のうち見つからなかった名前（{} 件）:\n{}".format(len(missing), "\n".join(missing))
 
 
 # =============================================================================
 # モード1: サムネイルのみ（仕分け用の一覧を作る）
 # =============================================================================
 def run_mode1(app, ui):
-    """対象プロジェクトの f3d を全部開いて画像を撮り、triage.csv を書く。
+    """対象プロジェクトの f3d を開いて画像を撮り、triage.csv を書く。
 
     方針:
       - 先にファイルを全部列挙してから開く（件数が分かり、進捗が出せる）
+      - TARGET_NAMES があれば、列挙したうち指定した名前のファイルだけを撮る
       - 開けない・撮れないファイルも行は残す（image が空。仕分けで判断できるように）
-      - 既存の triage.csv は上書きせず、日時付きの名前に退避する（記入済みのランクを守るため）
+      - 既存の triage.csv は先に読んでおき、merge_triage_rows で今回の行と合わせる
+        （datafile_id が同じ行の rank と folder_name を引き継ぎ、今回撮らなかった行も残す）。
+        書く前に、既存の triage.csv は日時付きの名前に退避する（念のため）
       - キャンセルされたら、そこまでの行で triage.csv を書いて終わる
     """
-    _ensure_dir(TRIAGE_DIR, "TRIAGE_DIR")
-    log_path = os.path.join(TRIAGE_DIR, LOG_FILENAME)
+    paths = _resolved_paths(1)
+    triage_dir = paths["triage_dir"]
+    os.makedirs(triage_dir, exist_ok=True)
+    log_path = os.path.join(triage_dir, LOG_FILENAME)
+    csv_path = os.path.join(triage_dir, TRIAGE_FILENAME)
+    # 既存の triage.csv は撮る前に読む。読めないまま上書きすると記入済みの仕分けが引き継げないので止める
+    old_rows = []
+    if os.path.isfile(csv_path):
+        try:
+            old_rows = read_triage_csv(csv_path)
+        except Exception as e:
+            raise ValueError("既存の triage.csv が読めないため止めました（記入済みの仕分けを引き継げないため）。\n"
+                             "直すか、別の名前に変えてから実行してください。\n{}\n{}".format(csv_path, e))
+
     projects, missing = list_target_projects(app)
     if missing:
         ui.messageBox("次のプロジェクトが見つかりません（名前を確認してください）:\n" + "\n".join(missing))
@@ -891,8 +1209,9 @@ def run_mode1(app, ui):
             return
 
     progress = Progress(ui, "モード1: ファイルを数えています", 1)
-    rows, counts = [], {"ok": 0, "fail": 0}
+    rows, merged, counts = [], [], {"ok": 0, "fail": 0}
     cancelled = False
+    missing_names = []
     try:
         # 1) 列挙（クラウドのフォルダを読むので時間がかかる）
         items = []
@@ -905,9 +1224,24 @@ def run_mode1(app, ui):
             if progress.cancelled():
                 cancelled = True
                 break
+        items, missing_names = select_by_names(items, TARGET_NAMES, name_of=lambda it: it[1].name)
+        if cancelled:
+            missing_names = []  # 列挙の途中で止めたので、見つからないとは言い切れない
+        for n in missing_names:
+            append_log(log_path, n, RESULT_NOTE, "TARGET_NAMES の名前が見つかりません", mode=1)
 
         # 2) 1件ずつ開いて撮影
-        used_folder, used_image = set(), set()
+        #    今回撮らない既存の行の名前は避ける（残す行の画像を上書きしないため）
+        ids_this_run = set()
+        for _p, df, _path in items:
+            try:
+                ids_this_run.add(df.id)
+            except Exception:
+                pass
+        used_folder, used_image = names_in_use(old_rows, ids_this_run)
+        old_by_id = {}
+        for r in old_rows:
+            old_by_id.setdefault((r.get("datafile_id") or "").strip(), r)
         for i, (pname, df, path) in enumerate(items):
             if cancelled or progress.cancelled():
                 cancelled = True
@@ -922,13 +1256,20 @@ def run_mode1(app, ui):
                 row["modified"] = epoch_to_text(df.dateModified)
             except Exception:
                 row.setdefault("datafile_id", "")
-            row["folder_name"] = unique_name(make_folder_name(row.get("created"), name), used_folder, "folder")
-            image = unique_name(row["folder_name"] + ".png", used_image)
+            # 既存の行に folder_name が記入済みなら、画像の名前もそれに合わせる（撮り直しで同じ画像を置き換える）
+            old = old_by_id.get(row["datafile_id"]) if row["datafile_id"] else None
+            kept = (old.get("folder_name") or "").strip() if old else ""
+            if kept:
+                row["folder_name"] = kept
+                used_folder.add(kept.lower())
+            else:
+                row["folder_name"] = unique_name(make_folder_name(row.get("created"), name), used_folder, "folder")
+            image = unique_name(sanitize_filename(row["folder_name"]) + ".png", used_image)
             doc, ours = None, False
             try:
                 doc, ours = open_document(app, df)
                 get_design(doc)  # デザインでなければここで失敗として記録
-                save_thumbnail(app, os.path.join(TRIAGE_DIR, image))
+                save_thumbnail(app, os.path.join(triage_dir, image))
                 row["image"] = image
                 counts["ok"] += 1
                 append_log(log_path, name, RESULT_OK, image, mode=1)
@@ -941,40 +1282,51 @@ def run_mode1(app, ui):
             rows.append(row)
     finally:
         # 3) 一覧を書く（キャンセルや想定外のエラーでも、そこまでの分は残す）
-        csv_path = os.path.join(TRIAGE_DIR, TRIAGE_FILENAME)
         if rows:
+            merged = merge_triage_rows(old_rows, rows)
             if os.path.isfile(csv_path):
                 os.replace(csv_path, backup_path(csv_path))
-            write_triage_csv(csv_path, rows)
+            write_triage_csv(csv_path, merged)
         progress.close()
 
+    kept_rows = len(merged) - len(rows) if rows else len(old_rows)  # 今回撮らずに残した既存の行
     ui.messageBox(
-        "モード1 終了{}\n\n画像を保存: {} 件\n失敗: {} 件\n一覧: {}\n\n"
-        "triage.csv の rank 列に A/B/C を書き、必要なら folder_name を直してからモード2を実行してください。"
-        .format("（中止）" if cancelled else "", counts["ok"], counts["fail"],
-                os.path.join(TRIAGE_DIR, TRIAGE_FILENAME)))
+        "モード1 終了{}\n\n画像を保存: {} 件\n失敗: {} 件\n前回の一覧から残した行: {} 件\n一覧: {}\n\n"
+        "triage.csv の rank 列に A/B/C を書き、必要なら folder_name を直してからモード2を実行してください。{}"
+        .format("（中止）" if cancelled else "", counts["ok"], counts["fail"], kept_rows, csv_path,
+                _missing_names_text(missing_names)))
 
 
 # =============================================================================
 # モード2: フル書き出し
 # =============================================================================
 def run_mode2(app, ui):
-    """triage.csv の A/B の行を、作品フォルダとして OUTPUT_DIR に書き出す。
+    """triage.csv の A/B の行（TARGET_NAMES があればその名前の行）を、作品フォルダとして OUTPUT_DIR に書き出す。
 
     方針:
-      - meta.json があるフォルダは済みとして飛ばす。無ければ（途中で止まった）やり直す
+      - 済み判定は folder_state（meta.json の fusion_id がこの行の datafile_id と一致すれば済み）
+      - meta.json が無ければ（途中で止まった）やり直す
       - meta.json は全部の書き出しが成功したときだけ、最後に書く
       - 1件ずつ try し、失敗してもログに書いて次へ進む
+      - 外部参照は、自分で開いたドキュメントなら取り込んでから f3d を書き出す（保存はしない）
     """
-    _ensure_dir(OUTPUT_DIR, "OUTPUT_DIR")
-    if check_setting_path(TRIAGE_CSV, "TRIAGE_CSV"):
-        raise ValueError(check_setting_path(TRIAGE_CSV, "TRIAGE_CSV"))
-    log_path = os.path.join(OUTPUT_DIR, LOG_FILENAME)
-    rows, warnings = select_rows_for_export(read_triage_csv(TRIAGE_CSV))
+    paths = _resolved_paths(2)
+    output_dir, triage_csv = paths["output_dir"], paths["triage_csv"]
+    if not os.path.isfile(triage_csv):
+        raise ValueError("triage.csv が見つかりません（先にモード1を実行するか、TRIAGE_CSV / TRIAGE_DIR を確認してください）:\n"
+                         + triage_csv)
+    os.makedirs(output_dir, exist_ok=True)
+    log_path = os.path.join(output_dir, LOG_FILENAME)
+    all_rows, missing_names = select_by_names(read_triage_csv(triage_csv), TARGET_NAMES,
+                                              name_of=lambda r: r.get("name", ""))
+    rows, warnings = select_rows_for_export(all_rows, ignore_rank=bool(TARGET_NAMES))
+    for n in missing_names:
+        append_log(log_path, n, RESULT_NOTE, "TARGET_NAMES の名前が triage.csv にありません", mode=2)
     for w in warnings:
-        append_log(log_path, "", "注意", w, mode=2)
+        append_log(log_path, "", RESULT_NOTE, w, mode=2)
     if not rows:
-        ui.messageBox("rank が A か B の行がありません。\n" + TRIAGE_CSV)
+        what = "TARGET_NAMES に合う行" if TARGET_NAMES else "rank が A か B の行"
+        ui.messageBox("{}がありません。\n{}{}".format(what, triage_csv, _missing_names_text(missing_names)))
         return
 
     reserved = {r["folder_name"].lower() for r in rows}  # 他の行が使うフォルダ名（空き名探しで避ける）
@@ -988,20 +1340,27 @@ def run_mode2(app, ui):
                 cancelled = True
                 break
             name = row.get("name", "")
-            source = source_text(row.get("project", ""), row.get("folder_path", ""), name)
+            fusion_id = (row.get("datafile_id") or "").strip()
+            source = source_text(row.get("project", ""), row.get("folder_path", ""), name)  # 旧版の出力の照合用
             progress.update(i, f"{i + 1}/{len(rows)}  {row['folder_name']}")
-            # 済み判定: meta.json の「Fusion元」がこの行と一致するときだけ済み。
-            # 別の作品の同名フォルダ（手作りなど）があれば上書きせず、-v2 などの空き名に書く。
-            folder_name, state, avoided = resolve_output_folder(OUTPUT_DIR, row["folder_name"], source, reserved)
+            # 済み判定: meta.json の fusion_id がこの行と一致するときだけ済み。
+            # 別の作品の同名フォルダがあれば上書きせず、-v2 などの空き名に書く。
+            folder_name, state, avoided = resolve_output_folder(output_dir, row["folder_name"], fusion_id,
+                                                                source, reserved)
             label = f"{folder_name}（{name}）"
-            folder = os.path.join(OUTPUT_DIR, folder_name)
+            folder = os.path.join(output_dir, folder_name)
             if avoided:
-                append_log(log_path, label, "注意",
+                append_log(log_path, label, RESULT_NOTE,
                            "同名のフォルダ（{}）が別の作品のため、{} に書き出します".format("、".join(avoided), folder_name),
                            mode=2)
             if state == "done":
                 counts["skip"] += 1
-                append_log(log_path, label, RESULT_SKIP, "meta.json があるため（書き出し済み）", mode=2)
+                append_log(log_path, label, RESULT_SKIP, "meta.json があり、同じ作品のため（書き出し済み）", mode=2)
+                continue
+            if state == "done_no_id":
+                counts["skip"] += 1
+                append_log(log_path, label, RESULT_SKIP,
+                           "fusion_id が無いため念のためスキップ（書き出し直すならフォルダを消す）", mode=2)
                 continue
 
             doc, ours, found_by = None, False, ""
@@ -1013,15 +1372,26 @@ def run_mode2(app, ui):
                 doc, ours = open_document(app, df)
                 design = get_design(doc)
                 refs = find_external_references(design, doc, df)
+                link = {"broken": 0, "failed": []}
+
+                def break_links(design=design, link=link):
+                    # 自分で開いたドキュメントだけ。保存せずに閉じる（close_document）ので元データは変わらない
+                    try:
+                        link["broken"], link["failed"] = break_external_links(design.rootComponent)
+                    except Exception as e:
+                        link["failed"] = ["取り込み処理のエラー: {}".format(e)]
+
                 os.makedirs(folder, exist_ok=True)
-                notes = export_item(app, design, folder, name or df.name)
-                write_meta_json(folder, build_meta(row.get("project", ""), row.get("folder_path", ""),
-                                                   name or df.name))
+                notes = export_item(app, design, folder, name or df.name,
+                                    before_f3d=break_links if (refs and ours) else None)
+                write_meta_json(folder, build_meta(fusion_id))
                 notes.insert(0, found_by)
                 if not ours and is_modified(doc):
                     notes.append("開いていたドキュメントに未保存の変更があり、その状態で書き出しました")
-                if refs:
-                    notes.insert(1, "外部参照あり: " + ", ".join(refs))
+                check, ref_note = external_ref_outcome(refs, ours, link["broken"], link["failed"])
+                if ref_note:
+                    notes.insert(1, ref_note)
+                if check:
                     counts["check"] += 1
                     append_log(log_path, label, RESULT_CHECK, " / ".join(notes), mode=2)
                 else:
@@ -1036,10 +1406,10 @@ def run_mode2(app, ui):
         progress.close()
 
     ui.messageBox(
-        "モード2 終了{}\n\n成功: {} 件\n成功（要目視確認・外部参照あり）: {} 件\n失敗: {} 件\n"
-        "スキップ（書き出し済み）: {} 件\n\n詳しくは {} を見てください。失敗した分は、もう一度実行するとやり直します。"
+        "モード2 終了{}\n\n成功: {} 件\n成功（要目視確認・外部参照）: {} 件\n失敗: {} 件\n"
+        "スキップ（書き出し済み）: {} 件\n注意: {} 件\n\n詳しくは {} を見てください。失敗した分は、もう一度実行するとやり直します。{}"
         .format("（中止）" if cancelled else "", counts["ok"], counts["check"], counts["fail"],
-                counts["skip"], log_path))
+                counts["skip"], len(warnings), log_path, _missing_names_text(missing_names)))
 
 
 # =============================================================================

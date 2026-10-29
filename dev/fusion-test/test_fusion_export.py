@@ -10,6 +10,7 @@ import datetime
 import importlib.util
 import json
 import os
+import re
 import sys
 import tempfile
 import types
@@ -145,26 +146,63 @@ class TestUniqueName(unittest.TestCase):
 # meta.json
 # ---------------------------------------------------------------------------
 class TestMeta(TmpDirCase):
+    def setUp(self):
+        super().setUp()
+        self.saved = {k: getattr(fe, k) for k in ("DEFAULT_AUTHOR", "DEFAULT_STATUS", "DEFAULT_TAGS")}
+
+    def tearDown(self):
+        for k, v in self.saved.items():
+            setattr(fe, k, v)
+        super().tearDown()
+
     def test_build_meta(self):
-        meta = fe.build_meta("研究室共有", "治具/顕微鏡", "ステージ")
-        self.assertEqual(meta, {"author": "", "purpose": "", "status": "", "tags": [],
-                                "note": ["Fusion元: 研究室共有/治具/顕微鏡/ステージ"]})
+        # note は空。Fusion の場所は入れず、fusion_id に DataFile.id を入れる
+        meta = fe.build_meta("urn:adsk.wipprod:dm.lineage:abc")
+        self.assertEqual(meta, {"author": "", "purpose": "", "status": "", "tags": [], "note": [],
+                                "fusion_id": "urn:adsk.wipprod:dm.lineage:abc"})
+
+    def test_settings_defaults_are_empty(self):
+        self.assertEqual((self.saved["DEFAULT_AUTHOR"], self.saved["DEFAULT_STATUS"], self.saved["DEFAULT_TAGS"]),
+                         ("", "", []))
+
+    def test_build_meta_uses_defaults(self):
+        fe.DEFAULT_AUTHOR, fe.DEFAULT_STATUS, fe.DEFAULT_TAGS = "山田", "参考", ["治具", " ", "PLA"]
+        meta = fe.build_meta("urn:l")
+        self.assertEqual((meta["author"], meta["status"], meta["tags"], meta["purpose"]),
+                         ("山田", "参考", ["治具", "PLA"], ""))
+        meta["tags"].append("x")
+        self.assertEqual(fe.DEFAULT_TAGS, ["治具", " ", "PLA"])  # 設定欄のリストを書き換えない
+
+    def test_build_meta_tags_string(self):
+        self.assertEqual(fe.build_meta("urn:l", tags="治具")["tags"], ["治具"])
+        self.assertEqual(fe.build_meta("urn:l", author="", status="", tags=[])["author"], "")
+
+    def test_status_comment_matches_gas(self):
+        # 設定欄のコメントに書いた状態の選択肢が、GAS の STATUS_CHOICES と同じか
+        gs = os.path.normpath(os.path.join(HERE, "..", "..", "tools", "gas", "Code.gs"))
+        with open(gs, encoding="utf-8") as f:
+            m = re.search(r"var STATUS_CHOICES = \[([^\]]*)\]", f.read())
+        choices = [c.strip().strip("'\"") for c in m.group(1).split(",")]
+        with open(SCRIPT, encoding="utf-8") as f:
+            script = f.read()
+        self.assertIn(" / ".join('"%s"' % c for c in choices), script)
 
     def test_source_text_root_folder(self):
         self.assertEqual(fe.source_text("P", "", "N"), "P/N")
         self.assertEqual(fe.source_text("P", "/a/", "N"), "P/a/N")
 
     def test_json_text(self):
-        text = fe.meta_json_text(fe.build_meta("P", "", "名前"))
-        self.assertIn("Fusion元: P/名前", text)          # ensure_ascii=False
-        self.assertIn('\n  "author": ""', text)          # インデント2
-        self.assertEqual(list(json.loads(text).keys()), ["author", "purpose", "status", "tags", "note"])
+        text = fe.meta_json_text(fe.build_meta("urn:l", author="山田"))
+        self.assertIn('"author": "山田"', text)            # ensure_ascii=False
+        self.assertIn('\n  "author": "山田"', text)        # インデント2
+        self.assertNotIn("Fusion元", text)
+        self.assertEqual(list(json.loads(text).keys()), ["author", "purpose", "status", "tags", "note", "fusion_id"])
 
     def test_write_and_is_done(self):
         folder = os.path.join(self.tmp, "20250612_x")
         os.makedirs(folder)
         self.assertFalse(fe.is_done(folder))
-        fe.write_meta_json(folder, fe.build_meta("P", "", "x"))
+        fe.write_meta_json(folder, fe.build_meta("urn:x"))
         self.assertTrue(fe.is_done(folder))
         self.assertEqual(os.listdir(folder), ["meta.json"])  # 一時ファイルが残らない
         with open(os.path.join(folder, "meta.json"), "rb") as f:
@@ -277,6 +315,135 @@ class TestSelectRows(unittest.TestCase):
         fe.select_rows_for_export(rows)
         self.assertEqual(rows[0]["folder_name"], "")
 
+    def test_ignore_rank(self):
+        # TARGET_NAMES で名前を指定したときは rank を問わない
+        rows = [_row(name="a", rank=""), _row(name="b", rank="C"), _row(name="c", rank="A")]
+        selected, _ = fe.select_rows_for_export(rows, ignore_rank=True)
+        self.assertEqual([r["name"] for r in selected], ["a", "b", "c"])
+
+    def test_empty_datafile_id_not_exported(self):
+        # datafile_id が空の行は済み判定ができないので書き出さず、注意を出す。フォルダ名の番号も消費しない
+        rows = [_row(name="x", rank="A", datafile_id=" "), _row(name="x", rank="A")]
+        selected, warnings = fe.select_rows_for_export(rows)
+        self.assertEqual([r["folder_name"] for r in selected], ["20250612_x"])
+        self.assertTrue(any("datafile_id が空" in w and "「x」" in w for w in warnings))
+
+
+class TestSelectByNames(unittest.TestCase):
+    def test_empty_means_all(self):
+        self.assertEqual(fe.select_by_names(["a", "b"], []), (["a", "b"], []))
+
+    def test_exact_match_after_strip_and_nfc(self):
+        decomposed = "か\u3099め"  # 「が」を「か＋濁点」で書いたもの
+        items = ["がめ", "治具", "治具 改", "治具"]
+        selected, missing = fe.select_by_names(items, [" " + decomposed + " ", "治具"])
+        self.assertEqual(selected, ["がめ", "治具", "治具"])  # 同名は全部。部分一致はしない
+        self.assertEqual(missing, [])
+
+    def test_case_and_width_are_distinct(self):
+        selected, missing = fe.select_by_names(["Jig", "ＡＢ"], ["jig", "AB"])
+        self.assertEqual(selected, [])
+        self.assertEqual(missing, ["jig", "AB"])
+
+    def test_missing_in_wanted_order_without_duplicates(self):
+        items = [{"name": "a"}, {"name": "b"}]
+        selected, missing = fe.select_by_names(items, ["zz", "b", " zz ", "", "yy"], name_of=lambda r: r["name"])
+        self.assertEqual(selected, [{"name": "b"}])
+        self.assertEqual(missing, ["zz", "yy"])
+
+
+class TestMergeTriage(unittest.TestCase):
+    def test_inherit_rank_and_folder_name(self):
+        old = [_row(name="旧名", datafile_id="urn:a", rank="A", folder_name="20240101_手で直した", image="old.png")]
+        new = [_row(name="新名", datafile_id="urn:a", rank="", folder_name="20250612_新名", image="new.png",
+                    version_id="urn:v2")]
+        merged = fe.merge_triage_rows(old, new)
+        self.assertEqual(len(merged), 1)
+        m = merged[0]
+        self.assertEqual((m["rank"], m["folder_name"]), ("A", "20240101_手で直した"))
+        self.assertEqual((m["name"], m["image"], m["version_id"]), ("新名", "new.png", "urn:v2"))  # 他は新しい値
+
+    def test_blank_old_values_do_not_overwrite(self):
+        old = [_row(datafile_id="urn:a", rank="", folder_name="")]
+        new = [_row(datafile_id="urn:a", folder_name="20250612_n")]
+        self.assertEqual(fe.merge_triage_rows(old, new)[0]["folder_name"], "20250612_n")
+
+    def test_keep_old_image_when_shot_failed(self):
+        old = [_row(datafile_id="urn:a", image="a.png")]
+        new = [_row(datafile_id="urn:a", image="")]
+        self.assertEqual(fe.merge_triage_rows(old, new)[0]["image"], "a.png")
+
+    def test_keep_untouched_rows_and_order(self):
+        old = [_row(name="o1", datafile_id="urn:1", rank="B"), _row(name="o2", datafile_id="urn:2", rank="C"),
+               _row(name="o3", datafile_id="", rank="A")]
+        new = [_row(name="new", datafile_id="urn:9"), _row(name="o2'", datafile_id="urn:2"),
+               _row(name="noid", datafile_id="")]
+        merged = fe.merge_triage_rows(old, new)
+        self.assertEqual([r["name"] for r in merged], ["o1", "o2'", "o3", "new", "noid"])
+        self.assertEqual([r["rank"] for r in merged], ["B", "C", "A", "", ""])
+
+    def test_no_old(self):
+        new = [_row(name="a", datafile_id="urn:a"), _row(name="b", datafile_id="urn:b")]
+        self.assertEqual(fe.merge_triage_rows([], new), new)
+
+    def test_duplicate_ids(self):
+        old = [_row(name="o", datafile_id="urn:a", rank="A"), _row(name="o-copy", datafile_id="urn:a", rank="B")]
+        new = [_row(name="n", datafile_id="urn:a"), _row(name="n2", datafile_id="urn:a")]
+        merged = fe.merge_triage_rows(old, new)
+        self.assertEqual([(r["name"], r["rank"]) for r in merged], [("n", "A"), ("o-copy", "B"), ("n2", "")])
+
+    def test_inputs_not_mutated(self):
+        old = [_row(datafile_id="urn:a", rank="A")]
+        new = [_row(datafile_id="urn:a")]
+        fe.merge_triage_rows(old, new)
+        self.assertEqual(new[0]["rank"], "")
+
+    def test_names_in_use(self):
+        old = [_row(datafile_id="urn:a", folder_name="20250612_A", image="20250612_A.png"),
+               _row(datafile_id="urn:b", folder_name="20250612_B", image="20250612_B.png"),
+               _row(datafile_id="", folder_name="", image="")]
+        self.assertEqual(fe.names_in_use(old, {"urn:a"}), ({"20250612_b"}, {"20250612_b.png"}))
+
+
+class TestResolvePaths(unittest.TestCase):
+    OUT = os.path.join("G:" + os.sep, "共有ドライブ", "研究室", "3Dギャラリー", "items")
+
+    def test_triage_csv_defaults_to_triage_dir(self):
+        paths, problems = fe.resolve_paths(2, os.path.join("C:" + os.sep, "t"), "", self.OUT)
+        self.assertEqual(paths["triage_csv"], os.path.join("C:" + os.sep, "t", "triage.csv"))
+        self.assertEqual(problems, [])
+
+    def test_explicit_triage_csv(self):
+        paths, _ = fe.resolve_paths(2, "C:/t", "  D:/x/my.csv ", self.OUT)
+        self.assertEqual(paths["triage_csv"], "D:/x/my.csv")
+
+    def test_expanduser(self):
+        paths, _ = fe.resolve_paths(1, "~/仕分け", "", "")
+        self.assertEqual(paths["triage_dir"], os.path.expanduser("~/仕分け"))
+
+    def test_mode1_ignores_output_dir(self):
+        # モード1は OUTPUT_DIR が未設定・<共有ドライブ名> のままでも動く
+        for out in ("", fe.OUTPUT_DIR):
+            self.assertEqual(fe.resolve_paths(1, "C:/t", "", out)[1], [])
+        self.assertIn("TRIAGE_DIR", fe.resolve_paths(1, " ", "", self.OUT)[1][0])
+
+    def test_mode2_checks_output_dir_only_for_placeholder(self):
+        problems = fe.resolve_paths(2, "C:/<名前>/t", "", fe.OUTPUT_DIR)[1]
+        self.assertEqual(len(problems), 1)
+        self.assertIn("OUTPUT_DIR", problems[0])
+        self.assertIn("書き換え", problems[0])
+        self.assertIn("設定されていません", fe.resolve_paths(2, "C:/t", "", "")[1][0])
+
+    def test_mode2_needs_triage_csv(self):
+        problems = fe.resolve_paths(2, "", "", self.OUT)[1]
+        self.assertEqual(len(problems), 1)
+        self.assertIn("TRIAGE_CSV", problems[0])
+
+    def test_default_settings(self):
+        paths, problems = fe.resolve_paths(1, fe.TRIAGE_DIR, fe.TRIAGE_CSV, fe.OUTPUT_DIR)
+        self.assertEqual(problems, [])
+        self.assertEqual(paths["triage_csv"], os.path.join(fe.TRIAGE_DIR, "triage.csv"))
+
 
 class TestLookup(unittest.TestCase):
     def test_candidates_order(self):
@@ -364,32 +531,65 @@ class TestFolderState(TmpDirCase):
                 f.write(raw)
         return folder
 
-    def test_states(self):
-        self.assertEqual(fe.folder_state(os.path.join(self.tmp, "none"), "P/x"), "new")
-        self.assertEqual(fe.folder_state(self._make("a"), "P/x"), "partial")
-        self.assertEqual(fe.folder_state(self._make("b", fe.build_meta("P", "", "x")), "P/x"), "done")
-        self.assertEqual(fe.folder_state(self._make("c", {"note": "Fusion元: P/x"}), "P/x"), "done")  # 文字列の note
-        self.assertEqual(fe.folder_state(self._make("d", {"note": ["Fusion元: P/y"]}), "P/x"), "conflict")
-        self.assertEqual(fe.folder_state(self._make("e", {"author": "a"}), "P/x"), "conflict")
-        self.assertEqual(fe.folder_state(self._make("f", raw="{壊れた"), "P/x"), "conflict")
-        self.assertEqual(fe.folder_state(self._make("g", raw="[]"), "P/x"), "conflict")
+    def test_new_and_partial(self):
+        self.assertEqual(fe.folder_state(os.path.join(self.tmp, "none"), "urn:x", "P/x"), "new")
+        self.assertEqual(fe.folder_state(self._make("a"), "urn:x", "P/x"), "partial")
 
-    def test_done_with_bom_and_edited_note(self):
+    def test_fusion_id_match_is_done(self):
+        folder = self._make("b", fe.build_meta("urn:x"))
+        self.assertEqual(fe.folder_state(folder, "urn:x", "P/x"), "done")
+        self.assertEqual(fe.folder_state(folder, " urn:x ", ""), "done")
+
+    def test_fusion_id_differs_is_conflict(self):
+        # fusion_id が違えば、Fusion元の行が一致していても別の作品
+        folder = self._make("c", {"note": ["Fusion元: P/x"], "fusion_id": "urn:other"})
+        self.assertEqual(fe.folder_state(folder, "urn:x", "P/x"), "conflict")
+
+    def test_no_fusion_id_is_skipped(self):
+        # fusion_id が無い（手で消した・手作りの同名フォルダ）→ 念のため済み扱い
+        self.assertEqual(fe.folder_state(self._make("d", {"author": "a", "note": ["手で作った"]}), "urn:x", "P/x"),
+                         "done_no_id")
+        self.assertEqual(fe.folder_state(self._make("e", {"fusion_id": "  ", "note": []}), "urn:x", "P/x"),
+                         "done_no_id")
+        self.assertEqual(fe.folder_state(self._make("e2", {"fusion_id": 123}), "urn:x", "P/x"), "done_no_id")
+
+    def test_legacy_source_line(self):
+        # 旧版の出力（fusion_id なし・note に「Fusion元」行）は、その行で照合する
+        self.assertEqual(fe.folder_state(self._make("f", {"note": "Fusion元: P/x"}), "urn:x", "P/x"), "done")
+        self.assertEqual(fe.folder_state(self._make("g", {"note": ["Fusion元: P/y"]}), "urn:x", "P/x"), "conflict")
+
+    def test_legacy_with_bom_and_edited_note(self):
         folder = self._make("h")
         with open(os.path.join(folder, "meta.json"), "w", encoding="utf-8-sig") as f:
             json.dump({"author": "山田", "note": ["追記", " Fusion元: P/x "]}, f, ensure_ascii=False)
-        self.assertEqual(fe.folder_state(folder, "P/x"), "done")
+        self.assertEqual(fe.folder_state(folder, "urn:x", "P/x"), "done")
+
+    def test_unreadable_is_conflict(self):
+        self.assertEqual(fe.folder_state(self._make("i", raw="{壊れた"), "urn:x", "P/x"), "conflict")
+        self.assertEqual(fe.folder_state(self._make("j", raw="[]"), "urn:x", "P/x"), "conflict")
 
     def test_resolve(self):
-        self._make("20250612_x", {"note": "手作り"})
-        self._make("20250612_x-v2", {"note": "別"})
+        self._make("20250612_x", {"fusion_id": "urn:hand"})
+        self._make("20250612_x-v2", {"note": ["Fusion元: P/別"]})
         reserved = {"20250612_x", "20250612_x-v3"}  # -v3 は他の行が使う
-        self.assertEqual(fe.resolve_output_folder(self.tmp, "20250612_x", "P/x", reserved),
+        self.assertEqual(fe.resolve_output_folder(self.tmp, "20250612_x", "urn:x", "P/x", reserved),
                          ("20250612_x-v4", "new", ["20250612_x", "20250612_x-v2"]))
         self.assertIn("20250612_x-v4", reserved)
 
+    def test_resolve_finds_own_v2(self):
+        self._make("20250612_x", {"fusion_id": "urn:other"})
+        self._make("20250612_x-v2", fe.build_meta("urn:x"))
+        self.assertEqual(fe.resolve_output_folder(self.tmp, "20250612_x", "urn:x", "P/x", set()),
+                         ("20250612_x-v2", "done", ["20250612_x"]))
+
+    def test_resolve_no_id_stops_there(self):
+        self._make("20250612_x", {"author": "手作り"})
+        self.assertEqual(fe.resolve_output_folder(self.tmp, "20250612_x", "urn:x", "P/x", set()),
+                         ("20250612_x", "done_no_id", []))
+
     def test_resolve_plain(self):
-        self.assertEqual(fe.resolve_output_folder(self.tmp, "20250612_y", "P/y", set()), ("20250612_y", "new", []))
+        self.assertEqual(fe.resolve_output_folder(self.tmp, "20250612_y", "urn:y", "P/y", set()),
+                         ("20250612_y", "new", []))
 
 
 class TestSettingPath(unittest.TestCase):
@@ -399,10 +599,24 @@ class TestSettingPath(unittest.TestCase):
         self.assertIn("書き換え", fe.check_setting_path(fe.OUTPUT_DIR, "OUTPUT_DIR"))  # 既定値のままは止める
         self.assertIn("設定されていません", fe.check_setting_path("", "OUTPUT_DIR"))
 
-    def test_defaults_are_shared_drive(self):
-        for p in (fe.OUTPUT_DIR, fe.TRIAGE_DIR, fe.TRIAGE_CSV):
-            self.assertIn("共有ドライブ", p)
-            self.assertNotIn("マイドライブ", p)
+    def test_defaults(self):
+        # Googleドライブ上でなければならないのはモード2の OUTPUT_DIR だけ。モード1は「ドキュメント」の中
+        self.assertIn("共有ドライブ", fe.OUTPUT_DIR)
+        self.assertNotIn("マイドライブ", fe.OUTPUT_DIR)
+        self.assertEqual(fe.TRIAGE_DIR, os.path.join(os.path.expanduser("~"), "Documents", "3Dギャラリー_仕分け"))
+        self.assertEqual(fe.TRIAGE_CSV, "")
+        self.assertEqual(fe.TARGET_NAMES, [])
+
+    def test_settings_order(self):
+        # 設定欄の並び: 共通 → モード1だけ → モード2だけ → 細かい設定
+        with open(SCRIPT, encoding="utf-8") as f:
+            text = f.read()
+        settings = text[:text.index("# ここから下は処理本体")]
+        names = ["MODE =", "PROJECT_NAMES =", "TARGET_NAMES =", "TRIAGE_DIR =", "TRIAGE_CSV =", "OUTPUT_DIR =",
+                 "DEFAULT_AUTHOR =", "DEFAULT_STATUS =", "DEFAULT_TAGS =", "STL_PER_BODY =", "MESH_QUALITY =",
+                 "THUMB_WIDTH =", "THUMB_HEIGHT ="]
+        positions = [settings.index("\n" + n) for n in names]
+        self.assertEqual(positions, sorted(positions))
 
 
 class TestSelectProjects(unittest.TestCase):
@@ -525,6 +739,134 @@ class TestCollectBodies(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# 外部参照の取り込み（breakLink）
+# ---------------------------------------------------------------------------
+class FakeRefOcc:
+    """isReferencedComponent と breakLink だけを持つ配置。
+
+    parent が参照のままだと breakLink は例外（参照先の中は書き換えられない、を真似る）。
+    stubborn は常に False を返す。sticky は True を返すのに参照のまま（上限で止まるかを見る）。
+    """
+
+    def __init__(self, name, parent=None, referenced=True, stubborn=False, sticky=False):
+        self.name, self.parent, self.referenced = name, parent, referenced
+        self.stubborn, self.sticky, self.calls = stubborn, sticky, 0
+
+    @property
+    def isReferencedComponent(self):
+        return self.referenced
+
+    def breakLink(self):
+        self.calls += 1
+        if self.stubborn:
+            return False
+        if self.parent is not None and self.parent.referenced:
+            raise RuntimeError("親が外部参照のまま")
+        if not self.sticky:
+            self.referenced = False
+        return True
+
+
+class FakeLiveRoot:
+    """allOccurrences を取るたびに新しいコレクションを返す（取り込みで中身が変わるのを真似る）。"""
+
+    def __init__(self, occs):
+        self.occs, self.reads = occs, 0
+
+    @property
+    def allOccurrences(self):
+        self.reads += 1
+        return FakeCollection(self.occs)
+
+
+class TestBreakLinks(unittest.TestCase):
+    def test_nested_needs_second_round(self):
+        parent = FakeRefOcc("親:1")
+        child = FakeRefOcc("子:1", parent=parent)
+        local = FakeRefOcc("ローカル:1", referenced=False)
+        root = FakeLiveRoot([child, local, parent])  # 子が先に来ても、次の周で取り込める
+        self.assertEqual(fe.break_external_links(root), (2, []))
+        self.assertEqual(local.calls, 0)  # 参照でない配置には触らない
+        self.assertGreaterEqual(root.reads, 3)  # 周ごとに見直している
+
+    def test_failed_are_reported(self):
+        ok, stub = FakeRefOcc("ok:1"), FakeRefOcc("だめ:1", stubborn=True)
+        self.assertEqual(fe.break_external_links(FakeLiveRoot([stub, ok])), (1, ["だめ:1"]))
+        self.assertEqual(stub.calls, 2)  # 進みがある間は試し直し、進まなくなったら止まる
+
+    def test_round_limit(self):
+        sticky = FakeRefOcc("いつまでも:1", sticky=True)
+        self.assertEqual(fe.break_external_links(FakeLiveRoot([sticky]), max_rounds=3), (3, ["いつまでも:1"]))
+        self.assertEqual(sticky.calls, 3)
+
+    def test_nothing_to_break(self):
+        self.assertEqual(fe.break_external_links(FakeLiveRoot([FakeRefOcc("a", referenced=False)])), (0, []))
+        self.assertEqual(fe.break_external_links(FakeLiveRoot([])), (0, []))
+
+
+class TestExternalRefOutcome(unittest.TestCase):
+    def test_no_refs(self):
+        self.assertEqual(fe.external_ref_outcome([], True, 0, []), (False, ""))
+
+    def test_broken_all(self):
+        self.assertEqual(fe.external_ref_outcome(["部品:1"], True, 3, []),
+                         (False, "外部参照 3 件を取り込んで f3d を書き出し"))
+
+    def test_some_failed(self):
+        check, note = fe.external_ref_outcome(["部品:1"], True, 1, ["だめ:1"])
+        self.assertTrue(check)
+        self.assertIn("外部参照 1 件を取り込んで f3d を書き出し", note)
+        self.assertIn("だめ:1", note)
+
+    def test_nothing_breakable(self):
+        check, note = fe.external_ref_outcome(["参照ドキュメント 1 件"], True, 0, [])
+        self.assertTrue(check)
+        self.assertIn("参照ドキュメント 1 件", note)
+
+    def test_not_opened_by_us(self):
+        check, note = fe.external_ref_outcome(["部品:1"], False, 0, [])
+        self.assertTrue(check)
+        self.assertIn("取り込まず", note)
+
+
+class TestExportItemOrder(TmpDirCase):
+    """export_item の順番: STEP/STL/3MF/サムネイルを出してから取り込み、最後に f3d。"""
+
+    def setUp(self):
+        super().setUp()
+        names = ("export_step", "export_stl", "export_3mf", "save_thumbnail", "export_f3d")
+        self.saved = {k: getattr(fe, k) for k in names}
+        self.calls = []
+        fe.export_step = lambda d, p: self.calls.append("STEP")
+        fe.export_stl = lambda d, g, p: self.calls.append("STL")
+        fe.export_3mf = lambda d, g, p: self.calls.append("3MF")
+        fe.save_thumbnail = lambda a, p: self.calls.append("thumb")
+        fe.export_f3d = lambda d, p: self.calls.append("f3d")
+        self.design = types.SimpleNamespace(rootComponent=FakeRoot([FakeBody("b")], []))
+
+    def tearDown(self):
+        for k, v in self.saved.items():
+            setattr(fe, k, v)
+        super().tearDown()
+
+    def test_order(self):
+        fe.export_item(None, self.design, self.tmp, "x", before_f3d=lambda: self.calls.append("break"))
+        self.assertEqual(self.calls, ["STEP", "STL", "3MF", "thumb", "break", "f3d"])
+
+    def test_without_break(self):
+        fe.export_item(None, self.design, self.tmp, "x")
+        self.assertEqual(self.calls, ["STEP", "STL", "3MF", "thumb", "f3d"])
+
+    def test_break_error_still_exports_f3d_but_fails(self):
+        def boom():
+            raise RuntimeError("壊れた")
+        with self.assertRaises(RuntimeError) as cm:
+            fe.export_item(None, self.design, self.tmp, "x", before_f3d=boom)
+        self.assertIn("外部参照の取り込み", str(cm.exception))
+        self.assertEqual(self.calls[-1], "f3d")
+
+
+# ---------------------------------------------------------------------------
 # モード2の流れ（Fusion 部分は差し替え）。スキップ・やり直し・失敗時に meta.json を書かないことを確かめる
 # ---------------------------------------------------------------------------
 class FakeUI:
@@ -547,28 +889,38 @@ class TestMode2Flow(TmpDirCase):
         self.csv = os.path.join(self.tmp, "triage.csv")
         fe.write_triage_csv(self.csv, [
             _row(name="済み", rank="A", datafile_id="urn:done"),
+            _row(name="旧版", rank="A", datafile_id="urn:legacy"),
+            _row(name="IDなし", rank="A", datafile_id="urn:noid"),
             _row(name="途中", rank="B", datafile_id="urn:partial"),
             _row(name="失敗", rank="A", datafile_id="urn:fail"),
             _row(name="外部参照", rank="A", datafile_id="urn:ref"),
+            _row(name="参照失敗", rank="A", datafile_id="urn:reffail"),
             _row(name="無い", rank="A", datafile_id="urn:missing"),
             _row(name="手作り", rank="A", datafile_id="urn:hand"),
             _row(name="開いていた", rank="A", datafile_id="urn:open"),
+            _row(name="ID空", rank="A", datafile_id=""),
             _row(name="対象外", rank="C", datafile_id="urn:c"),
         ])
-        os.makedirs(os.path.join(self.out, "20250612_済み"))
-        self.done_meta = {"author": "手で記入済み", "note": ["メモ", "Fusion元: P/済み"]}
-        fe.write_meta_json(os.path.join(self.out, "20250612_済み"), self.done_meta)
-        # 同名だが別の作品（手作り）のフォルダ。触らずに -v2 へ書き出すはず
-        os.makedirs(os.path.join(self.out, "20250612_手作り"))
-        self.hand_meta = {"author": "誰か", "note": "手で作った"}
-        fe.write_meta_json(os.path.join(self.out, "20250612_手作り"), self.hand_meta)
+        self.metas = {
+            # このスクリプトで書き出し済み（fusion_id が一致）。人が記入した内容は上書きしない
+            "20250612_済み": {"author": "手で記入済み", "note": ["メモ"], "fusion_id": "urn:done"},
+            # 旧版の出力（fusion_id なし、note に Fusion元）
+            "20250612_旧版": {"author": "", "note": ["Fusion元: P/旧版"]},
+            # fusion_id も Fusion元 も無い（手で消した・手作り）→ 念のため飛ばす
+            "20250612_IDなし": {"author": "誰か", "note": "手で作った"},
+            # 同名だが別の作品。触らずに -v2 へ書き出すはず
+            "20250612_手作り": {"author": "誰か", "fusion_id": "urn:someone-else"},
+        }
+        for name, meta in self.metas.items():
+            os.makedirs(os.path.join(self.out, name))
+            fe.write_meta_json(os.path.join(self.out, name), meta)
         os.makedirs(os.path.join(self.out, "20250612_途中"))  # meta.json 無し＝途中で止まった
 
         self.saved = {k: getattr(fe, k) for k in
-                      ("OUTPUT_DIR", "TRIAGE_CSV", "FileFinder", "open_document", "close_document",
-                       "get_design", "export_item", "find_external_references")}
-        fe.OUTPUT_DIR, fe.TRIAGE_CSV = self.out, self.csv
-        self.opened, self.closed = [], []
+                      ("OUTPUT_DIR", "TRIAGE_CSV", "TARGET_NAMES", "FileFinder", "open_document", "close_document",
+                       "get_design", "export_item", "find_external_references", "break_external_links")}
+        fe.OUTPUT_DIR, fe.TRIAGE_CSV, fe.TARGET_NAMES = self.out, self.csv, []
+        self.opened, self.closed, self.broken = [], [], []
         test = self
 
         class Finder:
@@ -587,18 +939,26 @@ class TestMode2Flow(TmpDirCase):
                 return types.SimpleNamespace(id=df.id, isModified=True), False
             return df, True
 
-        def export_item(app, design, folder, name):
+        def export_item(app, design, folder, name, before_f3d=None):
             if design.id == "urn:fail":
                 raise RuntimeError("STL: 書き出し失敗")
+            if before_f3d:
+                before_f3d()
             open(os.path.join(folder, name + ".f3d"), "w").close()
             return []
+
+        def break_external_links(root):
+            test.broken.append(root)
+            return {"urn:ref": (2, []), "urn:reffail": (1, ["だめ:1"])}[root]
 
         fe.FileFinder = Finder
         fe.open_document = open_document
         fe.close_document = lambda doc, ours: doc is not None and test.closed.append(doc.id)
-        fe.get_design = lambda doc: doc
+        fe.get_design = lambda doc: types.SimpleNamespace(id=doc.id, rootComponent=doc.id)
         fe.export_item = export_item
-        fe.find_external_references = lambda d, doc, df: ["部品A"] if df.id == "urn:ref" else []
+        fe.find_external_references = (lambda d, doc, df: ["部品A"] if df.id in ("urn:ref", "urn:reffail", "urn:open")
+                                       else [])
+        fe.break_external_links = break_external_links
 
     def tearDown(self):
         for k, v in self.saved.items():
@@ -609,45 +969,58 @@ class TestMode2Flow(TmpDirCase):
         with open(os.path.join(self.out, "export_log.csv"), encoding="utf-8-sig") as f:
             return {(r["name"], r["result"]): r for r in csv.DictReader(f)}
 
+    def _meta(self, folder):
+        with open(os.path.join(self.out, folder, "meta.json"), encoding="utf-8") as f:
+            return json.load(f)
+
     def test_flow(self):
         ui = FakeUI()
         fe.run_mode2(object(), ui)
 
-        # 済みは開かない。C ランクは対象外
-        self.assertEqual(self.opened, ["urn:partial", "urn:fail", "urn:ref", "urn:hand", "urn:open"])
+        # 済み（fusion_id 一致・旧版の Fusion元 一致・fusion_id なし）は開かない。C ランクと ID 空は対象外
+        expected = ["urn:partial", "urn:fail", "urn:ref", "urn:reffail", "urn:hand", "urn:open"]
+        self.assertEqual(self.opened, expected)
         # 開いたものは失敗しても close_document を通る（自分で開いたかの判断は close_document 側）
-        self.assertEqual(self.closed, ["urn:partial", "urn:fail", "urn:ref", "urn:hand", "urn:open"])
-        # 手で記入済みの meta.json は上書きしない
-        with open(os.path.join(self.out, "20250612_済み", "meta.json"), encoding="utf-8") as f:
-            self.assertEqual(json.load(f), self.done_meta)
+        self.assertEqual(self.closed, expected)
+        # 取り込みは自分で開いたドキュメントで、外部参照があるときだけ（元々開いていたものはしない）
+        self.assertEqual(self.broken, ["urn:ref", "urn:reffail"])
+        # 既存の meta.json は上書きしない
+        for name, meta in self.metas.items():
+            self.assertEqual(self._meta(name), meta)
         # 別の作品の同名フォルダには触らず、-v2 に書く
-        with open(os.path.join(self.out, "20250612_手作り", "meta.json"), encoding="utf-8") as f:
-            self.assertEqual(json.load(f), self.hand_meta)
         self.assertEqual(os.listdir(os.path.join(self.out, "20250612_手作り")), ["meta.json"])
-        self.assertTrue(fe.is_done(os.path.join(self.out, "20250612_手作り-v2")))
-        # 途中のものはやり直して meta.json を書く
-        self.assertTrue(fe.is_done(os.path.join(self.out, "20250612_途中")))
+        self.assertEqual(self._meta("20250612_手作り-v2")["fusion_id"], "urn:hand")
+        # 途中のものはやり直して meta.json を書く。note は空、fusion_id に datafile_id
+        meta = self._meta("20250612_途中")
+        self.assertEqual((meta["note"], meta["fusion_id"]), ([], "urn:partial"))
         # 失敗したものは meta.json を書かない（次回やり直す）
         self.assertFalse(fe.is_done(os.path.join(self.out, "20250612_失敗")))
         self.assertTrue(fe.is_done(os.path.join(self.out, "20250612_外部参照")))
-        with open(os.path.join(self.out, "20250612_途中", "meta.json"), encoding="utf-8") as f:
-            self.assertEqual(json.load(f)["note"], ["Fusion元: P/途中"])
+        self.assertTrue(fe.is_done(os.path.join(self.out, "20250612_参照失敗")))
+        self.assertFalse(os.path.exists(os.path.join(self.out, "20250612_ID空")))
 
         log = self._log()
-        self.assertIn(("20250612_済み（済み）", "スキップ"), log)
+        self.assertIn("同じ作品", log[("20250612_済み（済み）", "スキップ")]["detail"])
+        self.assertIn(("20250612_旧版（旧版）", "スキップ"), log)
+        self.assertEqual(log[("20250612_IDなし（IDなし）", "スキップ")]["detail"],
+                         "fusion_id が無いため念のためスキップ（書き出し直すならフォルダを消す）")
         self.assertIn("取得: datafile_id", log[("20250612_途中（途中）", "成功")]["detail"])
         fail = log[("20250612_失敗（失敗）", "失敗")]["detail"]
         self.assertIn("取得: datafile_id", fail)
         self.assertIn("STL", fail)
-        self.assertIn("部品A", log[("20250612_外部参照（外部参照）", "成功（要目視確認）")]["detail"])
+        self.assertIn("外部参照 2 件を取り込んで f3d を書き出し", log[("20250612_外部参照（外部参照）", "成功")]["detail"])
+        self.assertIn("だめ:1", log[("20250612_参照失敗（参照失敗）", "成功（要目視確認）")]["detail"])
         self.assertIn(("20250612_無い（無い）", "失敗"), log)
         self.assertIn("20250612_手作り", log[("20250612_手作り-v2（手作り）", "注意")]["detail"])
         self.assertIn(("20250612_手作り-v2（手作り）", "成功"), log)
-        self.assertIn("未保存の変更", log[("20250612_開いていた（開いていた）", "成功")]["detail"])
+        opened = log[("20250612_開いていた（開いていた）", "成功（要目視確認）")]["detail"]
+        self.assertIn("未保存の変更", opened)
+        self.assertIn("取り込まず", opened)
         self.assertNotIn("未保存", log[("20250612_途中（途中）", "成功")]["detail"])
+        self.assertIn("「ID空」は datafile_id が空", log[("", "注意")]["detail"])
 
         summary = ui.messages[-1]
-        for s in ("成功: 3 件", "要目視確認・外部参照あり）: 1 件", "失敗: 2 件", "スキップ（書き出し済み）: 1 件"):
+        for s in ("成功: 3 件", "要目視確認・外部参照）: 2 件", "失敗: 2 件", "スキップ（書き出し済み）: 3 件", "注意: 1 件"):
             self.assertIn(s, summary)
 
         # 再実行: 失敗・見つからないものだけやり直す。-v2 に書いたものは -v2 で済みと判定される
@@ -661,6 +1034,132 @@ class TestMode2Flow(TmpDirCase):
         fe.run_mode2(object(), ui)
         self.assertIn("A か B", ui.messages[-1])
         self.assertEqual(self.opened, [])
+
+    def test_target_names_ignore_rank(self):
+        # 名前を指定したら rank を問わずその行だけ書き出す。見つからない名前はメッセージとログに出る
+        fe.TARGET_NAMES = [" 対象外 ", "存在しない"]
+        ui = FakeUI()
+        fe.run_mode2(object(), ui)
+        self.assertEqual(self.opened, ["urn:c"])
+        self.assertIn("存在しない", ui.messages[-1])
+        self.assertIn(("存在しない", "注意"), self._log())
+
+    def test_target_names_none_found(self):
+        fe.TARGET_NAMES = ["存在しない"]
+        ui = FakeUI()
+        fe.run_mode2(object(), ui)
+        self.assertEqual(self.opened, [])
+        self.assertIn("TARGET_NAMES に合う行がありません", ui.messages[-1])
+        self.assertIn("存在しない", ui.messages[-1])
+
+    def test_triage_csv_defaults_to_triage_dir(self):
+        saved = fe.TRIAGE_DIR
+        self.addCleanup(setattr, fe, "TRIAGE_DIR", saved)
+        fe.TRIAGE_DIR, fe.TRIAGE_CSV = self.tmp, ""  # self.tmp/triage.csv を読む
+        fe.run_mode2(object(), FakeUI())
+        self.assertIn("urn:partial", self.opened)
+
+    def test_missing_triage_csv(self):
+        fe.TRIAGE_CSV = os.path.join(self.tmp, "無い.csv")
+        with self.assertRaises(ValueError) as cm:
+            fe.run_mode2(object(), FakeUI())
+        self.assertIn("見つかりません", str(cm.exception))
+
+    def test_placeholder_output_dir_stops(self):
+        fe.OUTPUT_DIR = self.saved["OUTPUT_DIR"]
+        with self.assertRaises(ValueError) as cm:
+            fe.run_mode2(object(), FakeUI())
+        self.assertIn("OUTPUT_DIR", str(cm.exception))
+
+
+# ---------------------------------------------------------------------------
+# モード1の流れ（Fusion 部分は差し替え）。既存の triage.csv との合わせ方と TARGET_NAMES を確かめる
+# ---------------------------------------------------------------------------
+class FakeDF:
+    def __init__(self, name, fid, epoch=1749700800):
+        self.name, self.id, self.versionId = name, fid, fid + "?version=1"
+        self.dateModified, self._epoch = epoch, epoch
+
+
+class TestMode1Flow(TmpDirCase):
+    def setUp(self):
+        super().setUp()
+        self.files = [FakeDF("治具", "urn:a"), FakeDF("ステージ", "urn:b"), FakeDF("新作", "urn:new")]
+        self.saved = {k: getattr(fe, k) for k in
+                      ("TRIAGE_DIR", "OUTPUT_DIR", "TARGET_NAMES", "list_target_projects", "walk_f3d_files",
+                       "first_created_epoch", "open_document", "close_document", "get_design", "save_thumbnail")}
+        fe.TRIAGE_DIR, fe.TARGET_NAMES = self.tmp, []
+        fe.OUTPUT_DIR = ""  # モード1は OUTPUT_DIR が未設定でも動く
+        self.shot = []
+        test = self
+        fe.list_target_projects = lambda app: ([types.SimpleNamespace(name="P")], [])
+        fe.walk_f3d_files = lambda p, on_progress=None: [(df, "") for df in test.files]
+        fe.first_created_epoch = lambda df: df._epoch
+        fe.open_document = lambda app, df: (df, True)
+        fe.close_document = lambda doc, ours: None
+        fe.get_design = lambda doc: doc
+
+        def save_thumbnail(app, path):
+            test.shot.append(os.path.basename(path))
+            open(path, "w").close()
+
+        fe.save_thumbnail = save_thumbnail
+        self.date = datetime.datetime.fromtimestamp(1749700800).strftime("%Y%m%d")
+
+    def tearDown(self):
+        for k, v in self.saved.items():
+            setattr(fe, k, v)
+        super().tearDown()
+
+    def _csv(self):
+        return fe.read_triage_csv(os.path.join(self.tmp, "triage.csv"))
+
+    def test_merge_with_existing(self):
+        old = [_row(name="治具", datafile_id="urn:a", rank="A", folder_name="20240101_手で直した",
+                    image="20240101_手で直した.png"),
+               _row(name="消えた", datafile_id="urn:gone", rank="B", folder_name=self.date + "_新作",
+                    image=self.date + "_新作.png"),
+               _row(name="ステージ", datafile_id="urn:b", rank="C")]
+        fe.write_triage_csv(os.path.join(self.tmp, "triage.csv"), old)
+        fe.run_mode1(object(), FakeUI())
+        rows = self._csv()
+        self.assertEqual([(r["name"], r["rank"], r["folder_name"]) for r in rows], [
+            ("治具", "A", "20240101_手で直した"),
+            ("消えた", "B", self.date + "_新作"),          # 今回撮らなかった行も残る
+            ("ステージ", "C", self.date + "_ステージ"),
+            ("新作", "", self.date + "_新作-v2"),          # 残す行のフォルダ名と重ならない
+        ])
+        self.assertEqual(rows[0]["image"], "20240101_手で直した.png")  # 記入済みの名前で撮り直す
+        self.assertEqual(rows[3]["image"], self.date + "_新作-v2.png")
+        self.assertNotIn(self.date + "_新作.png", self.shot)       # 残す行の画像を上書きしない
+        backups = [n for n in os.listdir(self.tmp) if n.startswith("triage_") and n.endswith(".csv")]
+        self.assertEqual(len(backups), 1)  # 既存は退避した
+
+    def test_target_names(self):
+        fe.write_triage_csv(os.path.join(self.tmp, "triage.csv"),
+                            [_row(name="治具", datafile_id="urn:a", rank="A", image="a.png")])
+        fe.TARGET_NAMES = ["ステージ", "無いもの"]
+        ui = FakeUI()
+        fe.run_mode1(object(), ui)
+        self.assertEqual(self.shot, [self.date + "_ステージ.png"])
+        rows = self._csv()
+        self.assertEqual([(r["name"], r["rank"], r["image"]) for r in rows],
+                         [("治具", "A", "a.png"), ("ステージ", "", self.date + "_ステージ.png")])
+        self.assertIn("無いもの", ui.messages[-1])
+        with open(os.path.join(self.tmp, "export_log.csv"), encoding="utf-8-sig") as f:
+            self.assertIn(("無いもの", "注意"), {(r["name"], r["result"]) for r in csv.DictReader(f)})
+
+    def test_first_run(self):
+        fe.run_mode1(object(), FakeUI())
+        self.assertEqual([r["name"] for r in self._csv()], ["治具", "ステージ", "新作"])
+        self.assertEqual([n for n in os.listdir(self.tmp) if n.startswith("triage_")], [])
+
+    def test_unreadable_existing_csv_stops(self):
+        with open(os.path.join(self.tmp, "triage.csv"), "w", encoding="utf-8") as f:
+            f.write("project,name\nP,n\n")  # 必要な列が無い
+        with self.assertRaises(ValueError):
+            fe.run_mode1(object(), FakeUI())
+        self.assertEqual(self.shot, [])
 
 
 if __name__ == "__main__":

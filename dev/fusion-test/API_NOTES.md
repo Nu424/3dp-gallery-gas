@@ -1,6 +1,6 @@
 # Fusion API 照合メモ（fusion_export.py）
 
-2026-10-30 に Autodesk 公式 API リファレンスと照合した。後で `tools/docs/DEVELOPMENT.md` に転記する。
+2026-10-30 に Autodesk 公式 API リファレンスと照合した（第2ラウンドで `Occurrence.breakLink` と BreakLink サンプルを追加照合）。後で `tools/docs/DEVELOPMENT.md` に転記する。
 
 - リファレンスの URL は `https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/<名前>.htm`。**ページ名に名前空間の接頭辞（`core_` / `fusion_`）が付く形に変わっている**。計画書にある旧 URL（`.../files/ExportManager.htm` など接頭辞なし）は 404 になる。下の表は新しい URL。
 - 実機では未確認。「確信度」は、リファレンスに明記されているかどうかで付けた（高＝明記、中＝明記はないが記述から推定、低＝推測）。
@@ -42,6 +42,8 @@
 | `Occurrence.isVisible` / `.isReferencedComponent` / `.name` | 表示判定・外部参照判定 | `isReferencedComponent` は「外部のコンポーネントを参照しているか」 | 高 | [fusion_Occurrence_isVisible](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_Occurrence_isVisible.htm), [fusion_Occurrence_isReferencedComponent](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_Occurrence_isReferencedComponent.htm) |
 | `Occurrence.component` | ボディごと STL の名前を「コンポーネント名_ボディ名」にする | 「このオカレンスが参照するコンポーネント」 | 高 | [fusion_Occurrence](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_Occurrence.htm) |
 | `BRepBody.isSolid` / `.isVisible` / `.name` / `.assemblyContext` / `.createForAssemblyContext(occ)` | 対象ボディの選別とプロキシ化 | `isVisible` は親の非表示も含めた最終結果。`createForAssemblyContext` はネイティブでなければ null | 高 | [fusion_BRepBody](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_BRepBody.htm), [fusion_BRepBody_createForAssemblyContext](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_BRepBody_createForAssemblyContext.htm) |
+| `Occurrence.breakLink()` | R5: 自分で開いたドキュメントで、外部参照の配置をローカルに取り込んでから f3d を書き出す（`break_external_links`） | `isReferencedComponent` が true の配置について、リンクを切り、その配置が参照する**ローカルな Component を作る**（取り込んだ後は `occurrence.component` で取れる）。戻り値 bool（成功で true）。**外部参照でない配置に呼ぶと失敗する**。2017年9月に追加。入れ子の扱い・取り込み後に他のオカレンス（プロキシ）が無効になるかは明記なし → 周ごとに `allOccurrences` を取り直し、1つずつ try。False・例外は次の周で試し直し、進まなくなるか上限 `BREAK_LINK_MAX_ROUNDS`（20 周）で止める。残ったものを「取り込めなかった」としてログ（要目視確認）に出す | 高（仕様）／中（入れ子） | [fusion_Occurrence_breakLink](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_Occurrence_breakLink.htm) |
+| BreakLink サンプル | 取り込みの書き方の手本 | サンプルは `rootComponent.occurrences`（最上位だけ）を**先にリストへ集めてから** `isReferencedComponent` のものに `breakLink()` を呼ぶ。理由は「リンクを切るとコレクションが変わり、回しながらだと問題が起きる」とコメントにある。こちらは入れ子にも対応するため `allOccurrences` を使い、同じく先にリストへ集めてから処理する。サンプルは保存しない（こちらも `close(False)` で破棄） | 高 | [BreakLink_Sample](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/BreakLink_Sample.htm) |
 | `UserInterface.createProgressDialog()` / `ProgressDialog.show(title, message, min, max, delay)` / `.isCancelButtonShown` / `.cancelButtonText` / `.progressValue` / `.maximumValue` / `.message` / `.wasCancelled` / `.hide()` | 進捗 | すべて確認 | 高 | [core_ProgressDialog](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/core_ProgressDialog.htm), [core_ProgressDialog_show](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/core_ProgressDialog_show.htm) |
 | `UserInterface.messageBox(text)` | まとめの表示 | 確認 | 高 | [core_UserInterface_messageBox](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/core_UserInterface_messageBox.htm) |
 | `adsk.doEvents()` | 画面を固めない | Python モジュールの関数。リファレンスのページは見つけられなかった（広く使われている） | 中 | — |
@@ -52,10 +54,18 @@
 1. **`Data.findFileById` でどの ID が引けるか**。モード2のログの detail「取得: …」を見る。`version_id` で常に引けるなら `datafile_id` と再走査は保険のまま残してよい。`datafile_id` でしか引けない／再走査ばかりなら、試す順（`lookup_candidates`）を見直す。古い triage.csv（version_id 列なし）は datafile_id → 再走査で引く。`?version=N` 付きで引いたとき `latestVersion` が期待どおり最新版を返すかも確認する。
 2. **オカレンス内ボディ（プロキシ）を STL 書き出ししたとき、組立上の位置で出るか**。リファレンスでは `Occurrence.bRepBodies` はプロキシを返すとあるが、STL の座標に変換が反映されるかは明記なし。多部品のアセンブリで、ボディごとの STL をスライサーに並べて確認する。
 3. **ルート単位の STL（STL_PER_BODY=False）と 3MF に、非表示のボディやサーフェスボディが含まれるか**。含まれるなら、表示中ボディだけを対象にする実装に変える。
-4. **外部参照を含むデザインの `.f3d` 書き出し**。UI では外部参照を含むと `.f3z` になる。API で `.f3d` 名を指定したときの中身（参照先を含むか）とエラーの有無を確認する。外部参照の判定（`isReferencedComponent` / `documentReferences` / `hasChildReferences`）が実際に立つかも見る。
+4. **外部参照の取り込み（R5）**。実機確認（Fusion 2705.1.15）で、外部参照を含むデザインの f3d は開くと中身が空だった（STEP/STL は出ていた）。API の Fusion アーカイブ書き出しは参照先を含まず、参照先を含む本物の f3z は API では作れない（Autodesk フォーラムの回答）。そこで自分で開いたドキュメントに限り `breakLink()` で取り込んでから f3d を書き出すようにした。実機で確かめること: (a) 書き出した f3d を開いて中身（参照先の形状）が入っているか、(b) 入れ子の参照（参照先の中にさらに参照）も取り込めるか、ログの「外部参照 N 件を取り込んで f3d を書き出し」の N が配置の数と合うか、(c) 取り込み後に `close(False)` で閉じたとき、保存を問うダイアログが出ないか・クラウドの元ファイルに新しい版ができていないか（データパネルの版の履歴で確認）、(d) 取り込みの前に出す STEP/STL/3MF/サムネイルが今までどおりか、(e) 元々開いていたドキュメントのときは取り込まずに「成功（要目視確認）」になるか。外部参照の判定（`isReferencedComponent` / `documentReferences` / `hasChildReferences`）が実際に立つかも見る。
 5. **開いた直後のサムネイルが真っ白・描画途中にならないか**。`doEvents` を数回挟んでいるが足りなければ回数を増やすか、`time.sleep` を足す。ViewCube の向きが変えられているデータで斜め視点がばらつかないか。
 6. **`DataFolder.dataFiles` / `dataFolders` が初回アクセスで全部そろうか**（クラウドからの遅延読み込みで件数が欠けないか）。モード1の件数を Fusion のデータパネルの件数と比べる。
 7. **`DataFile.versions` の dateCreated が「最初の版」まで取れるか**、そして大量ファイルで遅くないか。遅ければ最新版の `dateCreated` だけにする。
 8. `Documents.open` がすでに開いているファイルに対して何を返すか（実装では事前に `app.documents` を見て、開いていれば閉じない扱いにしている）。外部参照の子ドキュメントが裏で開かれたまま残らないか。
 9. `fileExtension` の値（`"f3d"` か大文字か）と、外部参照を含むデザインも `f3d` で列挙されるか。
 10. 確認した Fusion のバージョン（`app.version`）を DEVELOPMENT.md に記録する。
+
+## 第2ラウンドで照合した箇所（2026-10-30）
+
+- `break_external_links`: 上の `Occurrence.breakLink()` と BreakLink サンプルに合わせた（先にリストへ集める、`isReferencedComponent` が true のものだけに呼ぶ、戻り値 bool を見る）。
+- `export_item` の順番を STEP → STL → 3MF → thumb.png → 取り込み → f3d に変えた。取り込みは自分で開いたドキュメントのときだけ（`open_document` の「自分で開いたか」）で、閉じるのは従来どおり `Document.close(False)`（変更を捨てて閉じる。リファレンスで確認済み）。
+- `Component.allOccurrences` は「階層を問わず全オカレンス」を返す（照合済み）。取り込みでコレクションが変わるので、周ごとに取り直している。
+- meta.json の `fusion_id` には triage.csv の `datafile_id`（= `DataFile.id`、版に依らない lineage ID。照合済み）を入れる。モード2で `version_id` から引いて最新版に替えても `id` は同じ系列のはずだが、明記はない（中）。
+- 新たに呼ぶ Fusion API は `Occurrence.breakLink()` だけ。設定欄の既定 `TRIAGE_DIR` は `os.path.expanduser("~")` + `Documents`（Python の標準ライブラリ。Windows では `%USERPROFILE%`）。OneDrive でドキュメントを移している PC では、エクスプローラーの「ドキュメント」と別の場所（`C:\Users\<名前>\Documents`）になりうる。
