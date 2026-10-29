@@ -32,8 +32,7 @@ var SHEET_NAME = 'items';
 
 /**
  * 状態（meta.json の status）の選択肢。ここを変えれば検査も変わる。
- * 変えたあとは、既存の行の検査をやり直すため「全部作り直す」を実行すること
- * （中身が変わっていないフォルダは meta.json を読み直さないため）。
+ * この値と必須キーは fingerprint に含めているので、変えると次の同期で全作品が読み直される。
  */
 var STATUS_CHOICES = ['使用中', '参考', '引退'];
 
@@ -261,7 +260,9 @@ function fingerprintSource(folderName, files) {
   var lines = files.map(function (f) {
     return [f.name, f.size, f.updated].join('\t');
   }).sort();
-  return [String(folderName)].concat(lines).join('\n');
+  // 検査のルールも含める。ルールを変えたら、中身が同じフォルダも読み直して検査をやり直すため
+  var rules = JSON.stringify([STATUS_CHOICES, REQUIRED_META_KEYS]);
+  return [rules, String(folderName)].concat(lines).join('\n');
 }
 
 /** fingerprint（SHA-256 の16進文字列）。Utilities は計算だけで Drive には触らない */

@@ -198,6 +198,18 @@ test('fingerprint: フォルダ名・サイズ・更新日時・ファイル追�
   assert.notEqual(ctx.computeFingerprint('20250101_x', [...files, { name: 'photo_1.jpg', size: 1, updated: 1 }]), base);
 });
 
+test('fingerprint: 検査のルール（状態の選択肢）を変えると変わる', () => {
+  const files = [{ name: 'a.stl', size: 10, updated: 1 }];
+  const base = ctx.computeFingerprint('20250101_x', files);
+  const saved = ctx.STATUS_CHOICES;
+  try {
+    ctx.STATUS_CHOICES = ['使用中', '参考', '引退', '修理中'];
+    assert.notEqual(ctx.computeFingerprint('20250101_x', files), base);
+  } finally {
+    ctx.STATUS_CHOICES = saved;
+  }
+});
+
 test('bytesToHex: 負の値も正しく', () => {
   assert.equal(ctx.bytesToHex([0, 15, 16, 127, -128, -1]), '000f107f80ff');
 });
