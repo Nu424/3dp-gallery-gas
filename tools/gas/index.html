@@ -1,0 +1,747 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3Dプリント作品ギャラリー</title>
+<!--
+================================================================================
+ 3Dプリント作品ギャラリー　一覧と詳細の画面（GAS Webアプリ用）
+================================================================================
+ - 見た目と振る舞いは docs/gallery_mock.html を正とする。サンプルデータは持たない。
+ - 「作品を追加する」パネルの中身は guide.html（下の guide-template の中で include する）。
+ - 外部ライブラリなし。フォントだけ Google Fonts（Zen Kaku Gothic New）。
+ - GASとの境目は loadData / syncNow / resyncItem の3関数だけ。
+   google.script.run.getGalleryData() / syncNow() / resyncItem(folderId) を呼ぶ。
+
+ サーバーとの約束
+   getGalleryData() の戻り値
+   {
+     syncedAt: ISO文字列 または null,  sheetUrl: スプシのURL,
+     items: [{ folderId, folderName, folderUrl, date:"YYYY-MM-DD", name, author, purpose, status,
+               tags:[..], note:[..], thumbUrl|null, photos:[{name,url}], files:[{name,url,downloadUrl}] }],
+     issues: [{ folderName, problem, url /* Driveのフォルダ */, rowUrl /* スプシの該当行 */ }]
+   }
+   syncNow() / resyncItem(folderId) の戻り値は { done: boolean, message: string }。
+   message はそのまま画面に出す。done=false は時間切れで途中まで、の意味。
+   失敗は Error（message は日本語）。withFailureHandler で画面に出す。
+================================================================================
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+:root{
+  --bg:#EEF1F3; --panel:#FFFFFF; --ink:#1F252B; --ink-2:#2C343C; --ink-3:#3B4550; --muted:#55606B; --faint:#6B7580;
+  --line:#DDE2E6; --line-2:#EDF0F2; --chip-line:#C9D1D8; --field-line:#B9C2CA;
+  --thumb:#E8EDF0; --thumb-hover:#DCE3E8; --soft:#F4F6F8; --seg:#E2E7EB;
+  --accent:#1F5FA8; --accent-ink:#173F70; --accent-soft:#E3ECF7; --accent-row:#EEF4FB;
+  --warn-bg:#FFF6DB; --warn-line:#E9CC6B; --warn-ink:#7A5300; --req:#A3301F;
+  --st-use-bg:#F5D447; --st-use-fg:#2A2200; --st-use-bd:#D9B52B;
+  --st-ref-bg:#FFFFFF; --st-ref-fg:#1F252B; --st-ref-bd:#AEB8C1;
+  --st-ret-bg:#DCE1E5; --st-ret-fg:#3E4852; --st-ret-bd:#C3CBD2;
+}
+*{box-sizing:border-box}
+[hidden]{display:none !important} /* display を指定した要素でも hidden 属性で確実に隠す */
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'Zen Kaku Gothic New',system-ui,sans-serif}
+button{font-family:inherit;color:inherit}
+a{color:var(--accent)}a:hover{color:#174A84}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+.app{height:100svh;display:flex;flex-direction:column;overflow:hidden}
+.topbar{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:10px 20px;padding:12px 20px;background:var(--panel);border-bottom:1px solid var(--line)}
+.topbar h1{margin:0;font-size:20px;font-weight:700}
+.topbar .sub{font-size:13.5px;color:var(--muted)}
+.topbar .actions{margin-left:auto;display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.sync-label{font-size:13px;color:var(--muted)}
+.btn{min-height:44px;display:inline-flex;align-items:center;gap:8px;padding:0 16px;font-size:14.5px;font-weight:500;background:var(--panel);border:1px solid var(--field-line);border-radius:8px;cursor:pointer;text-decoration:none;color:var(--ink)}
+.btn-primary{background:var(--ink);color:#fff;border-color:var(--ink);font-weight:700}
+.btn-primary:hover{color:#fff}
+.btn-small{min-height:40px;padding:0 12px;font-size:13.5px;color:var(--ink-3);border-color:var(--line)}
+.btn[disabled]{opacity:.6;cursor:progress}
+.icon-btn{width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:none;border-radius:8px;cursor:pointer;color:var(--muted)}
+.icon-btn:hover{background:var(--soft)}
+
+.body{flex:1;min-height:0;display:flex}
+.pane{overflow-y:auto;overscroll-behavior:contain}
+
+/* 左：絞り込み */
+.filters{flex:none;width:260px;background:var(--panel);border-right:1px solid var(--line);padding:16px;display:flex;flex-direction:column;gap:20px}
+.filters.closed{width:60px;padding:12px 8px;align-items:center}
+.filters.closed .filters-open{display:none}
+.filters:not(.closed) .filters-rail{display:none}
+.filters-head{display:flex;align-items:center;justify-content:space-between}
+.filters-head span{font-size:15px;font-weight:700}
+.f-label{font-size:13px;font-weight:700;color:var(--muted)}
+.f-group{display:flex;flex-direction:column;gap:6px}
+.search{min-height:44px;width:100%;padding:0 12px;font-size:15px;font-family:inherit;border:1px solid var(--field-line);border-radius:8px;color:var(--ink);background:#fff}
+.status-row{min-height:40px;width:100%;display:flex;align-items:center;gap:10px;padding:0 10px;font-size:14.5px;text-align:left;background:transparent;border:none;border-radius:8px;cursor:pointer}
+.status-row:hover{background:var(--soft)}
+.status-row[aria-pressed="true"]{background:var(--accent-soft);font-weight:700}
+.status-row .sw{width:12px;height:12px;border-radius:3px;border:1px solid}
+.status-row .label{flex:1}
+.status-row .count{font-size:13px;color:var(--muted);font-weight:400}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{min-height:36px;padding:0 11px;font-size:13.5px;background:#fff;border:1px solid var(--chip-line);border-radius:18px;cursor:pointer}
+.chip .count{color:var(--muted)}
+.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+.chip[aria-pressed="true"] .count{color:#DCE7F5}
+.chip.dark[aria-pressed="true"]{background:var(--ink);border-color:var(--ink)}
+.rail-btn{position:relative;background:var(--soft);color:var(--ink)}
+.badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--accent);color:#fff;font-size:11.5px;font-weight:700;display:flex;align-items:center;justify-content:center}
+
+/* 中央：一覧 */
+.main{flex:1 1 0;min-width:0;padding:16px 20px 32px;display:flex;flex-direction:column;gap:14px}
+.issues{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;padding:10px 14px;background:var(--warn-bg);border:1px solid var(--warn-line);border-radius:10px;font-size:14px}
+.issues strong{font-weight:700}
+.issues .issue-text{color:var(--ink-3)}
+.issues .links{margin-left:auto;display:flex;gap:14px}
+.linklike{padding:0;background:none;border:none;color:var(--accent);font-size:inherit;font-weight:700;text-decoration:underline;cursor:pointer}
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.toolbar .count{font-size:15px;font-weight:700}
+.active-chip{min-height:32px;display:inline-flex;align-items:center;gap:6px;padding:0 8px 0 12px;font-size:13.5px;background:var(--accent-soft);color:var(--accent-ink);border:none;border-radius:16px;cursor:pointer}
+.toolbar .right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.seg{display:flex;background:var(--seg);padding:3px;border-radius:8px}
+.seg button{min-height:36px;padding:0 12px;font-size:13.5px;font-weight:500;background:transparent;border:none;border-radius:6px;cursor:pointer}
+.seg button.icon{width:40px;padding:0;display:flex;align-items:center;justify-content:center}
+.seg button[aria-pressed="true"],.seg button[aria-selected="true"]{background:#fff;box-shadow:0 1px 2px rgba(31,37,43,.2)}
+
+.status-badge{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:4px;border:1px solid;white-space:nowrap}
+.st-使用中{background:var(--st-use-bg);color:var(--st-use-fg);border-color:var(--st-use-bd)}
+.st-参考{background:var(--st-ref-bg);color:var(--st-ref-fg);border-color:var(--st-ref-bd)}
+.st-引退{background:var(--st-ret-bg);color:var(--st-ret-fg);border-color:var(--st-ret-bd)}
+
+.tag-btn{min-height:40px;padding:0 3px;background:none;border:none;cursor:pointer;display:inline-flex;align-items:center}
+.tag-btn span{font-size:12.5px;padding:3px 9px;border-radius:12px;background:#EDF1F4;color:var(--ink-2)}
+.tag-btn:hover span{background:#E1E7EC}
+.tag-btn[aria-pressed="true"] span{background:var(--accent);color:#fff}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(208px,1fr));gap:14px}
+.card{display:flex;flex-direction:column;background:#fff;border-radius:12px;border:1px solid var(--line);overflow:hidden}
+.card.selected{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.card-main{display:flex;flex-direction:column;gap:8px;padding:10px 10px 4px;text-align:left;background:transparent;border:none;cursor:pointer}
+.thumb{position:relative;display:flex;height:132px;align-items:center;justify-content:center;background:var(--thumb);border-radius:8px;overflow:hidden}
+.card-main:hover .thumb{background:var(--thumb-hover)}
+.thumb img{width:100%;height:100%;object-fit:cover}
+.thumb svg{width:150px;height:112px}
+.thumb .status-badge{position:absolute;top:8px;left:8px}
+.card-name{font-size:15.5px;font-weight:700;line-height:1.35}
+.card-purpose{font-size:13px;line-height:1.55;color:var(--ink-3);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card-tags{display:flex;flex-wrap:wrap;column-gap:4px;padding:0 6px}
+.card-date{padding:0 10px 12px;font-size:12.5px;color:var(--faint)}
+
+.list{display:flex;flex-direction:column;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.row{display:flex;flex-wrap:wrap;align-items:center;border-top:1px solid var(--line-2)}
+.row:first-child{border-top:none}
+.row.selected{background:var(--accent-row);box-shadow:inset 3px 0 0 var(--accent)}
+.row-main{flex:1 1 320px;min-width:0;display:flex;align-items:center;gap:14px;padding:8px 12px;text-align:left;background:transparent;border:none;cursor:pointer}
+.row:not(.selected) .row-main:hover{background:var(--soft)}
+.row-thumb{flex:none;width:64px;height:48px;border-radius:6px;background:var(--thumb);overflow:hidden;display:flex;align-items:center;justify-content:center}
+.row-thumb img{width:100%;height:100%;object-fit:cover}
+.row-thumb svg{width:64px;height:48px}
+.row-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.row-name{font-size:15px;font-weight:700}
+.row-purpose{font-size:13px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .status-badge{flex:none;width:56px;text-align:center;padding:2px 0}
+.row-date{flex:none;width:86px;font-size:13px;color:var(--muted);text-align:right}
+.row-tags{display:flex;flex-wrap:wrap;column-gap:2px;padding-right:10px}
+.row-tags .tag-btn{min-height:44px}
+.empty{background:#fff;border-radius:12px;padding:48px 24px;display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center}
+.empty p{margin:0;font-size:16px;font-weight:500}
+
+/* 右：詳細 */
+.detail{flex:none;width:440px;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column}
+.detail-head{position:sticky;top:0;z-index:1;background:#fff;display:flex;align-items:center;gap:8px;padding:14px 20px;border-bottom:1px solid var(--line-2)}
+.detail-head .date{font-size:13px;color:var(--muted)}
+.detail-body{padding:20px;display:flex;flex-direction:column;gap:22px}
+.detail h2{margin:0;font-size:24px;font-weight:700;line-height:1.3}
+.detail .purpose{margin:0;font-size:16px;line-height:1.65;font-weight:500}
+.detail .tags{display:flex;flex-wrap:wrap;column-gap:4px;margin-top:-8px}
+.detail .tags .tag-btn span{font-size:13.5px;padding:4px 11px;border-radius:14px}
+.hero{height:220px;display:flex;align-items:center;justify-content:center;background:var(--thumb);border-radius:10px;overflow:hidden}
+.hero img{width:100%;height:100%;object-fit:contain}
+.hero svg{width:280px;max-width:90%;height:200px}
+.photos{display:flex;flex-wrap:wrap;gap:8px;margin-top:-10px}
+.photos figure{margin:0;display:flex;flex-direction:column;gap:4px}
+.photos .ph{width:112px;height:80px;border-radius:8px;background:#DCE2E7;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.photos img{width:100%;height:100%;object-fit:cover}
+.photos figcaption{font-size:12px;color:var(--muted);max-width:112px;overflow-wrap:anywhere}
+.d-section{display:flex;flex-direction:column;gap:6px}
+.d-section h3{margin:0;font-size:13px;font-weight:700;color:var(--muted)}
+.note{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px;font-size:14.5px;line-height:1.7}
+.fgroup{display:flex;flex-direction:column;gap:2px}
+.fgroup-head{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding-bottom:2px}
+.fgroup-head b{font-weight:700}
+.fgroup-head span{color:var(--muted)}
+.file{min-height:40px;display:flex;align-items:center;gap:10px;padding:0 10px;font-size:14px;color:var(--ink);text-decoration:none;border-radius:6px;background:var(--soft)}
+.file:hover{background:#E9EDF0;color:var(--ink)}
+.file .ext{font-size:11px;font-weight:700;min-width:38px;text-align:center;padding:2px 4px;border-radius:4px;background:var(--ink);color:#fff}
+.file .fname{flex:1;overflow-wrap:anywhere}
+.info{margin:0;display:grid;grid-template-columns:72px 1fr;gap:10px 12px;font-size:14px;align-items:start}
+.info dt{color:var(--muted)}
+.info dd{margin:0;display:flex;flex-direction:column;gap:4px;overflow-wrap:anywhere}
+.info a{align-self:flex-start;display:inline-flex;align-items:center;gap:6px;min-height:32px;font-weight:700}
+.resync{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding-top:12px;border-top:1px solid var(--line-2)}
+.resync span{font-size:12.5px;color:var(--muted)}
+
+/* 作品を追加する（右から出るパネル） */
+.sheet{position:fixed;inset:0;z-index:10;display:flex;justify-content:flex-end}
+.sheet[hidden]{display:none}
+.sheet-backdrop{position:absolute;inset:0;background:rgba(31,37,43,.36);border:none;cursor:default}
+.sheet-panel{position:relative;width:780px;max-width:100%;height:100%;overflow-y:auto;background:#fff;box-shadow:-12px 0 32px rgba(31,37,43,.18);display:flex;flex-direction:column}
+.sheet-head{position:sticky;top:0;z-index:1;background:#fff;display:flex;align-items:center;gap:12px;padding:14px 16px 14px 28px;border-bottom:1px solid var(--line-2)}
+.sheet-head h2{margin:0;font-size:20px;font-weight:700}
+.sheet-head .icon-btn{margin-left:auto;color:var(--ink)}
+.sheet-body{padding:24px 28px 48px;display:flex;flex-direction:column;gap:32px}
+.sheet-body h3{margin:0;font-size:17px;font-weight:700}
+.sheet-body section{display:flex;flex-direction:column;gap:12px}
+.lead{margin:0;font-size:15.5px;line-height:1.8;color:var(--ink-2)}
+.hint{margin:0;font-size:14px;line-height:1.7;color:var(--ink-3)}
+.small{margin:0;font-size:13px;color:var(--muted)}
+.rules{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.rule{display:grid;grid-template-columns:minmax(150px,190px) 44px 1fr;gap:12px;align-items:baseline;padding:11px 14px;border-top:1px solid var(--line-2);font-size:14px}
+.rule:first-child{border-top:none}
+.rule .n{font-weight:700;overflow-wrap:anywhere}
+.req{font-size:12px;font-weight:700}
+.req-must{color:var(--req)}.req-rec{color:var(--accent)}.req-opt{color:var(--muted)}
+.rule .d{line-height:1.65;color:var(--ink-2)}
+.meta-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;align-items:start}
+.code{margin:0;padding:14px 16px;background:var(--ink);color:#F1F3F5;border-radius:10px;font-size:13px;line-height:1.6;overflow-x:auto}
+.keyrow{display:grid;grid-template-columns:64px 36px 1fr;gap:8px;font-size:13.5px;padding:7px 0;border-bottom:1px solid var(--line-2)}
+.keyrow b{font-weight:700}
+.keyrow span:last-child{color:var(--ink-2);line-height:1.6}
+.steps{margin:0;padding:0;list-style:none;display:flex;flex-direction:column}
+.steps li{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line-2)}
+.steps .no{flex:none;width:26px;height:26px;border-radius:50%;background:var(--ink);color:#fff;font-size:12.5px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.steps .t{font-size:14.5px;line-height:1.7}
+.ai{background:var(--soft);border-radius:12px;padding:18px}
+.ai-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px}
+.ai-head div{display:flex;flex-direction:column;gap:4px;flex:1 1 300px}
+.prompt{margin:0;padding:14px;background:#fff;border-radius:8px;font-family:inherit;font-size:13.5px;line-height:1.7;white-space:pre-wrap;max-height:260px;overflow:auto}
+.tabpanel[hidden]{display:none}
+
+@media (max-width: 960px){
+  .app{height:auto;overflow:visible}
+  .body{flex-direction:column}
+  .pane{overflow:visible}
+  .filters,.filters.closed,.detail{width:auto;border:none;align-items:stretch}
+  .detail{border-top:1px solid var(--line)}
+}
+@media (prefers-reduced-motion: reduce){*{transition:none !important}}
+
+/* 移植で加えた部分：読み込み中・エラー・要対応の各行・同期メッセージ */
+.sync-label.warn{color:var(--warn-ink);font-weight:700}
+.sync-label.err{color:var(--req);font-weight:700}
+.issues{flex-direction:column;align-items:stretch;gap:8px}
+.issues-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.issues-head .linklike{margin-left:auto}
+.issue-list{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:2px}
+.issue-row{display:flex;flex-wrap:wrap;align-items:center;gap:0 14px;border-top:1px solid var(--warn-line)}
+.issue-row .issue-text{flex:1 1 260px;min-width:0;overflow-wrap:anywhere;padding:8px 0}
+.issue-row .links{display:flex;gap:4px 14px;flex-wrap:wrap}
+.issue-row .links a{min-height:36px;display:inline-flex;align-items:center;gap:5px;font-weight:700}
+.empty .sub-note{margin:0;font-size:14px;color:var(--muted);font-weight:400}
+.empty.err p{color:var(--req)}
+.spinner{width:28px;height:28px;border-radius:50%;border:3px solid var(--chip-line);border-top-color:var(--accent);animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.resync .err{color:var(--req);font-weight:700}
+.resync .warn{color:var(--warn-ink);font-weight:700}
+@media (prefers-reduced-motion: reduce){.spinner{animation-duration:3s}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <h1>3Dプリント作品ギャラリー</h1>
+    <span class="sub">研究室で作った部品の用途と元データ</span>
+    <div class="actions">
+      <span class="sync-label" id="sync-label" aria-live="polite"></span>
+      <button class="btn" id="btn-sync" type="button">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/></svg>
+        今すぐ同期
+      </button>
+      <button class="btn btn-primary" id="btn-guide" type="button">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        作品を追加する
+      </button>
+    </div>
+  </header>
+
+  <div class="body">
+    <aside class="pane filters" id="filters" aria-label="絞り込み">
+      <div class="filters-open">
+        <div class="filters-head" style="margin-bottom:20px">
+          <span>絞り込み</span>
+          <button class="icon-btn" type="button" data-action="toggle-filters" aria-label="絞り込みを閉じる">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+        </div>
+        <label class="f-group" style="margin-bottom:20px">
+          <span class="f-label">キーワード</span>
+          <input class="search" id="search" type="search" placeholder="名前・用途・メモ" autocomplete="off">
+        </label>
+        <div id="filter-groups" style="display:flex;flex-direction:column;gap:20px"></div>
+      </div>
+      <div class="filters-rail">
+        <button class="icon-btn rail-btn" type="button" data-action="toggle-filters" aria-label="絞り込みを開く">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16"/><path d="M7 12h10"/><path d="M10 18h4"/></svg>
+          <span class="badge" id="rail-badge" hidden></span>
+        </button>
+      </div>
+    </aside>
+
+    <main class="pane main" id="main" aria-label="作品一覧"></main>
+
+    <aside class="pane detail" id="detail" aria-label="作品の詳細"></aside>
+  </div>
+</div>
+
+<div class="sheet" id="sheet" hidden>
+  <button class="sheet-backdrop" type="button" data-action="close-guide" aria-label="閉じる" tabindex="-1"></button>
+  <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="sheet-head">
+      <h2 id="sheet-title">作品を追加する</h2>
+      <button class="icon-btn" type="button" data-action="close-guide" aria-label="閉じる" id="sheet-close">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="sheet-body" id="sheet-body"></div>
+  </section>
+</div>
+
+
+<!-- 「作品を追加する」パネルの中身は guide.html。GAS が include で差し込む -->
+<template id="guide-template">
+<?!= include('guide') ?>
+</template>
+
+<script>
+/* ============================================================
+   状態
+   ============================================================ */
+const STATUSES = ['使用中', '参考', '引退'];
+const state = {
+  data: { items: [], issues: [], syncedAt: null, sheetUrl: '' },
+  loading: true, loadError: '',                 // 初回の読み込み中／失敗
+  q: '', status: 'all', tag: null, author: 'all',
+  sort: 'new', view: 'gallery', selId: null,
+  filtersOpen: !window.matchMedia('(max-width: 960px)').matches, // スマホ幅では最初はたたむ
+  syncing: false, notice: null,                 // notice: { text, kind: ''|'warn'|'err' }（同期ボタン横に出す）
+  resync: null                                  // { id, busy, text, kind }（この作品だけ再同期の状態）
+};
+
+/* ============================================================
+   データ取得・同期（GASとの境目はこの3関数だけ）
+   ============================================================ */
+const errMsg = (err) => (err && err.message) ? err.message : String(err || '不明なエラー');
+
+function loadData() {
+  google.script.run
+    .withSuccessHandler((data) => {
+      state.data = Object.assign({ items: [], issues: [], syncedAt: null, sheetUrl: '' }, data);
+      state.loading = false; state.loadError = '';
+      afterLoad();
+    })
+    .withFailureHandler((err) => {
+      if (state.loading) { state.loading = false; state.loadError = errMsg(err); renderAll(); } // 初回：画面中央に出す
+      else showError('一覧を読み込めませんでした：' + errMsg(err));                              // 再読み込み：古い一覧は残す
+    })
+    .getGalleryData();
+}
+function syncNow() {
+  if (state.syncing) return;
+  state.syncing = true; state.notice = null; renderSync();
+  google.script.run
+    .withSuccessHandler((res) => {
+      state.syncing = false;
+      // done=false は時間切れで途中まで。メッセージを目立たせ、ボタンは押せる状態に戻す
+      state.notice = { text: (res && res.message) || '同期しました', kind: res && res.done === false ? 'warn' : '' };
+      renderSync(); loadData();
+    })
+    .withFailureHandler((err) => { state.syncing = false; showError('同期できませんでした：' + errMsg(err)); })
+    .syncNow();
+}
+function resyncItem(folderId) {
+  if (state.resync && state.resync.busy) return;
+  state.resync = { id: folderId, busy: true, text: '読み直し中…', kind: '' };
+  renderDetail();
+  google.script.run
+    .withSuccessHandler((res) => {
+      state.resync = { id: folderId, busy: false, text: (res && res.message) || '読み直しました', kind: res && res.done === false ? 'warn' : '' };
+      renderDetail(); loadData();
+    })
+    .withFailureHandler((err) => {
+      state.resync = { id: folderId, busy: false, text: '読み直せませんでした：' + errMsg(err), kind: 'err' };
+      renderDetail();
+    })
+    .resyncItem(folderId);
+}
+function afterLoad() {
+  if (!state.selId || !state.data.items.some((it) => it.folderId === state.selId)) {
+    const first = sortedItems(state.data.items)[0];
+    state.selId = first ? first.folderId : null;
+  }
+  renderAll();
+}
+function showError(msg) {
+  state.notice = { text: msg, kind: 'err' };
+  renderSync();
+}
+
+/* ============================================================
+   ユーティリティ
+   ============================================================ */
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const dateLong = (d) => { const [y, m, dd] = String(d || '').split('-').map(Number); return y ? `${y}年${m}月${dd}日` : ''; };
+const dateDot = (d) => String(d || '').replaceAll('-', '.');
+const timeShort = (iso) => { if (!iso) return ''; const t = new Date(iso); return isNaN(t) ? '' : `${t.getMonth() + 1}/${t.getDate()} ${t.getHours()}:${String(t.getMinutes()).padStart(2, '0')}`; };
+const extOf = (name) => String(name).split('.').pop().toLowerCase();
+
+function fileGroups(files) {
+  const groups = [
+    { label: '編集用', hint: 'Fusionなどで形を直す', files: [] },
+    { label: '印刷用', hint: 'スライサーに入れる', files: [] },
+    { label: '画像', hint: '', files: [] },
+    { label: 'そのほか', hint: '', files: [] }
+  ];
+  (files || []).forEach((f) => {
+    const e = extOf(f.name);
+    const i = ['f3d', 'step', 'stp'].includes(e) ? 0 : ['stl', '3mf'].includes(e) ? 1 : ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(e) ? 2 : 3;
+    groups[i].files.push(f);
+  });
+  return groups.filter((g) => g.files.length);
+}
+
+/* 画像が無い／読み込めないときの代わりのアイコン。形と色は作品ごとに決まった値（下の seedLook） */
+function glyph(shape, color) {
+  const c = esc(color || '#9AA4AD');
+  const S = 'stroke="#1E2329" stroke-opacity="0.75" stroke-width="1.3" stroke-linejoin="round"';
+  const dark = (pts, o) => `<polygon points="${pts}" fill="${c}"/><polygon points="${pts}" fill="#000" fill-opacity="${o}"/>`;
+  const body = {
+    ring: `<ellipse cx="60" cy="72" rx="36" ry="8" fill="#000" fill-opacity=".08"/><g ${S}><path d="M34 36V58A26 12 0 0 0 86 58V36" fill="${c}"/><path d="M34 36V58A26 12 0 0 0 86 58V36" fill="#000" fill-opacity=".24"/><ellipse cx="60" cy="36" rx="26" ry="12" fill="${c}"/><ellipse cx="60" cy="36" rx="11" ry="5" fill="#000" fill-opacity=".42"/></g>`,
+    plate: `<ellipse cx="60" cy="76" rx="44" ry="8" fill="#000" fill-opacity=".08"/><g ${S}>${dark('14,50 60,72 60,80 14,58', .26)}${dark('60,72 106,50 106,58 60,80', .14)}<polygon points="14,50 60,28 106,50 60,72" fill="${c}"/><g fill="#000" fill-opacity=".42"><ellipse cx="40" cy="50" rx="6" ry="3"/><ellipse cx="80" cy="50" rx="6" ry="3"/><ellipse cx="60" cy="40" rx="6" ry="3"/><ellipse cx="60" cy="60" rx="6" ry="3"/></g></g>`,
+    bracket: `<ellipse cx="62" cy="80" rx="42" ry="7" fill="#000" fill-opacity=".08"/><g ${S}>${dark('18,58 62,78 62,85 18,65', .26)}${dark('62,78 102,60 102,67 62,85', .14)}<polygon points="18,58 58,40 102,60 62,78" fill="${c}"/><polygon points="18,30 58,12 64,15 24,33" fill="${c}"/>${dark('24,33 64,15 64,43 24,61', .1)}<ellipse cx="44" cy="36" rx="4.5" ry="6" fill="#000" fill-opacity=".42"/><ellipse cx="80" cy="62" rx="5" ry="2.5" fill="#000" fill-opacity=".42"/></g>`,
+    box: `<ellipse cx="60" cy="80" rx="44" ry="7" fill="#000" fill-opacity=".08"/><g ${S}>${dark('16,46 60,66 60,82 16,62', .26)}${dark('60,66 104,46 104,62 60,82', .14)}<polygon points="16,46 60,26 104,46 60,66" fill="${c}"/><polygon points="26,46 60,31 94,46 60,61" fill="#000" fill-opacity=".36"/></g>`
+  };
+  return `<svg viewBox="0 0 120 90" aria-hidden="true">${body[shape] || body.plate}</svg>`;
+}
+/* フォルダID（無ければ名前）の簡単なハッシュ（FNV-1a）から、形と色を決定的に選ぶ */
+const SHAPES = ['box', 'plate', 'bracket', 'ring'];
+const COLORS = ['#4F86C6', '#C9C2B4', '#E07A2E', '#5B9E6A', '#56606B', '#8E6BB8', '#D9534F', '#4A4F57'];
+function seedLook(seed) {
+  let h = 2166136261;
+  for (const ch of String(seed || '')) { h ^= ch.codePointAt(0); h = Math.imul(h, 16777619) >>> 0; }
+  return { shape: SHAPES[h % SHAPES.length], color: COLORS[(h >>> 8) % COLORS.length] };
+}
+const itemSeed = (it) => it.folderId || it.folderName || it.name;
+const glyphFor = (it) => { const l = seedLook(itemSeed(it)); return glyph(l.shape, l.color); };
+/* 画像があれば <img>、無いか読み込みに失敗したらアイコン。失敗時は img を差し替える */
+const thumbHTML = (it, alt) => it.thumbUrl
+  ? `<img src="${esc(it.thumbUrl)}" alt="${esc(alt || '')}" loading="lazy" referrerpolicy="no-referrer" data-seed="${esc(itemSeed(it))}" onerror="imgFail(this)">`
+  : glyphFor(it);
+function imgFail(img) {
+  if (img.dataset.kind === 'photo') { img.insertAdjacentHTML('afterend', ICON.photo); img.remove(); return; }
+  const l = seedLook(img.dataset.seed);
+  img.insertAdjacentHTML('afterend', glyph(l.shape, l.color));
+  img.remove();
+}
+
+const ICON = {
+  x: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>',
+  warn: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7A5300" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>',
+  grid: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>',
+  list: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6h11"/><path d="M9 12h11"/><path d="M9 18h11"/><path d="M4 6h.01"/><path d="M4 12h.01"/><path d="M4 18h.01"/></svg>',
+  dl: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1F5FA8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>',
+  ext: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>',
+  photo: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#55606B" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-8 7"/></svg>'
+};
+
+/* ============================================================
+   絞り込み・並び替え
+   ============================================================ */
+function matches(it, skip) {
+  const q = state.q.trim().toLowerCase();
+  return (skip === 'status' || state.status === 'all' || it.status === state.status)
+    && (skip === 'tag' || !state.tag || it.tags.includes(state.tag))
+    && (skip === 'author' || state.author === 'all' || it.author === state.author)
+    && (!q || [it.name, it.purpose, it.note.join(' '), it.tags.join(' ')].join(' ').toLowerCase().includes(q));
+}
+function sortedItems(items) {
+  return items.slice().sort((a, b) => state.sort === 'name' ? a.name.localeCompare(b.name, 'ja') : String(b.date || '').localeCompare(String(a.date || '')));
+}
+function activeFilters() {
+  const a = [];
+  if (state.status !== 'all') a.push({ key: 'status', label: '状態：' + state.status, aria: '状態の絞り込みを解除' });
+  if (state.tag) a.push({ key: 'tag', label: '#' + state.tag, aria: 'タグの絞り込みを解除' });
+  if (state.author !== 'all') a.push({ key: 'author', label: '作った人：' + state.author, aria: '作った人の絞り込みを解除' });
+  if (state.q.trim()) a.push({ key: 'q', label: '「' + state.q.trim() + '」', aria: 'キーワードを消す' });
+  return a;
+}
+const tagButtons = (tags) => tags.map((t) => {
+  const on = state.tag === t;
+  return `<button class="tag-btn" type="button" data-tag="${esc(t)}" aria-pressed="${on}" aria-label="${on ? 'タグ「' + esc(t) + '」の絞り込みを解除' : 'タグ「' + esc(t) + '」で絞り込む'}"><span>#${esc(t)}</span></button>`;
+}).join('');
+
+/* ============================================================
+   描画
+   ============================================================ */
+function renderAll() { renderFilters(); renderMain(); renderDetail(); renderSync(); }
+
+function renderSync() {
+  const btn = document.getElementById('btn-sync');
+  btn.disabled = state.syncing;
+  const label = document.getElementById('sync-label');
+  const last = state.data.syncedAt ? '最終同期 ' + timeShort(state.data.syncedAt) : (state.loading ? '' : '未同期');
+  const n = state.notice;
+  label.className = 'sync-label' + (n && !state.syncing && n.kind ? ' ' + n.kind : '');
+  label.textContent = state.syncing ? '同期中…' : (n ? n.text + (last ? '　' + last : '') : last);
+}
+
+function renderFilters() {
+  const items = state.data.items;
+  const el = document.getElementById('filters');
+  el.classList.toggle('closed', !state.filtersOpen);
+  const n = activeFilters().length;
+  const badge = document.getElementById('rail-badge');
+  badge.hidden = n === 0; badge.textContent = n;
+
+  const statusRows = [['all', 'すべて', '#FFFFFF', '#1F252B']].concat(STATUSES.map((s) => [s, s, `var(--st-${{ '使用中': 'use', '参考': 'ref', '引退': 'ret' }[s]}-bg)`, `var(--st-${{ '使用中': 'use', '参考': 'ref', '引退': 'ret' }[s]}-bd)`]))
+    .map(([k, label, bg, bd]) => {
+      const count = items.filter((it) => matches(it, 'status') && (k === 'all' || it.status === k)).length;
+      return `<button class="status-row" type="button" data-status="${k}" aria-pressed="${state.status === k}"><span class="sw" style="background:${bg};border-color:${bd}"></span><span class="label">${label}</span><span class="count">${count}</span></button>`;
+    }).join('');
+
+  const tags = [];
+  items.forEach((it) => it.tags.forEach((t) => { if (!tags.includes(t)) tags.push(t); }));
+  const tagChips = tags.map((t) => {
+    const count = items.filter((it) => matches(it, 'tag') && it.tags.includes(t)).length;
+    return `<button class="chip" type="button" data-tag="${esc(t)}" aria-pressed="${state.tag === t}">${esc(t)} <span class="count">${count}</span></button>`;
+  }).join('');
+
+  const authors = [];
+  items.forEach((it) => { if (!authors.includes(it.author)) authors.push(it.author); });
+  const authorChips = ['all'].concat(authors).map((a) =>
+    `<button class="chip dark" type="button" data-author="${esc(a)}" aria-pressed="${state.author === a}">${a === 'all' ? '全員' : esc(a)}</button>`).join('');
+
+  document.getElementById('filter-groups').innerHTML = `
+    <div class="f-group" role="group" aria-label="状態"><span class="f-label">状態</span><div style="display:flex;flex-direction:column;gap:4px">${statusRows}</div></div>
+    <div class="f-group" role="group" aria-label="タグ"><span class="f-label">タグ</span><div class="chips">${tagChips || '<span class="small">まだありません</span>'}</div></div>
+    <div class="f-group" role="group" aria-label="作った人"><span class="f-label">作った人</span><div class="chips">${authorChips}</div></div>`;
+}
+
+/* 「要対応」バー：一覧に出せなかった作品を1件ずつ、Driveのフォルダとスプシの該当行へのリンクつきで出す */
+function issuesBar() {
+  const issues = state.data.issues || [];
+  if (!issues.length) return '';
+  const link = (url, text) => url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${text}${ICON.ext}</a>` : '';
+  return `
+    <div class="issues" role="status">
+      <div class="issues-head">${ICON.warn}
+        <strong>一覧に出ていない作品が${issues.length}件あります</strong>
+        <button class="linklike" type="button" data-action="open-guide">直し方</button>
+      </div>
+      <ul class="issue-list">${issues.map((i) => `
+        <li class="issue-row">
+          <span class="issue-text">${esc(i.folderName)}：${esc(i.problem)}</span>
+          <span class="links">${link(i.url, 'Driveのフォルダ')}${link(i.rowUrl || state.data.sheetUrl, i.rowUrl ? 'スプシの該当行' : 'スプシで確認')}</span>
+        </li>`).join('')}</ul>
+    </div>`;
+}
+
+function renderMain() {
+  const main = document.getElementById('main');
+  // 初回の読み込み中／失敗
+  if (state.loading) {
+    main.innerHTML = `<div class="empty" role="status"><div class="spinner" aria-hidden="true"></div><p>作品を読み込んでいます…</p></div>`;
+    return;
+  }
+  if (state.loadError) {
+    main.innerHTML = `<div class="empty err" role="alert"><p>一覧を読み込めませんでした</p><p class="sub-note">${esc(state.loadError)}</p><button class="btn btn-primary" type="button" data-action="reload">もう一度読み込む</button></div>`;
+    return;
+  }
+  const list = sortedItems(state.data.items.filter((it) => matches(it, null)));
+  const act = activeFilters();
+  const issuesHTML = issuesBar();
+
+  // 作品が1件も無いとき：次の一手を出す
+  if (!state.data.items.length) {
+    main.innerHTML = issuesHTML + `<div class="empty"><p>まだ作品がありません。「作品を追加する」から始めましょう。</p><p class="sub-note">フォルダを置いたあとは、上の「今すぐ同期」で一覧に出ます。</p><button class="btn btn-primary" type="button" data-action="open-guide">作品を追加する</button></div>`;
+    return;
+  }
+
+  const toolbar = `
+    <div class="toolbar">
+      <span class="count">${list.length}件</span>
+      ${act.map((a) => `<button class="active-chip" type="button" data-clear="${a.key}" aria-label="${esc(a.aria)}">${esc(a.label)}${ICON.x}</button>`).join('')}
+      ${act.length ? '<button class="linklike" type="button" data-action="reset" style="font-weight:400;font-size:13.5px">すべて解除</button>' : ''}
+      <span class="right">
+        <span class="seg" role="group" aria-label="並び順">
+          <button type="button" data-sort="new" aria-pressed="${state.sort === 'new'}">新しい順</button>
+          <button type="button" data-sort="name" aria-pressed="${state.sort === 'name'}">名前順</button>
+        </span>
+        <span class="seg" role="group" aria-label="表示方法">
+          <button class="icon" type="button" data-view="gallery" aria-pressed="${state.view === 'gallery'}" aria-label="ギャラリー表示">${ICON.grid}</button>
+          <button class="icon" type="button" data-view="list" aria-pressed="${state.view === 'list'}" aria-label="リスト表示">${ICON.list}</button>
+        </span>
+      </span>
+    </div>`;
+
+  let body;
+  if (!list.length) {
+    body = `<div class="empty"><p>この条件に合う作品はありません。</p><button class="btn btn-primary" type="button" data-action="reset">絞り込みを解除</button></div>`;
+  } else if (state.view === 'gallery') {
+    body = `<div class="grid">${list.map((it) => {
+      const on = it.folderId === state.selId;
+      return `<div class="card${on ? ' selected' : ''}">
+        <button class="card-main" type="button" data-select="${esc(it.folderId)}" aria-pressed="${on}">
+          <span class="thumb">${thumbHTML(it)}<span class="status-badge st-${esc(it.status)}">${esc(it.status)}</span></span>
+          <span class="card-name">${esc(it.name)}</span>
+          <span class="card-purpose">${esc(it.purpose)}</span>
+        </button>
+        <div class="card-tags">${tagButtons(it.tags)}</div>
+        <span class="card-date">${dateLong(it.date)}作成</span>
+      </div>`;
+    }).join('')}</div>`;
+  } else {
+    body = `<div class="list">${list.map((it) => {
+      const on = it.folderId === state.selId;
+      return `<div class="row${on ? ' selected' : ''}">
+        <button class="row-main" type="button" data-select="${esc(it.folderId)}" aria-pressed="${on}">
+          <span class="row-thumb">${thumbHTML(it)}</span>
+          <span class="row-text"><span class="row-name">${esc(it.name)}</span><span class="row-purpose">${esc(it.purpose)}</span></span>
+          <span class="status-badge st-${esc(it.status)}">${esc(it.status)}</span>
+          <span class="row-date">${dateDot(it.date)}</span>
+        </button>
+        <div class="row-tags">${tagButtons(it.tags)}</div>
+      </div>`;
+    }).join('')}</div>`;
+  }
+  main.innerHTML = issuesHTML + toolbar + body;
+}
+
+function renderDetail() {
+  const el = document.getElementById('detail');
+  const it = state.data.items.find((x) => x.folderId === state.selId);
+  if (!it) {
+    el.innerHTML = `<div class="detail-body"><p class="hint">${state.loading ? '' : '一覧から作品を選ぶと、ここに用途や元データが出ます。'}</p></div>`;
+    return;
+  }
+  const photos = (it.photos || []).map((p) => `<figure><div class="ph">${p.url ? `<img src="${esc(p.url)}" alt="${esc(p.name)}" loading="lazy" referrerpolicy="no-referrer" data-kind="photo" onerror="imgFail(this)">` : ICON.photo}</div><figcaption>${esc(p.name)}</figcaption></figure>`).join('');
+  const groups = fileGroups(it.files).map((g) => `
+    <div class="fgroup">
+      <div class="fgroup-head"><b>${g.label}</b><span>${g.hint}</span></div>
+      ${g.files.map((f) => `<a class="file" href="${esc(f.downloadUrl || f.url)}" target="_blank" rel="noopener" aria-label="${esc(f.name)}をダウンロード"><span class="ext">${esc(extOf(f.name).toUpperCase())}</span><span class="fname">${esc(f.name)}</span>${ICON.dl}</a>`).join('')}
+    </div>`).join('');
+  const rs = state.resync && state.resync.id === it.folderId ? state.resync : null;
+  el.innerHTML = `
+    <div class="detail-head"><span class="status-badge st-${esc(it.status)}">${esc(it.status)}</span><span class="date">${dateLong(it.date)}作成</span></div>
+    <div class="detail-body">
+      <h2>${esc(it.name)}</h2>
+      <p class="purpose" style="margin-top:-12px">${esc(it.purpose)}</p>
+      <div class="tags">${tagButtons(it.tags)}</div>
+      <div class="hero">${thumbHTML(it, it.name)}</div>
+      ${photos ? `<div class="photos">${photos}</div>` : ''}
+      ${it.note && it.note.length ? `<section class="d-section"><h3>メモ</h3><ul class="note">${it.note.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></section>` : ''}
+      <section class="d-section" style="gap:10px"><h3>ファイル</h3>${groups || '<p class="small">ファイルはありません。</p>'}</section>
+      <dl class="info">
+        <dt>作った人</dt><dd>${esc(it.author)}</dd>
+        <dt>フォルダ</dt><dd><span>${esc(it.folderName)}</span>${it.folderUrl ? `<a href="${esc(it.folderUrl)}" target="_blank" rel="noopener">Driveで開く${ICON.ext}</a>` : ''}</dd>
+      </dl>
+      <div class="resync"><button class="btn btn-small" type="button" data-action="resync"${rs && rs.busy ? ' disabled' : ''}>この作品だけ再同期</button><span aria-live="polite"${rs && rs.kind ? ` class="${rs.kind}"` : ''}>${rs ? esc(rs.text) : ''}</span></div>
+    </div>`;
+}
+
+/* ============================================================
+   操作
+   ============================================================ */
+let lastFocus = null;
+function openGuide() {
+  const sheet = document.getElementById('sheet');
+  const body = document.getElementById('sheet-body');
+  if (!body.childElementCount) body.appendChild(document.getElementById('guide-template').content.cloneNode(true));
+  lastFocus = document.activeElement;
+  sheet.hidden = false;
+  document.getElementById('sheet-close').focus();
+}
+function closeGuide() {
+  document.getElementById('sheet').hidden = true;
+  if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
+}
+function setGuideTab(key) {
+  ['manual', 'auto'].forEach((k) => {
+    const on = k === key;
+    const tab = document.getElementById('tab-' + k);
+    tab.setAttribute('aria-selected', on); tab.tabIndex = on ? 0 : -1;
+    document.getElementById('panel-' + k).hidden = !on;
+  });
+}
+
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('button, a');
+  if (!t) return;
+  const d = t.dataset;
+  if (d.select) {
+    state.selId = d.select; renderMain(); renderDetail();
+    if (window.matchMedia('(max-width: 960px)').matches) document.getElementById('detail').scrollIntoView({ behavior: 'smooth' });
+    else document.getElementById('detail').scrollTop = 0;
+    return;
+  }
+  if (d.tag !== undefined) { state.tag = state.tag === d.tag ? null : d.tag; renderFilters(); renderMain(); renderDetail(); return; }
+  if (d.status) { state.status = d.status; renderFilters(); renderMain(); return; }
+  if (d.author) { state.author = d.author; renderFilters(); renderMain(); return; }
+  if (d.sort) { state.sort = d.sort; renderMain(); return; }
+  if (d.view) { state.view = d.view; renderMain(); return; }
+  if (d.tab) { setGuideTab(d.tab); return; }
+  if (d.clear) {
+    if (d.clear === 'q') { state.q = ''; document.getElementById('search').value = ''; }
+    else state[d.clear] = d.clear === 'tag' ? null : 'all';
+    renderFilters(); renderMain(); renderDetail(); return;
+  }
+  switch (d.action) {
+    case 'toggle-filters': state.filtersOpen = !state.filtersOpen; renderFilters(); break;
+    case 'reset': Object.assign(state, { q: '', status: 'all', tag: null, author: 'all' }); document.getElementById('search').value = ''; renderFilters(); renderMain(); renderDetail(); break;
+    case 'reload': state.loading = true; state.loadError = ''; renderAll(); loadData(); break;
+    case 'open-guide': openGuide(); break;
+    case 'close-guide': closeGuide(); break;
+    case 'resync': if (state.selId) resyncItem(state.selId); break;
+    case 'copy-prompt': {
+      const text = document.getElementById('ai-prompt').textContent;
+      const ok = () => { t.textContent = 'コピーしました'; setTimeout(() => { t.textContent = '文をコピー'; }, 2000); };
+      // GAS の iframe では clipboard API が使えない場合があるので、失敗したら選択＋execCommand で代替する
+      const fallback = () => {
+        const r = document.createRange(); r.selectNodeContents(document.getElementById('ai-prompt'));
+        const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        let done = false; try { done = document.execCommand('copy'); } catch (_) { /* 選択だけ残す */ }
+        t.textContent = done ? 'コピーしました' : '選択しました（Ctrl+Cでコピー）';
+        setTimeout(() => { t.textContent = '文をコピー'; }, 2500);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok, fallback); else fallback();
+      break;
+    }
+  }
+});
+document.getElementById('btn-guide').addEventListener('click', openGuide);
+document.getElementById('btn-sync').addEventListener('click', syncNow);
+document.getElementById('search').addEventListener('input', (e) => { state.q = e.target.value; renderFilters(); renderMain(); });
+document.addEventListener('keydown', (e) => {
+  const sheet = document.getElementById('sheet');
+  if (sheet.hidden) return;
+  if (e.key === 'Escape') { closeGuide(); return; }
+  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+    const tab = e.target.closest('[role="tab"]');
+    if (tab) { const next = tab.dataset.tab === 'manual' ? 'auto' : 'manual'; setGuideTab(next); document.getElementById('tab-' + next).focus(); }
+  }
+  if (e.key === 'Tab') {
+    const f = sheet.querySelectorAll('.sheet-panel button:not([hidden]), .sheet-panel a[href]');
+    const vis = [...f].filter((x) => x.offsetParent !== null);
+    if (!vis.length) return;
+    if (e.shiftKey && document.activeElement === vis[0]) { e.preventDefault(); vis[vis.length - 1].focus(); }
+    else if (!e.shiftKey && document.activeElement === vis[vis.length - 1]) { e.preventDefault(); vis[0].focus(); }
+  }
+});
+
+renderAll();   // まず「読み込み中」を出す
+loadData();
+</script>
+</body>
+</html>
