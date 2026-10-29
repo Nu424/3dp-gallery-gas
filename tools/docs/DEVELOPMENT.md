@@ -227,7 +227,7 @@ getThumbnails(["<ファイルID>", …], large) → { "<ファイルID>": "data:
 | `status` | 必須 | 文字列 | `使用中` / `参考` / `引退` のいずれか |
 | `tags` | 任意 | 文字列の配列 | 絞り込み用（装置名、種類など） |
 | `note` | 任意 | 文字列、または文字列の配列 | 上記以外すべて。配列なら1要素＝1行、文字列なら改行で行に分ける |
-| `fusion_id` | 任意（Fusion書き出しが入れる。**手で書かない**） | 文字列 | Fusion の `DataFile.id`（版・名前・置き場所が変わっても同じ）。`fusion_export.py` が書き出し済みかを判定するための印。同期は未知のキーとして無視するので、スプシにもギャラリーの画面にも出ない（`meta.json` の中にだけ残る） |
+| `fusion_id` | 任意（Fusion書き出しが入れる。**手で書かない**） | 文字列 | Fusion の `DataFile.id`（版・名前・置き場所が変わっても同じ）。`fusion_export.py` が書き出し済みかを判定するための印。同期は未知のキーとして無視するので、スプシにもギャラリーの画面にも出ない（`meta.json` の中にだけ残る）。書き出しの最中は、作品フォルダに同じ ID を入れた目印 `fusion_id.tmp` も置かれる（完了で消える。同期は `*.tmp` を無視する） |
 
 ```json
 {
@@ -319,11 +319,11 @@ AIや他の人が直したコードは、本番に出す前にテスト環境で
 
 | 区画 | 内容 |
 | --- | --- |
-| 設定欄 | 「共通 → モード1だけ → モード2だけ → 細かい設定」の順。共通：`MODE` `PROJECT_NAMES` `TARGET_NAMES`／モード1だけ：`TRIAGE_DIR`（既定はローカルの `ドキュメント\3Dギャラリー_仕分け`）／モード2だけ：`TRIAGE_CSV`（既定は空＝`TRIAGE_DIR\triage.csv`）`OUTPUT_DIR` `DEFAULT_AUTHOR` `DEFAULT_STATUS` `DEFAULT_TAGS`／細かい設定：`STL_PER_BODY` `MESH_QUALITY` `THUMB_WIDTH/HEIGHT`。Googleドライブ上でなければならず、`<共有ドライブ名>` の書き換えが要るのはモード2の `OUTPUT_DIR` だけ |
-| 定数 | `TRIAGE_COLUMNS`、ファイル名、`FUSION_ID_KEY`（`"fusion_id"`）、`SOURCE_PREFIX`（旧版の「Fusion元: 」。互換用）、`BREAK_LINK_MAX_ROUNDS`、ランク（`EXPORT_RANKS = ("A","B")`）、ログの result の語、`FOLDER_NAME_PATTERN`（GASの同期と同じ規則） |
-| 純粋な関数 | `sanitize_filename` `epoch_to_text` `date_part` `make_folder_name` `is_valid_folder_name` `unique_name` `source_text` `build_meta` `meta_json_text` `write_meta_json` `is_done` `folder_state` `resolve_output_folder` `check_setting_path` `write_triage_csv` `read_triage_csv` `normalize_rank` `select_rows_for_export` `select_projects` `normalize_name` `select_by_names` `names_in_use` `merge_triage_rows` `resolve_paths` `external_ref_outcome` `lookup_candidates` `append_log` `backup_path` `collect_visible_solid_bodies`（`[(ボディ, STLの名前の元), …]` を返す） `break_external_links`（Fusion のオブジェクトを受けるが、`count`/`item` と属性だけで判断するので偽物でテストできる） |
+| 設定欄 | 「共通 → モード1だけ → モード2だけ → 細かい設定」の順。共通：`MODE` `PROJECT_NAMES` `TARGET_NAMES`／モード1だけ：`TRIAGE_DIR`（既定は空＝ローカルの `ドキュメント\3Dギャラリー_仕分け`。「ドキュメント」は Known Folder で取る）／モード2だけ：`TRIAGE_CSV`（既定は空＝`TRIAGE_DIR\triage.csv`）`OUTPUT_DIR` `DEFAULT_AUTHOR` `DEFAULT_STATUS` `DEFAULT_TAGS`／細かい設定：`STL_PER_BODY` `MESH_QUALITY` `THUMB_WIDTH/HEIGHT`。Googleドライブ上でなければならず、`<共有ドライブ名>` の書き換えが要るのはモード2の `OUTPUT_DIR` だけ |
+| 定数 | `TRIAGE_COLUMNS`、ファイル名（`TRIAGE_DIR_NAME` は `TRIAGE_DIR` が空のときのフォルダ名）、`FUSION_ID_KEY`（`"fusion_id"`）、`FUSION_MARKER_FILENAME`（書き出し中の目印 `"fusion_id.tmp"`）、`SOURCE_PREFIX`（旧版の「Fusion元: 」。互換用）、`BREAK_LINK_MAX_ROUNDS`、ランク（`EXPORT_RANKS = ("A","B")`）、ログの result の語、`FOLDER_NAME_PATTERN`（GASの同期と同じ規則） |
+| 純粋な関数 | `sanitize_filename` `epoch_to_text` `date_part` `make_folder_name` `is_valid_folder_name` `unique_name` `source_text` `build_meta` `meta_json_text` `write_meta_json` `is_done` `write_marker` `read_marker` `remove_marker` `folder_state` `resolve_output_folder` `check_setting_path` `write_triage_csv` `can_overwrite` `fallback_triage_path` `save_triage_csv` `read_triage_csv` `normalize_rank` `select_rows_for_export` `select_projects` `normalize_name` `as_name_list` `duplicate_names` `select_by_names` `names_in_use` `merge_triage_rows` `documents_dir`（Windows では `_known_documents_folder` を使う。ctypes） `resolve_paths` `external_ref_outcome` `lookup_candidates` `append_log` `backup_path` `collect_visible_solid_bodies`（`[(ボディ, STLの名前の元), …]` を返す） `break_external_links`（Fusion のオブジェクトを受けるが、`count`/`item` と属性だけで判断するので偽物でテストできる） |
 | Fusionを使う関数 | `list_target_projects` `walk_f3d_files` `first_created_epoch` `FileFinder` `open_document` `close_document` `is_modified` `get_design` `save_thumbnail` `export_f3d/step/stl/3mf` `find_external_references` `export_item` `Progress` |
-| 純粋な関数の役割（第2ラウンドで追加） | `resolve_paths`：`~` の展開、`TRIAGE_CSV` が空なら `TRIAGE_DIR\triage.csv`、モードごとの設定の検査（`<共有ドライブ名>` の残りを止めるのは `OUTPUT_DIR` だけ）。`normalize_name`：前後の空白を除いて NFC 正規化。`select_by_names`：名前で絞り、見つからなかった名前も返す。`merge_triage_rows`：モード1の再実行で既存の行に合わせる。`names_in_use`：今回撮らない行が使う `folder_name` と画像名（撮り直す行の名前案が衝突しないように）。`external_ref_outcome`：ログを「要目視確認」にするかと注記を決める。`break_external_links`：外部参照の取り込み |
+| 純粋な関数の役割（第2ラウンドで追加） | `resolve_paths`：`~` の展開、`TRIAGE_CSV` が空なら `TRIAGE_DIR\triage.csv`、モードごとの設定の検査（`<共有ドライブ名>` の残りを止めるのは `OUTPUT_DIR` だけ）。`normalize_name`：前後の空白を除いて NFC 正規化。`select_by_names`：名前で絞り、見つからなかった名前も返す。`merge_triage_rows`：モード1の再実行で既存の行に合わせる。`names_in_use`：今回撮らない行が使う `folder_name` と画像名（撮り直す行の名前案が衝突しないように）。`external_ref_outcome`：ログを「要目視確認」にするかと注記を決める。`break_external_links`：外部参照の取り込み。（第2ラウンドのレビュー対応で追加）`write_marker` / `read_marker` / `remove_marker`：書き出し中の目印 `fusion_id.tmp`。`as_name_list`：設定欄の名前のリストに文字列1つが書かれていたら `[s]` にする。`duplicate_names`：同じ名前の行の数。`can_overwrite`：`triage.csv` を書き換えられるか（`r+b` で開いてみる）。`save_triage_csv`：退避して書き、書けなければ `fallback_triage_path`（`triage_new_日時.csv`）に書く。`documents_dir`：「ドキュメント」の場所（失敗時は `~\Documents`） |
 | 実行 | `run_mode1` `run_mode2` `run(context)`（Fusionが呼ぶ入口） |
 
 設計の決まり：
@@ -336,23 +336,34 @@ AIや他の人が直したコードは、本番に出す前にテスト環境で
   | 出力先フォルダの状態 | `folder_state` | 動き |
   | --- | --- | --- |
   | フォルダが無い | `new` | 新しく作る |
-  | フォルダはあるが `meta.json` が無い | `partial` | 途中で止まったので、やり直す（そのフォルダに書く） |
-  | `fusion_id` が一致 | `done` | 済み。スキップ（ログに「スキップ」） |
+  | フォルダはあるが `meta.json` が無く、目印 `fusion_id.tmp` がこの行の `datafile_id` と一致 | `partial` | 自分が途中で止まったフォルダ。やり直す（そのフォルダに書く） |
+  | 同上で、目印が無い | `partial`（`-v2` 以降は `conflict` 扱い） | 目印を書く前の版で止まったフォルダなど。`triage.csv` どおりの名前（n=1）なら従来どおり自分のものとしてやり直す。`-v2` 以降は誰のものか分からない（CSV 内の重複処理で他の行が使った名前かもしれない）ので、`resolve_output_folder` が避ける |
+  | 同上で、目印が別の `datafile_id` | `conflict` | 他の作品の途中のフォルダ。取らない |
+  | `fusion_id` が一致 | `done` | 済み。スキップ（ログに「スキップ」、ダイアログは「書き出し済み」） |
   | `fusion_id` がある、だが違う | `conflict` | 別の作品。上書きせず `resolve_output_folder` が `-v2`、`-v3` … の空きを探して書き、ログに「注意」を残す |
   | `meta.json` が読めない・`{ }` でない | `conflict` | 同上（手作りの同名フォルダなど） |
-  | `fusion_id` が無く、`note` に旧版の「Fusion元: …」行がある | `done` / `conflict` | 旧版の出力との互換。行の場所が今回の行（`source_text`）と一致すれば `done`、違えば `conflict` |
-  | `fusion_id` も「Fusion元」行も無い | `done_no_id` | 念のためスキップ（ログに「fusion_id が無いため念のためスキップ」）。手で消した・手作りの同名フォルダ・旧版以前の出力は、同じ作品か分からないが、重複して書き出すより飛ばすほうが害が少ないため |
+  | `fusion_id` が無く、`note` に旧版の「Fusion元: …」行がある | `done` / `done_no_id` | 旧版の出力との互換。行の場所が今回の行（`source_text`）と一致すれば `done`。違えば、Fusion で名前や場所を変えただけかもしれず同じ作品か言い切れないので、`done_no_id`（重複して書き出すより飛ばす） |
+  | `fusion_id` も「Fusion元」行も無い | `done_no_id` | 念のためスキップ。手で消した・手作りの同名フォルダ・旧版以前の出力は、同じ作品か分からないが、重複して書き出すより飛ばすほうが害が少ないため。ログの `detail` に「fusion_id が無いため念のためスキップ（同じ作品なら fusion_id を戻すかフォルダを消してから再実行。別の作品なら triage.csv の folder_name を変える）」。終了時のダイアログでは「スキップ（fusion_id なし・未確認）」として、書き出し済みのスキップとは分けて数える |
 
-  `datafile_id` が空の行は、`fusion_id` が決まらないので `select_rows_for_export` が選ばず、警告（ログの「注意」）を出す。書き出し直したいときは、人が作品フォルダを消してから再実行する（`meta.json` だけ消すと、フォルダが `partial` になって同じ場所に書き直される）。`meta.json` は人が記入していくので、照合に使うのは `fusion_id`（と旧版の「Fusion元」行）だけで、ほかのキーは問わない。
+  `meta.json` があれば目印は見ない（完了後に目印を消せずに残っていても害が無い）。目印は書き出しの最初（`os.makedirs` の直後）に `write_marker` で書き、`meta.json` を書いたら `remove_marker` で消す（消せなくてもエラーにしない）。名前が `*.tmp` なので同期は無視する。
+
+- **書き出し先の決め方**（`resolve_output_folder`）：候補は `folder_name`、`-v2`、`-v3` …。出力先にある候補をすべて（`os.listdir` で一番大きい番号を見る）と、その次の空き1つまでを**先に調べてから**決める。
+  1. `fusion_id` が一致する `done` があれば、番号に関わらず（`reserved` にある名前でも）それを選ぶ。途中で決めると、後ろにある自分の完了済みを見落として重複して書き出すため。
+  2. 無ければ、番号の小さい順に最初の使える候補。`conflict`・`-v2` 以降の目印の無い `partial`・`-v2` 以降で `reserved`（`triage.csv` の他の行が使う名前）にあるものは飛ばす。
+  
+  これで、CSV 内の重複処理で B が `X-v2` になって失敗し（途中）、A が `X-v3` で完了したあと、`TARGET_NAMES=[A]` で再実行しても、A は B の途中の `X-v2` を取らずに `X-v3` で済みと判定される（再実行で番号が変わらない。テスト `TestMode2Renumber`）。済み（`done` / `done_no_id`）で飛ばすときは、避けたフォルダがあっても「…に書き出します」の注意は出さない。
+
+  `datafile_id` が空の行は、`fusion_id` が決まらないので `select_rows_for_export` が選ばず、警告（ログの「注意」）を出す。書き出し直したいときは、人が作品フォルダを消してから再実行する（`meta.json` だけ消すと、`triage.csv` どおりの名前のフォルダは `partial` になって同じ場所に書き直される。`-v2` 以降のフォルダは目印が無いので避けられ、別の番号に書かれる。フォルダごと消すのが確実）。`meta.json` は人が記入していくので、照合に使うのは `fusion_id`（と旧版の「Fusion元」行）だけで、ほかのキーは問わない。
 - 設定欄のパスに `< >` が残っていたら `check_setting_path` が実行を止める。
 - 1件ごとに `try/except` し、`export_log.csv` に記録して次へ進む。`adsk.doEvents()` と進捗ダイアログ（キャンセル可）で画面を固めない。
 - 形式ごと（f3d / STEP / STL / 3MF / thumb）に try し、1つ失敗しても残りを出す。失敗があれば `meta.json` を書かず、その作品を失敗にする。
 - モード2は、`version_id` → `datafile_id` → 対象プロジェクトの再走査の順でファイルを探し、ログの `detail` に「取得: …」と残す。古い版で引けたら `latestVersion` に替える。
 - STL は、ルートと全オカレンスの「表示中のソリッドボディ」を対象にし、ファイル名はルート直下ならボディ名、オカレンス内なら `コンポーネント名_ボディ名`（`Occurrence.component.name`）。重複は `_2` などで避ける。`STL_PER_BODY = False` で1ファイルにまとめる。
 - `meta.json` の雛形（`build_meta`）は、`author` / `status` / `tags` に設定欄の `DEFAULT_AUTHOR` / `DEFAULT_STATUS` / `DEFAULT_TAGS` を入れ（既定は空）、`purpose` は作品ごとに違うので常に空、`note` は空の配列、`fusion_id` に `datafile_id` を入れる。`DEFAULT_STATUS` が選択肢外だと、同期で「要対応」になる。
-- **`TARGET_NAMES`**（空なら全部）：`select_by_names` が `normalize_name`（前後の空白を除き NFC 正規化）をかけて完全一致で選ぶ。同名のファイルは全部選び、見つからない名前は最後のメッセージとログ（「注意」）に出す。モード1は指定した名前のファイルだけ画像を撮り、モード2は `triage.csv` から指定した名前の行だけを書き出す（指定＝書き出すと決めたことなので、`rank` は問わない）。
+- **`TARGET_NAMES`**（空なら全部）：`select_by_names` が `normalize_name`（前後の空白を除き NFC 正規化）をかけて完全一致で選ぶ。同名のファイルは全部選び、見つからない名前は最後のメッセージとログ（「注意」）に出す。`TARGET_NAMES` と `PROJECT_NAMES` に文字列1つが書かれていたら、`as_name_list` が `[s]` にする（そのままだと1文字ずつに割られ、`PROJECT_NAMES` では部分一致になってしまうため）。モード2で、指定した名前の行が `triage.csv` に複数ある（別のプロジェクトやフォルダの同名ファイル）ときは、全部書き出し、`duplicate_names` で数えてログに「注意」を出す。モード1は指定した名前のファイルだけ画像を撮り、モード2は `triage.csv` から指定した名前の行だけを書き出す（指定＝書き出すと決めたことなので、`rank` は問わない）。
 - **モード1の再実行**：既存の `triage.csv` を `triage_日時.csv` に退避したうえで、`merge_triage_rows` が `datafile_id` の同じ行の `rank` と `folder_name` を引き継ぐ（既存の行の位置に新しい行を入れる。今回撮らなかった行・Fusion から消えたファイルの行もそのまま残し、新しいファイルは最後に足す）。一部だけ撮り直しても、記入済みの仕分けは消えない。今回撮れなかった行は、前回の `image` を残す。`names_in_use` は、残す行が使う `folder_name` と画像名を、撮り直す行の名前案が避けるために使う。
-- **設定欄のパス**：`resolve_paths` が解決する。`TRIAGE_DIR` の既定はローカルの `ドキュメント\3Dギャラリー_仕分け`（仕分けの作業用で、共有しなくてよい）。`TRIAGE_CSV` は既定が空で、空なら `TRIAGE_DIR\triage.csv` を読む。`<共有ドライブ名>` が残っていると止めるのは、モード2の `OUTPUT_DIR` だけ（モード1は `OUTPUT_DIR` が未設定でも動く）。
+- **`triage.csv` を Excel で開いたまま**：Excel が開いているファイルは、書き換えも名前の変更（退避の `os.replace`）もできない（`PermissionError`）。最後に書けないと撮影の結果が全部失われるので、モード1は撮影の前に `can_overwrite`（既存の `triage.csv` を `r+b` で開いてみる）で確かめ、書けなければ撮らずに「Excel などで開いていたら閉じてください」と止める（例外ではなくメッセージ）。撮影の途中で開かれて最後に書けなかったときは、`save_triage_csv` が `triage_new_日時.csv` に書き、ログ（「注意」）と終了時のダイアログで案内する。テストは Windows で、Excel と同じく共有を読み取りだけに絞って開く（`CreateFileW`）ことで再現している。
+- **設定欄のパス**：`resolve_paths` が解決する。`TRIAGE_DIR` の既定は空で、空ならローカルの `ドキュメント\3Dギャラリー_仕分け`（仕分けの作業用で、共有しなくてよい）。「ドキュメント」は `documents_dir` が決める。OneDrive にドキュメントを移している PC では `~\Documents` がエクスプローラーの「ドキュメント」と違う場所になることがあるので、Windows では Known Folder（`SHGetKnownFolderPath`、`FOLDERID_Documents`）を ctypes で取り（`_known_documents_folder`）、失敗・空なら `~\Documents` にする。取得の関数は引数で差し替えられるので、失敗時の扱いはテストで確かめている。実際の場所は終了時のダイアログの「一覧」に出る。`TRIAGE_CSV` は既定が空で、空なら `TRIAGE_DIR\triage.csv` を読む。`<共有ドライブ名>` が残っていると止めるのは、モード2の `OUTPUT_DIR` だけ（モード1は `OUTPUT_DIR` が未設定でも動く）。
 - **外部参照**：API の Fusion アーカイブ書き出しは参照先を含まず、外部参照のあるデザインの f3d は中身が空になる（実機で確認。上の「確認したFusionのバージョン」）。そこで `export_item` は **STEP → STL → 3MF → thumb.png → 取り込み（`before_f3d`）→ f3d** の順で書き出す。STEP/STL/3MF/サムネイルは取り込まなくても参照先ごと出ることを実機で確かめてあり、取り込みが失敗したり、取り込みで部品が置き換わって先に集めたボディ（プロキシ）が無効になったりしても、それらに影響しないようにするため。取り込みは**自分で開いたドキュメントに限り**、`break_external_links` が `Occurrence.breakLink()` で行う（対象を先にリストへ集めてから呼び、入れ子は `isReferencedComponent` が無くなるまで周回する。1周で1つも取り込めなければ止め、上限は `BREAK_LINK_MAX_ROUNDS` 周）。保存せずに `close(False)` で閉じるので、クラウド上の元データは変わらない。元々開いていたドキュメントは書き換えないので、取り込まずに書き出す。
 - **ログの判定**（`external_ref_outcome`）：外部参照が無い、または全部取り込めた（自分で開いたドキュメント）→「成功」（detail に「外部参照 N 件を取り込んで f3d を書き出し」）。次のどれかなら「成功（要目視確認）」：元々開いていたドキュメントで取り込まなかった／取り込めなかった配置が残った／印は立っているのに取り込める配置が無かった。いずれも f3d に参照先が入っていない可能性があるため。
 - **既知の制約**：API では、参照先を含む本物の f3z は作れない（Autodesk のフォーラムでも同じ回答）。取り込んだ f3d は、参照先がローカルのコンポーネントとして入った単体のデータになり、元の参照のつながり（参照先を直すと反映される関係）は失われる。つながりを保った形で残したいなら、Fusion の UI から f3z で書き出す（手作業）。
