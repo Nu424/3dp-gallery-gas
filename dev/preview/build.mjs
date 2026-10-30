@@ -151,7 +151,12 @@ const fake = `<script>
   // ここでは自分の history.pushState / replaceState と popstate で代わりをする。
   // params：null・undefined なら今の ? 以降のまま、{} なら消す（配列は同じキーを繰り返す）。
   // プレビュー専用の指定（scenario など）は、消さずに残す（再読み込みしても同じ場面になるように）
-  const PREVIEW_KEYS = ['scenario', 'view', 'select', 'click', 'scroll', 'blobfail'];
+  // 履歴の不調の再現（プレビュー専用）：&histdelay=<ミリ秒> は「戻る」「進む」の知らせ（setChangeHandler）を遅らせる。
+  //   &backfail=1 は window.history.back() を効かなくする（GAS の iframe で back() が効かない場合）
+  const PREVIEW_KEYS = ['scenario', 'view', 'select', 'click', 'scroll', 'blobfail', 'histdelay', 'backfail'];
+  const histDelay = Number(params.get('histdelay') || 0);
+  const realBack = history.back.bind(history);   // 画面が呼ぶ back() も記録する
+  history.back = () => { logHist(params.get('backfail') ? 'back（効かない）' : 'back', null, null); if (!params.get('backfail')) realBack(); };
   const locationObj = () => {
     const sp = new URLSearchParams(location.search), parameter = {}, parameters = {};
     sp.forEach((v, k) => { if (!(k in parameter)) parameter[k] = v; (parameters[k] = parameters[k] || []).push(v); });
@@ -177,7 +182,11 @@ const fake = `<script>
     push(s, p, hash) { logHist('push', s, p); history.pushState(s == null ? null : s, '', urlFor(p, hash)); },
     replace(s, p, hash) { logHist('replace', s, p); history.replaceState(s == null ? null : s, '', urlFor(p, hash)); },
     setChangeHandler(fn) {
-      window.addEventListener('popstate', (e) => { logHist('change', e.state, location.search); fn({ state: e.state, location: locationObj() }); });
+      window.addEventListener('popstate', (e) => {
+        const ev = { state: e.state, location: locationObj() };
+        const deliver = () => { logHist('change', ev.state, location.search); fn(ev); };
+        if (histDelay) wait(histDelay, deliver); else deliver();
+      });
     }
   };
   const url_ = { getLocation(fn) { wait(0, () => fn(locationObj())); } };

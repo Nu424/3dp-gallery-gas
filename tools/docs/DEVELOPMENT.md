@@ -162,6 +162,36 @@ getThumbnails(["<ファイルID>", …], large) → { "<ファイルID>": "data:
 - 返ってきた data URL は Blob にして `blob:` の URL で表示する（1キーにつき1回だけ作る。描き直しの innerHTML を短くするため）。`blob:` の画像が表示できなければ（GAS の iframe の制限に備えて）、その端末では以降 data URL で表示する（`useDataUrl`。そのため data URL の文字列も持つ）。data URL でも表示できないときだけ、次の項目に進む。
 - 大きな画像が表示できなければ、一度だけ縮小画像で頼み直す。それも表示できなければ形のアイコンにし、以降は頼み直さない。
 
+見張りの枠は、PC は各ペイン、960px 以下は一覧がページで、重ねた詳細はその要素自身。960px 以下の詳細は閉じている間も `overflow-y:auto`（`display:none`）なので、開け閉めで枠は変わらない。
+
+### 幅の段階と、スマホの重なり（第3ラウンド）
+
+| 幅 | 配置 |
+| --- | --- |
+| 1280px 以上 | 3列（絞り込み・一覧・詳細）。**主な利用環境なので、見た目を変えるときは慎重に** |
+| 961〜1279px | 3列。絞り込みは最初だけたたむ（`filtersOpen` の初期値が `(min-width:1280px)`）。利用者が開け閉めしたら、それを保つ |
+| 960px 以下 | 1列。ヘッダーは1行で上に固定し、ボタンは絵だけにする（名前は `.btn-text` で読み上げる）。その下に検索欄と「絞り込み」ボタンを固定する。一覧のカードは2列。要対応の帯は1行にたたむ（`state.issuesOpen`） |
+
+960px 以下の重なりは3つ（絞り込みシート・詳細・作品を追加するパネル）で、`applyLayers` が一手に扱う。dialog の属性、後ろの `inert`、body のスクロールの固定と復元（`setScrollLock`）を受け持つ。
+
+- 絞り込みシートは PC と**同じ DOM**。`.f-sheet` は PC では `display:contents`（見た目に影響しない）、960px 以下では下からの全画面シートになる。部品を二重に持たない。
+- 詳細は右から全画面で重なる。開くとフォーカスは「← 一覧」へ移り、閉じると押したカードかリストの行へ戻る。Esc で閉じる。Tab は中で回る。
+- 960px をまたいだら（`onNarrowChange`）、重なりを解き、見張りを作り直す。
+
+### 作品へのリンクと「戻る」
+
+画面は `google.script.run` の4関数のほかに、`google.script.history`（`push` / `replace` / `setChangeHandler`）と `google.script.url.getLocation` を使う。`Code.gs` の `doGet` は変えていない。`google.script.history` には back が無いので、閉じるときは `window.history.back()` を呼ぶ。
+
+- 開いている重なりは `state.layer` の1つだけ（null・`guide`・`sheet`・`detail`）。別のものを開くと、前のものは閉じる。開け閉めは `openLayer(kind, id, fromHistory)` と `closeLayer(fromHistory)` だけで行う。
+- 履歴の状態は `histLayer`（今の段に積んでいる重なり。null なら一覧の段）の1つ。段は一覧の段の上に**高々1つ**。state は `{overlay:'detail', item}`（URL は `?item=<フォルダID>`）、`{overlay:'sheet'}`、`{overlay:'guide'}`。
+- 960px 以下で開くとき：積んでいなければ push、積んでいれば replace（載せ替え）。積み重ねると、一覧に戻るまで何度も「戻る」を押すことになるため。
+- PC では push しない。作品を選ぶと replace で `?item=` を替える（積んでいる段があれば、その state のまま）。幅を広げても `state.layer` と段は残す（狭く戻すとまた重なる）。最初の作品を自動で選んだときは URL を変えない。
+- 画面の操作で閉じるとき（×・← 一覧・n件を表示・Esc）：積んでいれば `history.back()`。600ms 待っても返事が無ければ `replace(null, {})` にする（空振りは1回で済む）。返事待ちの間に開いた重なりは、返事が来てから push し、待ち時間を過ぎたら捨てる（`backWait`）。積んでいない詳細を閉じたときは `replace(null, {})` で `?item=` を外す。
+- 「戻る」「進む」（`setChangeHandler`）：来た段に overlay があれば、その重なりを開く。無い段なら、積んでいたときだけ閉じる（遅れて届いた返事で、あとから開いた重なりを閉じないため）。自分の back への返事は無視する。
+- `?item=` で始まったとき：960px 以下では `replace(null, {})` で一覧の段を作ってから詳細を push する（「戻る」1回で一覧、2回でアプリの外）。PC では選ぶだけ。一覧に無い ID なら `replace(null, {})` で外す。
+- **`USE_HISTORY_PUSH = false`** にすると push しなくなる（`?item=` の replace だけ）。GAS の iframe で back が効かないと分かったとき用で、「戻る」で閉じる機能は無くなる。
+- プレビューでは `&histdelay=<ms>`（「戻る」の知らせを遅らせる）と `&backfail=1`（back を効かなくする）で不調を再現できる。筋書きの再現は `dev/preview/out/hist-m3.sh`。
+
 アクセシビリティ：カードとリストの行は全体が1つのボタンで、`aria-labelledby` が名前、`aria-describedby` が用途・状態・日付を指す。リストの行のフォーカス枠は内側に描く（`.list` の `overflow:hidden` で切れるため）。
 
 ### `syncNow()` / `resyncItem(folderId)` の戻り値
@@ -304,7 +334,7 @@ getThumbnails(["<ファイルID>", …], large) → { "<ファイルID>": "data:
 | `fusion_export.py` | `python -m unittest discover -s dev/fusion-test -v` | 偽の `adsk` を差し込んで import し、Fusionを要しない部分（命名、CSV、行の選別、名前での絞り込み、triage.csv の引き継ぎ、パスの解決、済み判定、meta.json の生成、外部参照の判定）と、`break_external_links` を偽のオカレンスでテストする |
 | 画面 | `node dev/preview/build.mjs` | `index.html` の `include('guide')` を `guide.html` で置き換え、`google.script.run` の偽物（サンプルデータを返す）を注入して `dev/preview/out/index.html` を出す。ブラウザで開いて見た目を確認する |
 
-プレビューの場面は URL の `?scenario=` で切り替えられる：`out/index.html?scenario=empty`（作品ゼロ）、`error`（読み込み失敗）、`partial`（時間切れ）、`syncfail`（同期失敗）、`readonly`（同期できない人）、`status`（未知の状態）、`many`（30件。画像の取り直しを含む）、`thumbfail`（取り直しも失敗）、`heic`（大きな画像が表示できず縮小画像で取り直す）。画像の取り直し（IntersectionObserver）は `--virtual-time-budget` のスクショでは途中で止まるので、実時間で調べる `node --experimental-websocket dev/preview/cdp-check.mjs "scenario=many;view=list" 1400,900 5000 [shot.png]` で確かめる（Windows ではクエリの区切りに `;` を使う。drive.google.com は Chrome の `--host-resolver-rules` で 127.0.0.1:9 に向けてすぐ失敗させる）。読み込み後の操作もクエリで指定できる（プレビュー専用）：`&view=list|gallery`、`&select=<folderId>`、`&click=<CSSセレクタ>`、`&scroll=end|bottom`。スマホ幅は `out/frame-390.html?src=<クエリ>` で 390px の iframe に入れて見る。サンプルデータは `dev/preview/sample-data.js`。GASのテンプレート構文が残っているとビルドが失敗する。
+プレビューの場面は URL の `?scenario=` で切り替えられる：`out/index.html?scenario=empty`（作品ゼロ）、`error`（読み込み失敗）、`partial`（時間切れ）、`syncfail`（同期失敗）、`readonly`（同期できない人）、`status`（未知の状態）、`many`（30件。画像の取り直しを含む）、`thumbfail`（取り直しも失敗）、`heic`（大きな画像が表示できず縮小画像で取り直す）。画像の取り直し（IntersectionObserver）は `--virtual-time-budget` のスクショでは途中で止まるので、実時間で調べる `node --experimental-websocket dev/preview/cdp-check.mjs "scenario=many;view=list" 1400,900 5000 [shot.png]` で確かめる（Windows ではクエリの区切りに `;` を使う。手順は `THEN`〜`THEN6` で続けられ、`STEP_SHOTS=1` で手順ごとに撮る。`FRAME=1` で 390px の iframe の中を操作し、`"@size 幅,高さ"` で大きさを変える。出力には pageY・フォーカス・履歴（`data-hist`）が出る。プレビューの `&item=<フォルダID>` と、`google.script.history` / `url` の偽物（pushState と popstate で再現）もある。第3ラウンドの一式は `dev/preview/out/shots-m3.sh` で撮り直せる。1400px の見た目を比べるときは、実時間で撮ったもの同士で比べる。`--virtual-time-budget` で撮ったものは毎回少しずつ変わるので、比べるのには使えない。また、drive.google.com は Chrome の `--host-resolver-rules` で 127.0.0.1:9 に向けてすぐ失敗させる）。読み込み後の操作もクエリで指定できる（プレビュー専用）：`&view=list|gallery`、`&select=<folderId>`、`&click=<CSSセレクタ>`、`&scroll=end|bottom`。スマホ幅は `out/frame-390.html?src=<クエリ>` で 390px の iframe に入れて見る。サンプルデータは `dev/preview/sample-data.js`。GASのテンプレート構文が残っているとビルドが失敗する。
 
 ローカルで確かめられないこと：GAS実環境での動作（許可画面、共有ドライブ上の挙動、実行時間）、Driveのサムネイル表示（ブラウザのCookie制限）、Fusion APIの実際の挙動。これらは次の「本番での確認」と、Fusionの実機で確かめる。
 

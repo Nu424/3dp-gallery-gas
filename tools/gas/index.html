@@ -56,7 +56,9 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:'Zen Kaku Gothic
 button{font-family:inherit;color:inherit}
 a{color:var(--accent)}a:hover{color:#174A84}
 :focus-visible{outline:3px solid var(--accent);outline-offset:2px}
-.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.sr-only,.m-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+/* .m-sr：960px 以下だけ見えなくする（読み上げには残す）。961px 以上では元に戻す（下の @media (min-width: 961px)） */
+@media (min-width: 961px){.m-sr{position:static;width:auto;height:auto;overflow:visible;clip:auto;white-space:inherit}}
 
 .app{height:100svh;display:flex;flex-direction:column;overflow:hidden}
 .topbar{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:10px 20px;padding:12px 20px;background:var(--panel);border-bottom:1px solid var(--line)}
@@ -289,13 +291,11 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
   .topbar .sub{display:none}
   .topbar .actions{flex:none;flex-wrap:nowrap;gap:6px}
   .topbar .btn{width:44px;padding:0;justify-content:center}
-  /* 最終同期とメッセージは件数の行（.m-sync）に出す。ここは読み上げ（aria-live）のために見えない形で残す */
-  .topbar .sync-label,.btn-text,.f-search .f-label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
   .body{flex-direction:column}
   .pane{overflow:visible}
   /* M3 検索の行：ヘッダーの下に固定。絞り込みの中身（.f-sheet）はボタンで下からのシートとして開く */
   .filters,.filters.closed{position:sticky;top:calc(var(--hdr-h) + env(safe-area-inset-top));z-index:2;width:auto;gap:0;align-items:stretch;padding:8px max(16px,env(safe-area-inset-right)) 8px max(16px,env(safe-area-inset-left));border:none;border-bottom:1px solid var(--line)}
-  .filters-head,.filters-rail,.filters:not(.closed) .filters-rail{display:none}
+  .filters-head,.filters-rail{display:none}
   .filters-open,.filters.closed .filters-open{display:flex;align-items:center;gap:8px}
   .f-search{flex:1;min-width:0;margin:0}
   .search{font-size:16px}   /* 16px 未満だと、iOS が入力のときに画面を拡大する */
@@ -350,10 +350,9 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
   .prompt{overflow-wrap:anywhere}
   .ai{padding:14px}
 }
-/* 961〜1279px：たたんだ絞り込み欄（最初の表示）に横のスクロールバーが出ないようにする。
-   幅 60px から枠線 1px と左右の余白を引くと 43px で、44px のボタンが 1px はみ出すため。
-   1280px 以上でも、利用者がたたむと同じスクロールバーが出るが、第2ラウンドの見た目を変えない決まりなので触らない */
-@media (min-width: 961px) and (max-width: 1279px){.filters.closed{overflow-x:hidden}}
+/* たたんだ絞り込み欄（961px 以上）に横のスクロールバーが出ないようにする（第2ラウンドからの不具合）。
+   幅 60px から枠線 1px と左右の余白を引くと 43px で、44px のボタンが 1px はみ出すため。見た目はスクロールバーが消えるだけ */
+@media (min-width: 961px){.filters.closed{overflow-x:hidden}}
 /* 押せる場所を 44px 以上に（960px 以下と、1279px 以下のタッチ端末） */
 @media (max-width: 960px), (max-width: 1279px) and (pointer: coarse){
   .chip,.status-row,.active-chip,.tag-btn,.file,.btn-small,.info a,.issue-row .links a,.issue-row .links .btn,.seg button{min-height:44px}
@@ -373,14 +372,14 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
     <h1>3Dプリント作品ギャラリー</h1>
     <span class="sub">研究室で作った部品の用途と元データ</span>
     <div class="actions">
-      <span class="sync-label" id="sync-label" aria-live="polite"></span>
+      <span class="sync-label m-sr" id="sync-label" aria-live="polite"></span><!-- 960px 以下では見えなくし、件数の行（.m-sync）に同じ文を出す -->
       <button class="btn" id="btn-sync" type="button">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/></svg>
-        <span class="btn-text">今すぐ同期</span>
+        <span class="m-sr">今すぐ同期</span>
       </button>
       <button class="btn btn-primary" id="btn-guide" type="button">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-        <span class="btn-text">作品を追加する</span>
+        <span class="m-sr">作品を追加する</span>
       </button>
     </div>
   </header>
@@ -395,7 +394,7 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
           </button>
         </div>
         <label class="f-group f-search">
-          <span class="f-label">キーワード</span>
+          <span class="f-label m-sr">キーワード</span>
           <input class="search" id="search" type="search" placeholder="名前・用途・メモ" autocomplete="off">
         </label>
         <!-- 960px 以下：検索の横の「絞り込み」ボタン。押すと下の .f-sheet がシートとして開く -->
@@ -461,10 +460,9 @@ const state = {
   q: '', status: 'all', tag: null, author: 'all',
   sort: 'new', view: 'gallery', selId: null,
   // 絞り込み欄を開いているか。1280px 未満では最初はたたむ（M1）。最初の表示のときだけで、その後は利用者の開け閉めのまま。
-  // 960px 以下ではこの値は使わない（絞り込みは fSheetOpen のシート）
+  // 960px 以下ではこの値は使わない（絞り込みは layer:'sheet' のシート）
   filtersOpen: window.matchMedia('(min-width: 1280px)').matches,
-  detailOpen: false,     // 960px 以下：詳細を重ねて開いているか（M4）
-  fSheetOpen: false,     // 960px 以下：絞り込みのシートを開いているか（M3）
+  layer: null,           // 開いている重なり：null・'guide'（作品を追加する）・'sheet'（960px 以下の絞り込み。M3）・'detail'（960px 以下の詳細。M4）
   issuesOpen: false,     // 960px 以下：要対応の帯を開いているか（M5。PC では常に開いた見た目）
   syncing: false, resyncing: null, notice: null,   // resyncing: 再同期中の folderId。notice: { text, kind: ''|'warn'|'err' }（同期ボタン横に出す）
   lastIssues: null                              // 要対応の件数（変わったときだけ読み上げる）
@@ -534,7 +532,7 @@ function selectFirstOnPc() {
 function afterLoad() {
   if (!hasItem(state.selId)) {
     state.selId = null;
-    if (state.detailOpen) closeDetail(false);   // 開いていた作品が一覧から消えた
+    if (state.layer === 'detail') closeLayer(false);   // 開いていた作品が一覧から消えた
     selectFirstOnPc();
   }
   renderAll();
@@ -882,7 +880,7 @@ function renderSync() {
   btn.title = canSync() ? '' : NO_SYNC_TITLE;
   const s = syncInfo();
   const label = document.getElementById('sync-label');
-  label.className = 'sync-label' + s.cls;
+  label.className = 'sync-label m-sr' + s.cls;
   label.textContent = s.text;
   // 960px 以下では件数の行（.m-sync）に同じ文を出す（ヘッダーの .sync-label は読み上げ用に見えない形で残る）
   document.querySelectorAll('.m-sync').forEach((m) => { m.className = 'm-sync' + s.cls; m.textContent = s.text; });
@@ -1090,28 +1088,14 @@ function renderDetailBody() {
 /* ============================================================
    操作
    ============================================================ */
-let lastFocus = null;
-function openGuide() {
-  const sheet = document.getElementById('sheet');
-  const body = document.getElementById('sheet-body');
-  if (!body.childElementCount) body.appendChild(document.getElementById('guide-template').content.cloneNode(true));
-  lastFocus = document.activeElement;
-  sheet.hidden = false;
-  applyLayers();
-  document.getElementById('sheet-close').focus();
-}
-function closeGuide() {
-  document.getElementById('sheet').hidden = true;
-  applyLayers();
-  if (lastFocus && document.contains(lastFocus)) lastFocus.focus({ preventScroll: narrowMq.matches });
-}
-
 /* ============================================================
-   960px 以下の重なり（絞り込みのシート・詳細・作品を追加するパネル）
-   開いている間は、後ろ（ヘッダー・検索の行・一覧）を inert にし、ページのスクロールを止める。
+   重なり（作品を追加するパネル・960px 以下の絞り込みのシートと詳細）
+   開いている重なりは state.layer の1つだけ（null・'guide'・'sheet'・'detail'）。別の重なりを開くと、前のものは閉じる。
+   960px 以下で開いている間は、後ろ（ヘッダー・検索の行・一覧）を inert にし、ページのスクロールを止める。
    ページ全体がスクロールする幅なので、body を position:fixed にして今の位置で止め、閉じたら同じ位置に戻す
    （後ろの一覧は開いている間も動かない。閉じたあとのスクロール位置も変わらない）。
-   PC（961px 以上）では何もしない（作品を追加するパネルは今までどおり。詳細は横のペイン）
+   PC（961px 以上）で見た目に出るのは作品を追加するパネルだけ（今までどおり）。'sheet'・'detail' は、幅を広げても
+   state.layer に残す（狭く戻すとまた重なる。履歴の段と食い違わないように）。PC では見えず、何も止めない
    ============================================================ */
 let lockY = null;   // 止めたときのページのスクロール位置（止めていなければ null）
 function setScrollLock(on) {
@@ -1135,13 +1119,14 @@ function setDialog(el, on, labelId, label) {
     if (label) el.setAttribute('aria-label', label);
   }
 }
-/* state（detailOpen・fSheetOpen）と作品を追加するパネルの開閉から、見た目のクラス・dialog・inert・スクロールの停止を決める。
+/* state.layer と幅から、作品を追加するパネルの表示・見た目のクラス・dialog・inert・スクロールの停止を決める。
    開け閉めと、幅が 960px をまたいだときに呼ぶ */
 function applyLayers() {
   const narrow = narrowMq.matches;
-  const guide = !document.getElementById('sheet').hidden;
-  const det = narrow && state.detailOpen;
-  const fs = narrow && state.fSheetOpen && !det;
+  const guide = state.layer === 'guide';
+  const det = narrow && state.layer === 'detail';
+  const fs = narrow && state.layer === 'sheet';
+  document.getElementById('sheet').hidden = !guide;
   document.body.classList.toggle('detail-open', det);
   document.body.classList.toggle('fsheet-open', fs);
   setDialog(document.getElementById('detail'), det, 'detail-title', '作品の詳細');
@@ -1152,112 +1137,45 @@ function applyLayers() {
   document.querySelectorAll('.app, .topbar, #filters, #main, #detail, .f-search, #m-filter-btn').forEach((el) => {
     el.inert = back.some((s) => el.matches(s));
   });
-  setScrollLock(narrow && (det || fs || guide));
+  setScrollLock(narrow && (guide || det || fs));
 }
-
-/* 絞り込みのシート（M3）。中身は PC の絞り込み欄と同じ部品（#f-sheet。renderFilters が描く） */
-function openFilterSheet() {
-  state.fSheetOpen = true;
-  applyLayers();
-  document.getElementById('f-sheet-close').focus();
-}
-function closeFilterSheet() {
-  if (!state.fSheetOpen) return;
-  state.fSheetOpen = false;
-  applyLayers();
-  document.getElementById('m-filter-btn').focus({ preventScroll: true });
-}
-
-/* ============================================================
-   詳細の重なり（M4）と履歴（端末の「戻る」で閉じる。M4・M7）
-   GAS の画面は sandbox の iframe の中なので、window.history ではなく google.script.history を使う。
-     push(state, params, hash) / replace(state, params, hash)：params は URL の ? 以降（null なら今のまま、{} なら消える）
-     setChangeHandler(fn)：「戻る」「進む」で fn({ state, location: { parameter, parameters, hash } }) が呼ばれる
-   最初の ?item= は google.script.url.getLocation(fn) で読む。プレビューでは build.mjs が history の偽物を入れる。
-   決めたこと：
-   - 960px 以下で一覧から詳細を開いたときだけ push する（state は { overlay: true, item }、URL は ?item=<フォルダID>）。
-     「戻る」で一覧に戻れるのはこの1段だけ
-   - 詳細を開いたまま別の作品を開くとき（「進む」で開き直したときなど）は replace。開くたびに積むと、
-     一覧に戻るまで「戻る」を何回も押すことになるため
-   - 「← 一覧」・Esc で閉じるときは、自分で積んだ段なら history.back() で消す（積んだままだと、次の「戻る」が
-     見た目の変わらない空振りになる）。back() の結果が来なければ（iframe で効かない場合に備えて）replace で ?item= を外す。
-     ?item= のリンクで開いた段は積んでいないので、replace で ?item= を外す（back() するとアプリの外に出てしまう）
-   - PC（961px 以上）では選んでも push しない。replace で URL の ?item= だけ替える（その URL を写せば同じ作品が開く）。
-     選ぶたびに履歴が増えると「戻る」が煩わしいため。最初の作品を自動で選んだときは URL を変えない
-   - 履歴が変わったら（setChangeHandler）、state.overlay の段なら詳細を開き、それ以外なら閉じる。
-     ?item= だけで決めないのは、PC で replace した段や、最初のリンクの段に戻ったときに、詳細が開き直さないようにするため
-   ============================================================ */
-const gsHistory = () => (window.google && google.script && google.script.history) || null;
-let detailPushed = false;   // 開いている詳細の段を自分で push したか（閉じるときに back() で消す）
-let awaitingBack = false;   // 自分で呼んだ back() の結果（履歴の変化）を待っている
-let pendingPush = null;     // back() の結果を待つ間に開いた作品（結果が来てから push する）
-const BACK_WAIT_MS = 600;   // back() の結果をこれだけ待つ
-function histPush(id) {
-  const h = gsHistory();
-  if (!h) return;
-  h.push({ overlay: true, item: id }, { item: id });
-  detailPushed = true;
-}
-function histReplace(st, params) { const h = gsHistory(); if (h) h.replace(st, params); }
-/* 詳細の段を履歴から外す（「← 一覧」・Esc で閉じたとき） */
-function leaveDetailEntry() {
-  if (!detailPushed) { histReplace(null, {}); return; }
-  detailPushed = false;
-  awaitingBack = true;
-  try { window.history.back(); } catch (_) { /* 下の待ちで replace に替える */ }
-  setTimeout(() => {
-    if (!awaitingBack) return;
-    awaitingBack = false;   // back() が効かなかった：今の段を書き換える
-    if (pendingPush) { const id = pendingPush; pendingPush = null; histReplace({ overlay: true, item: id }, { item: id }); detailPushed = true; }
-    else histReplace(null, {});
-  }, BACK_WAIT_MS);
-}
-function onHistoryChange(e) {
-  if (awaitingBack) {   // 自分の back() の結果。閉じるのは済んでいる
-    awaitingBack = false;
-    if (pendingPush) { const id = pendingPush; pendingPush = null; if (state.detailOpen && state.selId === id) histPush(id); }
-    return;
+const cardOf = (id) => id ? document.querySelector(`#main [data-select="${CSS.escape(id)}"]`) : null;
+/* 重なりを開く。fromHistory：「戻る」「進む」で開いた（履歴はもう動いている）。detail のときは id の作品 */
+let lastFocus = null;   // 作品を追加するパネルを閉じたときに戻す先
+function openLayer(kind, id, fromHistory) {
+  const was = state.layer;
+  if (kind === 'guide') {
+    const body = document.getElementById('sheet-body');
+    if (!body.childElementCount) body.appendChild(document.getElementById('guide-template').content.cloneNode(true));
+    if (!was) lastFocus = document.activeElement;
   }
-  const st = e && e.state;
-  const id = st && st.overlay && hasItem(st.item) ? st.item : null;
-  if (!narrowMq.matches) {   // PC：段の作品を選ぶだけ（重なりは無い）
-    detailPushed = false;
-    if (id && id !== state.selId) { state.selId = id; renderMain(); renderDetail(); document.getElementById('detail').scrollTop = 0; }
-    return;
-  }
-  if (id) { detailPushed = true; openDetail(id, 'none'); }
-  else closeDetail(true);
-}
-/* 960px 以下で詳細を重ねて開く。how：'push'（一覧から。履歴を1段積む）／'none'（履歴の変化・?item= のリンクから） */
-function openDetail(id, how) {
-  const wasOpen = state.detailOpen;
-  state.selId = id; state.detailOpen = true;
+  if (kind === 'detail') state.selId = id;
+  state.layer = kind;
   applyLayers();                 // 先に後ろを止める（今のスクロール位置を覚える）
-  renderMain(); renderDetail();
-  document.getElementById('detail').scrollTop = 0;
-  if (!wasOpen) { const back = document.getElementById('detail-back'); if (back) back.focus({ preventScroll: true }); }
-  if (how !== 'push') return;
-  if (wasOpen) histReplace({ overlay: true, item: id }, { item: id });
-  else if (awaitingBack) pendingPush = id;
-  else histPush(id);
-}
-/* 重ねた詳細を閉じる。スクロール位置は applyLayers が戻す。フォーカスは開いた作品のカード（リストの行）へ。
-   fromHistory：「戻る」で閉じた（履歴はもう戻っている） */
-function closeDetail(fromHistory) {
-  if (!state.detailOpen) return;
-  state.detailOpen = false;
-  applyLayers();
-  const card = state.selId && document.querySelector(`#main [data-select="${CSS.escape(state.selId)}"]`);
-  if (card) {
-    card.focus({ preventScroll: true });
-    revealCard(card);
-  } else {
-    document.getElementById(narrowMq.matches ? 'm-filter-btn' : 'search').focus({ preventScroll: true });
+  if (kind === 'detail') { renderMain(); renderDetail(); document.getElementById('detail').scrollTop = 0; }
+  if (was !== kind) {
+    const f = document.getElementById(kind === 'guide' ? 'sheet-close' : kind === 'sheet' ? 'f-sheet-close' : 'detail-back');
+    if (f && f.offsetParent !== null) f.focus({ preventScroll: true });
   }
-  if (fromHistory) detailPushed = false; else leaveDetailEntry();
+  if (!fromHistory) recordOpen(kind);
+}
+/* 重なりを閉じる。スクロール位置は applyLayers が戻す。フォーカスは開いたもとへ
+   （詳細は選んだ作品のカード・リストの行、シートは「絞り込み」ボタン、追加パネルは押したボタン） */
+function closeLayer(fromHistory) {
+  const kind = state.layer;
+  if (!kind) return;
+  state.layer = null;
+  applyLayers();
+  const narrow = narrowMq.matches;
+  if (!narrow && kind !== 'guide') { if (!fromHistory) recordClose(kind); return; }   // PC では見えていなかった
+  let f = kind === 'guide' ? (lastFocus && lastFocus !== document.body ? lastFocus : document.getElementById('btn-guide')) : kind === 'sheet' ? document.getElementById('m-filter-btn') : cardOf(state.selId);
+  if (!f || !document.contains(f) || f.offsetParent === null) f = cardOf(state.selId) || document.getElementById(narrow ? 'm-filter-btn' : 'search');
+  f.focus({ preventScroll: narrow });
+  if (kind === 'detail' && f.dataset.select) revealCard(f);
+  if (!fromHistory) recordClose(kind);
 }
 /* カードが画面（960px 以下は上に固定した2行の下）から外れていれば、見える位置までスクロールする。
-   詳細のタグで絞り込んで一覧が変わったときや、PC で ?item= を開いたとき用 */
+   詳細のタグで絞り込んで一覧が変わったときや、?item= で開いたとき用 */
 function revealCard(card) {
   const r = card.getBoundingClientRect();
   if (narrowMq.matches) {
@@ -1269,9 +1187,81 @@ function revealCard(card) {
   }
 }
 
+/* ============================================================
+   履歴（端末の「戻る」で重なりを閉じる。M4・M7）
+   GAS の画面は sandbox の iframe の中なので、window.history ではなく google.script.history を使う。
+     push(state, params, hash) / replace(state, params, hash)：params は URL の ? 以降（null なら今のまま、{} なら消える）
+     setChangeHandler(fn)：「戻る」「進む」で fn({ state, location: { parameter, parameters, hash } }) が呼ばれる
+   最初の ?item= は google.script.url.getLocation(fn) で読む。プレビューでは build.mjs が history の偽物を入れる。
+   決まり（状態は histLayer の1つの値：今の段に積んでいる重なり。null なら積んでいない＝一覧の段）：
+   - 段は一覧の段の上に高々1つ。state は { overlay: 'detail', item } / { overlay: 'sheet' } / { overlay: 'guide' }。
+     詳細の段だけ URL を ?item=<フォルダID> にする
+   - 960px 以下で重なりを開く：積んでいなければ push、積んでいれば replace（載せ替え。何段も積むと、
+     一覧に戻るまで「戻る」を何回も押すことになるため）
+   - PC（961px 以上）では push しない。作品を選ぶと replace で ?item= だけ替える（その URL を写せば同じ作品が開く。
+     選ぶたびに履歴が増えると「戻る」が煩わしいため）。段を積んだまま広げたときは、その段の state のまま replace する
+   - 「×」「← 一覧」・Esc で閉じる：積んでいれば history.back() で段を消す（積んだままだと、次の「戻る」が
+     見た目の変わらない空振りになる）。BACK_WAIT_MS 待っても返事（履歴の変化）が来なければ、back() が効かなかったとみて、
+     今の段を replace で一覧の段に書き換える（空振りは1回で済む）。返事待ちの間に開いた重なりは、返事が来てから push する。
+     待ち時間を過ぎたら、その push は捨てる（遅れて来た返事で履歴が乱れないように）
+   - 「戻る」「進む」（setChangeHandler）：来た段の state.overlay の重なりを開く。overlay が無い段なら、
+     積んでいたときだけ閉じる（積んでいない重なり＝返事待ちの間に開いたものは、遅れて来た返事で閉じない）
+   - ?item= のリンクで 960px 以下に開いたとき：今の段を replace で一覧の段（?item= なし）にしてから詳細を push する。
+     「戻る」1回目で一覧、2回目でアプリの外。一覧に無い ID なら replace で ?item= を外す。PC は選ぶだけ（URL はそのまま）
+   - USE_HISTORY_PUSH を false にすると push しない（GAS の iframe で back() が効かないと分かったとき用。
+     「戻る」で閉じる機能は無くなり、URL の ?item= を replace で替えるだけになる）
+   ============================================================ */
+const USE_HISTORY_PUSH = true;
+const BACK_WAIT_MS = 600;   // back() の返事をこれだけ待つ
+const gsHistory = () => (window.google && google.script && google.script.history) || null;
+let histLayer = null;       // 今の段に積んでいる重なり（null なら積んでいない）
+let backWait = null;        // back() の返事待ち：{ timer, pending（返事待ちの間に開いた重なり。無ければ null） }
+/* 重なり kind の段の state と URL の ? 以降（null は今のまま） */
+const entryOf = (kind) => kind === 'detail' ? [{ overlay: 'detail', item: state.selId }, { item: state.selId }] : [{ overlay: kind }, null];
+function recordOpen(kind) {
+  const h = gsHistory();
+  if (!h) return;
+  const [st, params] = entryOf(kind);
+  if (histLayer) { h.replace(st, params); histLayer = kind; return; }                  // 載せ替え
+  if (!USE_HISTORY_PUSH || !narrowMq.matches) { if (params) h.replace(null, params); return; }   // URL だけ
+  if (backWait) { backWait.pending = kind; return; }                                  // 返事が来てから
+  h.push(st, params); histLayer = kind;
+}
+function recordClose(kind) {
+  const h = gsHistory();
+  if (!h) return;
+  if (!histLayer) { if (kind === 'detail') h.replace(null, {}); return; }   // 積んでいない：?item= を外すだけ
+  histLayer = null;
+  const w = { pending: null };
+  w.timer = setTimeout(() => {   // 返事が来ない：back() が効かなかったとみて、今の段を一覧の段にする
+    if (backWait === w) { backWait = null; h.replace(null, {}); }
+  }, BACK_WAIT_MS);
+  backWait = w;
+  try { window.history.back(); } catch (_) { /* 待ちのあとの replace に任せる */ }
+}
+/* PC で作品を選んだ。積んでいる段があれば、その state のまま ?item= を替える */
+function recordSelect(id) {
+  const h = gsHistory();
+  if (h) h.replace(histLayer ? entryOf(histLayer)[0] : null, { item: id });
+}
+function onHistoryChange(e) {
+  if (backWait) {   // 自分の back() の返事。閉じるのは済んでいる
+    const w = backWait; backWait = null; clearTimeout(w.timer);
+    if (w.pending && state.layer === w.pending) recordOpen(w.pending);
+    return;
+  }
+  const st = e && e.state;
+  let kind = st && st.overlay;
+  if (kind === 'detail' && !hasItem(st.item)) kind = null;
+  if (kind !== 'detail' && kind !== 'sheet' && kind !== 'guide') kind = null;
+  const had = histLayer;
+  histLayer = kind;
+  if (kind) openLayer(kind, st.item, true);
+  else if (had) closeLayer(true);
+}
+
 /* M7：URL の ?item=<フォルダID> で開いたときの作品。google.script.url.getLocation は非同期なので、
-   一覧の読み込みと両方そろってから一度だけ使う。960px 以下は詳細を重ねて開き（履歴は積まない。この URL がすでに
-   作品を指している）、PC はその作品を選んで一覧の中で見える位置に出す。一覧に無い ID は無視する */
+   一覧の読み込みと両方そろってから一度だけ使う（決まりは上の「履歴」） */
 const start = { loc: false, item: '', done: false };
 function readStartLocation() {
   const u = window.google && google.script && google.script.url;
@@ -1285,30 +1275,33 @@ function readStartLocation() {
 function applyStartItem() {
   if (start.done || !start.loc || state.loading || state.loadError) return;
   start.done = true;
-  const id = start.item;
-  if (!hasItem(id)) return;
-  if (narrowMq.matches) { openDetail(id, 'none'); return; }
+  const id = start.item, h = gsHistory();
+  if (!id) return;
+  if (!hasItem(id)) { if (h) h.replace(null, {}); return; }
+  if (narrowMq.matches) {
+    if (h && USE_HISTORY_PUSH) h.replace(null, {});   // 今の段を一覧の段にしてから、詳細を積む
+    openLayer('detail', id, false);
+    return;
+  }
   state.selId = id; renderMain(); renderDetail();
-  const card = document.querySelector(`#main [data-select="${CSS.escape(id)}"]`);
+  const card = cardOf(id);
   if (card) revealCard(card);
 }
 
-/* 幅が 960px をまたいだとき。PC に広げたら重なりを解く（詳細は横のペインに出る。履歴の段はそのまま）。
-   スクロールの枠も変わるので、画像の見張りをやり直す */
+/* 幅が 960px をまたいだとき。state.layer は残す（PC では見えない。狭く戻すとまた重なる）。
+   スクロールの枠も変わるので、画像の見張りをやり直す。消える部品にあったフォーカスは移す */
 function onNarrowChange() {
-  const a = document.activeElement;
-  const inLayer = !!(a && a.closest && a.closest('.detail-bar, .f-sheet-head, .f-sheet-foot'));   // PC では消える部品
-  if (!narrowMq.matches) {
-    state.fSheetOpen = false; state.detailOpen = false; detailPushed = false;
-    if (!state.loading) selectFirstOnPc();
-  }
+  const narrow = narrowMq.matches;
+  if (!narrow && !state.loading) selectFirstOnPc();
   applyLayers();
   renderAll();
   rewatchThumbs();
-  if (inLayer && !narrowMq.matches) {   // フォーカスを選んだ作品のカード（無ければ検索欄）へ移す
-    const card = state.selId && document.querySelector(`#main [data-select="${CSS.escape(state.selId)}"]`);
-    (card || document.getElementById('search')).focus({ preventScroll: true });
-  }
+  const a = document.activeElement;
+  if (a && a !== document.body && a.offsetParent !== null) return;
+  const layerEl = narrow && state.layer && state.layer !== 'guide'
+    ? document.getElementById(state.layer === 'sheet' ? 'f-sheet-close' : 'detail-back') : null;
+  const f = layerEl || cardOf(state.selId);
+  if (f && f.offsetParent !== null) f.focus({ preventScroll: true });
 }
 if (narrowMq.addEventListener) narrowMq.addEventListener('change', onNarrowChange); else narrowMq.addListener(onNarrowChange); // 古い Safari
 function setGuideTab(key) {
@@ -1325,17 +1318,17 @@ document.addEventListener('click', (e) => {
   if (!t) return;
   const d = t.dataset;
   if (d.select) {
-    if (narrowMq.matches) { openDetail(d.select, 'push'); return; }   // 960px 以下：詳細を重ねて開く
+    if (narrowMq.matches) { openLayer('detail', d.select, false); return; }   // 960px 以下：詳細を重ねて開く
     state.selId = d.select; renderMain(); renderDetail();
     document.getElementById('detail').scrollTop = 0;
-    histReplace({ item: d.select }, { item: d.select });   // PC は push しない（上の「履歴」の決まり）
+    recordSelect(d.select);   // PC は push しない（「履歴」の決まり）
     return;
   }
   if (d.tag !== undefined) {
     const inDetail = !!t.closest('#detail');   // 描き直すと t は外れるので先に調べる
     state.tag = state.tag === d.tag ? null : d.tag; renderFilters(); renderMain(); renderDetail();
     // 960px 以下で重ねた詳細のタグを押したら、絞り込んだ一覧を見せるために詳細を閉じる
-    if (state.detailOpen && narrowMq.matches && inDetail) closeDetail(false);
+    if (state.layer === 'detail' && narrowMq.matches && inDetail) closeLayer(false);
     return;
   }
   if (d.status) { state.status = d.status; renderFilters(); renderMain(); return; }
@@ -1352,11 +1345,9 @@ document.addEventListener('click', (e) => {
     case 'toggle-filters': state.filtersOpen = !state.filtersOpen; renderFilters(); break;
     case 'reset': Object.assign(state, { q: '', status: 'all', tag: null, author: 'all' }); document.getElementById('search').value = ''; renderFilters(); renderMain(); renderDetail(); break;
     case 'reload': state.loading = true; state.loadError = ''; renderAll(); loadData(); break;
-    case 'open-guide': openGuide(); break;
-    case 'close-guide': closeGuide(); break;
-    case 'close-detail': closeDetail(false); break;
-    case 'open-filter-sheet': openFilterSheet(); break;
-    case 'close-filter-sheet': closeFilterSheet(); break;
+    case 'open-guide': openLayer('guide', null, false); break;
+    case 'open-filter-sheet': openLayer('sheet', null, false); break;
+    case 'close-guide': case 'close-detail': case 'close-filter-sheet': closeLayer(false); break;
     case 'clear-sheet': Object.assign(state, { status: 'all', tag: null, author: 'all' }); renderFilters(); renderMain(); renderDetail(); break;
     case 'toggle-issues': state.issuesOpen = !state.issuesOpen; renderMain(); break;
     case 'resync': if (state.selId) resyncItem(state.selId); break;
@@ -1377,22 +1368,19 @@ document.addEventListener('click', (e) => {
     }
   }
 });
-document.getElementById('btn-guide').addEventListener('click', openGuide);
+document.getElementById('btn-guide').addEventListener('click', () => openLayer('guide', null, false));
 document.getElementById('btn-sync').addEventListener('click', syncNow);
 document.getElementById('search').addEventListener('input', (e) => { state.q = e.target.value; renderFilters(); renderMain(); });
-/* いちばん上の重なり（Esc で閉じる・Tab をその中で回す）。作品を追加するパネル → 960px 以下の詳細 → 絞り込みのシート */
+/* 開いている重なり（Esc で閉じる・Tab をその中で回す） */
 function topLayer() {
-  const sheet = document.getElementById('sheet');
-  if (!sheet.hidden) return { el: sheet.querySelector('.sheet-panel'), close: closeGuide, guide: true };
-  if (!narrowMq.matches) return null;
-  if (state.detailOpen) return { el: document.getElementById('detail'), close: () => closeDetail(false) };
-  if (state.fSheetOpen) return { el: document.getElementById('f-sheet'), close: closeFilterSheet };
-  return null;
+  if (state.layer === 'guide') return { el: document.querySelector('#sheet .sheet-panel'), guide: true };
+  if (!narrowMq.matches || !state.layer) return null;   // PC では詳細・シートは重ならない
+  return { el: document.getElementById(state.layer === 'detail' ? 'detail' : 'f-sheet') };
 }
 document.addEventListener('keydown', (e) => {
   const layer = topLayer();
   if (!layer) return;
-  if (e.key === 'Escape') { layer.close(); return; }
+  if (e.key === 'Escape') { closeLayer(false); return; }
   if (layer.guide && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
     const tab = e.target.closest('[role="tab"]');
     if (tab) { const next = tab.dataset.tab === 'manual' ? 'auto' : 'manual'; setGuideTab(next); document.getElementById('tab-' + next).focus(); }
