@@ -1,31 +1,49 @@
 <!-- 「作品を追加する」パネルの中身（HTML断片）。index.html から include('guide') で読み込まれる。
-     文章の修正はこのファイルだけで済む。AIに渡すプロンプトは #ai-prompt の1か所だけ（計画書「AIに手伝ってもらうプロンプト」の版）。
+     文章の修正はこのファイルだけで済む。AIに渡すプロンプトは #ai-prompt の1か所だけ（計画書の版から改訂済み。こちらが正）。
+     構成：用意するものの順に 1 3Dデータ → 2 meta.json → 3 フォルダ。各段に「手でやる」「自動でやる」を並べる。
      ここにはスクリプトレット（山かっこ＋疑問符の構文）を書かないこと。 -->
-  <p class="lead">共有ドライブの <b>3Dギャラリー/items/</b> に作品フォルダを1つ置くと、次の同期で一覧に出ます。数件なら手で、Fusionのクラウドからまとめて出すならスクリプトが速いです。</p>
+  <p class="lead">作品1つ＝共有ドライブの <b>3Dギャラリー/items/</b> の中のフォルダ1つです。下の 1〜3 を用意して置き、「今すぐ同期」を押すと一覧に出ます。数件なら「手でやる」、まとめてなら「自動でやる」が楽です。</p>
 
   <section>
-    <h3>フォルダの形</h3>
-    <p class="hint">フォルダ名は <b>作成日_名前</b>（例：20250612_流路セルホルダー）。作成日がわからなければ大体でかまいません。中にファイルを並べるだけで、サブフォルダは作りません。</p>
+    <h3><span class="step-no">1</span>3Dデータと画像を用意する</h3>
     <div class="rules">
-      <div class="rule"><span class="n">meta.json</span><span class="req req-must">必須</span><span class="d">作品の説明。これが無いフォルダは一覧に出ません。書き方は下を参照。</span></div>
-      <div class="rule"><span class="n">thumb.png / thumb.jpg</span><span class="req req-rec">推奨</span><span class="d">一覧のカードに出る画像。無ければフォルダ内の最初の画像を代わりに使います。</span></div>
-      <div class="rule"><span class="n">〜.f3d</span><span class="req req-rec">推奨</span><span class="d">Fusionの元データ。寸法を変えるなど、形を直すときに使います。</span></div>
-      <div class="rule"><span class="n">〜.step</span><span class="req req-rec">推奨</span><span class="d">Fusionが無くても他のCADで開ける控え。形は残りますが、作った手順（履歴）は残りません。</span></div>
-      <div class="rule"><span class="n">〜.stl / 〜.3mf</span><span class="req req-rec">推奨</span><span class="d">印刷用。部品ごとに1ファイル（base.stl、lid.stl など）にしておくと、1部品だけ刷り直せます。</span></div>
-      <div class="rule"><span class="n">photo_〜.jpg / .png</span><span class="req req-opt">任意</span><span class="d">名前を photo_ で始めると、詳細の写真欄に並びます。取り付けた様子があると伝わりやすいです。</span></div>
-      <div class="rule"><span class="n">そのほか</span><span class="req req-opt">任意</span><span class="d">図面のPDFなど。詳細のファイル一覧に出ます。</span></div>
+      <div class="rule"><span class="n">〜.f3d</span><span class="req req-rec">推奨</span><span class="d">Fusionの元データ。寸法を直すときに使う</span></div>
+      <div class="rule"><span class="n">〜.step</span><span class="req req-rec">推奨</span><span class="d">Fusionが無くても他のCADで開ける控え</span></div>
+      <div class="rule"><span class="n">〜.stl / 〜.3mf</span><span class="req req-rec">推奨</span><span class="d">印刷用。部品ごとに1ファイル（base.stl、lid.stl など）</span></div>
+      <div class="rule"><span class="n">thumb.png / thumb.jpg</span><span class="req req-rec">推奨</span><span class="d">一覧のカードの画像。無ければフォルダ内の最初の画像</span></div>
+      <div class="rule"><span class="n">photo_〜.jpg / .png</span><span class="req req-opt">任意</span><span class="d">詳細に並ぶ写真。取り付けた様子があると伝わりやすい</span></div>
+      <div class="rule"><span class="n">そのほか</span><span class="req req-opt">任意</span><span class="d">図面のPDFなど。詳細のファイル一覧に出る</span></div>
     </div>
-    <p class="small">名前が _ で始まるフォルダ（_template など）は一覧に出ません。</p>
+    <div class="way">
+      <h4><span class="way-tag">手でやる</span>Fusionから1件ずつ保存する</h4>
+      <ol class="steps">
+        <li><span class="no">1</span><span class="t">デザインを開き、ファイル › エクスポートで .f3d と .step を保存する</span></li>
+        <li><span class="no">2</span><span class="t">部品ごとにボディを右クリック →「メッシュとして保存」で .stl を保存する</span></li>
+        <li><span class="no">3</span><span class="t">見栄えのよい角度で画面をキャプチャし、thumb.png として保存する</span></li>
+      </ol>
+    </div>
+    <div class="way">
+      <h4><span class="way-tag auto">自動でやる</span>Fusionのスクリプトでまとめて書き出す</h4>
+      <p class="hint">1〜3 がまとめて済みます（フォルダと、空欄の meta.json もできる）。</p>
+      <ol class="steps">
+        <li><span class="no">1</span><span class="t"><b>登録（初回だけ）</b>：共有ドライブの 3Dギャラリー/tools/fusion_export フォルダをパソコンにコピーする。Fusionの ユーティリティ › スクリプトとアドイン（Shift+S）の「＋」から、そのフォルダを選ぶ</span></li>
+        <li><span class="no">2</span><span class="t"><b>設定</b>：fusion_export.py をメモ帳などで開き、冒頭の設定欄に書いて保存する。最低限、<code>PROJECT_NAMES</code>（対象のプロジェクト名）と <code>OUTPUT_DIR</code>（items/ の場所。&lt;共有ドライブ名&gt; を書き換える）。パスは <code>r"…"</code> の "" の中に書き、先頭の r は消さない</span></li>
+        <li><span class="no">3</span><span class="t"><b>仕分け</b>：<code>MODE = 1</code> で実行すると、パソコンの「ドキュメント\3Dギャラリー_仕分け」に triage.csv と画像が出る。登録したい行の rank に A（現役）か B（参考）を書き、必要なら folder_name を直す</span></li>
+        <li><span class="no">4</span><span class="t"><b>書き出し</b>：<code>MODE = 2</code> で実行すると、items/ に作品フォルダができる。続きは 2 の meta.json を埋めるだけ</span></li>
+      </ol>
+      <p class="small">特定のファイルだけなら <code>TARGET_NAMES</code> に名前を書く。設定の詳細は tools/docs/OPERATION.md。</p>
+    </div>
   </section>
 
   <section>
-    <h3>meta.json の書き方</h3>
+    <h3><span class="step-no">2</span>meta.json を書く</h3>
+    <p class="hint">作品の説明です。これが無いフォルダは一覧に出ません。</p>
     <div class="meta-grid">
 <pre class="code">{
   "author": "山田",
   "purpose": "流路セルを顕微鏡ステージに固定する",
   "status": "使用中",
-  "tags": ["顕微鏡", "治具"],
+  "tags": ["顕微鏡"],
   "note": [
     "M3ネジ×4で固定。",
     "縦向きで刷らないと爪が折れる。"
@@ -35,75 +53,96 @@
         <div class="keyrow"><b>author</b><span class="req req-must">必須</span><span>作った人</span></div>
         <div class="keyrow"><b>purpose</b><span class="req req-must">必須</span><span>何のための部品か。一覧に出る一行</span></div>
         <div class="keyrow"><b>status</b><span class="req req-must">必須</span><span>使用中・参考・引退のどれか</span></div>
-        <div class="keyrow"><b>tags</b><span class="req req-opt">任意</span><span>絞り込みに使うことば</span></div>
-        <div class="keyrow"><b>note</b><span class="req req-opt">任意</span><span>そのほか全部。1行ずつ配列で</span></div>
+        <div class="keyrow"><b>tags</b><span class="req req-opt">任意</span><span>絞り込みに使うことば。既にあるタグに合わせる</span></div>
+        <div class="keyrow"><b>note</b><span class="req req-opt">任意</span><span>必要な部品・印刷のコツ・経緯など。1行ずつ</span></div>
         <div class="keyrow"><b>fusion_id</b><span class="req req-opt">自動</span><span>Fusionから書き出すと入る。消さない・書き換えない</span></div>
       </div>
     </div>
-  </section>
-
-  <section>
-    <h3>つくり方</h3>
-    <div class="seg" role="tablist" aria-label="つくり方" style="align-self:flex-start;flex-wrap:wrap">
-      <button type="button" role="tab" id="tab-manual" aria-controls="panel-manual" aria-selected="true" data-tab="manual">手で用意する（数件）</button>
-      <button type="button" role="tab" id="tab-auto" aria-controls="panel-auto" aria-selected="false" data-tab="auto" tabindex="-1">Fusionから書き出す（まとめて）</button>
+    <div class="way">
+      <h4><span class="way-tag">手でやる</span>メモ帳で書く</h4>
+      <ol class="steps">
+        <li><span class="no">1</span><span class="t">items/_template の meta.json をコピーし（スクリプトで書き出したなら、できている meta.json を）、メモ帳で開く</span></li>
+        <li><span class="no">2</span><span class="t">上の例のように "" の中を埋めて保存する。区切りの , と "" は消さない</span></li>
+      </ol>
     </div>
-    <div class="tabpanel" role="tabpanel" id="panel-manual" aria-labelledby="tab-manual">
-      <p class="hint" style="margin-bottom:6px">この手順は、<b>Google ドライブ（パソコン版）</b>でフォルダを開いて作業する前提です。Webの画面だけで進めるときは、新しいフォルダを作り、_template の meta.json をダウンロードして編集し、そのフォルダへアップロードします。同じ名前のファイルがあるときは「置き換える」を選んでください（2つあると要対応になります）。</p>
-    <ol class="steps">
-      <li><span class="no">1</span><span class="t">items/_template をコピーして、フォルダ名を「YYYYMMDD_名前」に変える</span></li>
-      <li><span class="no">2</span><span class="t">Fusionでデザインを開き、ファイル › エクスポートで .f3d と .step を保存する</span></li>
-      <li><span class="no">3</span><span class="t">印刷用に、部品ごとの .stl（または .3mf）を保存する（ボディを右クリック →「メッシュとして保存」でもよい）</span></li>
-      <li><span class="no">4</span><span class="t">見栄えのよい角度で画面をキャプチャし、thumb.png として保存する</span></li>
-      <li><span class="no">5</span><span class="t">meta.json の author・purpose・status を埋める。書ききれないことは note へ</span></li>
-      <li><span class="no">6</span><span class="t">フォルダを items/ に置き、「今すぐ同期」を押す</span></li>
-    </ol>
-    </div>
-    <ol class="steps tabpanel" role="tabpanel" id="panel-auto" aria-labelledby="tab-auto" hidden>
-      <li><span class="no">1</span><span class="t">tools/fusion_export/fusion_export.py を、Fusionの「スクリプトとアドイン」に登録する</span></li>
-      <li><span class="no">2</span><span class="t">設定欄で対象プロジェクトを指定し、モード1（サムネイルのみ）で実行する。パソコンの「ドキュメント\3Dギャラリー_仕分け」に triage.csv と画像が出る（特定のファイルだけなら TARGET_NAMES に名前を書く）</span></li>
-      <li><span class="no">3</span><span class="t">triage.csv をスプシで開き、ランク（A・B・C）とフォルダ名を書き込む</span></li>
-      <li><span class="no">4</span><span class="t">設定欄の OUTPUT_DIR を items/ にして、モード2（フル書き出し）で実行する。ここで登録まで終わる</span></li>
-      <li><span class="no">5</span><span class="t">各フォルダの meta.json を埋める（下のAI用の文を使うと楽）</span></li>
-      <li><span class="no">6</span><span class="t">「今すぐ同期」を押し、一覧の上の「要対応」の表示が消えれば完了</span></li>
-    </ol>
-  </section>
-
-  <section class="ai">
-    <div class="ai-head">
-      <div>
-        <h3>AIエージェントに手伝ってもらう</h3>
-        <p class="hint" style="font-size:13.5px">書き出したファイルと一緒にこの文を渡すと、フォルダ分けと meta.json づくりをしてくれます。</p>
+    <div class="way ai">
+      <div class="ai-head">
+        <div>
+          <h4><span class="way-tag auto">自動でやる</span>AIエージェントに頼む</h4>
+          <p class="hint">ファイルを読み書きできるAIエージェント（Claude Code など）に、この文と、1 のファイル（またはスクリプトで書き出したフォルダと triage.csv）を渡します。全作品の案が表で出るので、確かめて返事をすると、meta.json を書いてフォルダに並べるところ（3）までやってくれます。</p>
+        </div>
+        <button class="btn btn-primary" type="button" data-action="copy-prompt">文をコピー</button>
       </div>
-      <button class="btn btn-primary" type="button" data-action="copy-prompt">文をコピー</button>
-    </div>
-<pre class="prompt" id="ai-prompt">あなたは研究室の3Dプリント作品ギャラリーへの登録を手伝います。
-渡したファイル（またはフォルダ）から、下の仕様どおりの作品フォルダを作ってください。
+<pre class="prompt" id="ai-prompt">研究室の3Dプリント作品ギャラリーへの登録を手伝ってください。
+渡したもの（ファイルやフォルダ、または書き出し済みの作品フォルダと仕分け表 triage.csv）から、
+下の仕様どおりの作品フォルダと meta.json を仕上げてください。
 
 ## 仕様
-- 1作品＝1フォルダ。フォルダ名は YYYYMMDD_名前（日付はモデルの作成日）
+- 1作品＝1フォルダ。フォルダ名は YYYYMMDD_名前
+  - 日付はモデルの作成日で、実在する日付にする。名前の部分に日付を重ねない
+  - 名前は一覧で見て何かわかる日本語にする。内輪の略称は使わない。/ \ : は使わない
 - フォルダ内はサブフォルダを作らずフラットに置く
-- 代表画像は thumb.png または thumb.jpg、追加写真は photo_ で始める
-- 印刷用STLは部品ごとに分ける（base.stl, lid.stl など）
+- 代表画像は thumb.png または thumb.jpg、追加の写真は名前を photo_ で始める
+- 印刷用の STL は部品ごとに分ける（base.stl, lid.stl など）
 - meta.json のキーは author, purpose, status, tags, note の5つだけ
-  - status は「使用中」「参考」「引退」のいずれか
-  - note は文字列の配列（1要素＝1行）
-  - 例外: Fusion から書き出したフォルダの meta.json には fusion_id がある。
-    これは消さず、値も変えない（書き出し済みの目印）
+  - author: 作った人。表記は最初に1回だけ確認し、全作品でそろえる
+  - purpose: 何のための部品かを一行で。フォルダ名の言い換えで終わらせない
+  - status: 「使用中」「参考」「引退」のいずれか
+  - tags と note は文字列の配列（note は1要素＝1行）
+  - 例外: 書き出し済みの meta.json にある fusion_id は、消さず値も変えない
+
+## タグ
+- タグは絞り込みのためにある。増やすより、既存のタグや上位の概念にまとめる
+- 付けるのは2種類だけ: 装置・研究テーマ／種類（試作、見本、ケース、ふた など）
+- 1作品にしか付かないタグ、部品名そのもの、形の一般名（治具、ホルダー、スタンドなど）は作らない
+- items フォルダに既存の作品があれば、先にそのタグを集計して語彙を合わせる
+- 新しいタグが要るときは、理由を添えて提案し、確認を取ってから使う
+
+## status
+- 「使用中」は、今も使っていると資料から確かめられるものだけ
+- 試作・見本・使わなかったものは「参考」、壊れた・役目を終えた・置き換わったものは「引退」
+- 根拠がないものは推測で決めず、「要確認」の印を付けて聞く
+
+## note
+- 書く: 必要な部品（ねじ・磁石など）、対応する機種や型番、印刷のコツ、寸法を変えられる変数、
+  作った経緯や使ってみた感想（作者の文はなるべく口調ごと残す）
+- 書かない: 出どころの記録（元のパスや旧フォルダ名など）、purpose と同じ文の繰り返し
+- 同じ系列の作品には、対応機種などの共通の情報をそろえて書く
 
 ## 進め方
-1. ファイルを見て作品ごとにまとめる。どれが同じ作品か迷ったら聞く
-2. 作成日・名前・作者・用途・状態を、全作品分まとめて一度に質問する。
-   ファイル名や更新日から推測できるものは案として示す
-3. フォルダ名を決めてファイルを配置し、meta.json を書く。仕様外の情報は note へ
-4. 最後にフォルダ構成と各 meta.json を一覧で見せて、確認をもらう
+1. 渡されたものを見て作品ごとにまとめる。どれが同じ作品か迷ったら聞く
+2. 全作品の案（フォルダ名・purpose・status・tags・note）を表にし、推測した箇所と
+   「要確認」に印を付けて、まとめて一度に確認をもらう。作成日などファイル名や
+   更新日から推測できるものは案として示す
+3. 確認が取れたらファイルを配置して meta.json を書く。まとめて書くときは、
+   先に書き込まない試走で全件の変更内容を見せてから実行する
+4. 書いたあとに全件を読み直して検査する（キーが仕様どおり、author・purpose・status が
+   空でない、status が3択のどれか、tags と note が文字列の配列、フォルダ名の日付が実在する）
+5. 最後に、フォルダ構成・各作品の status と tags・タグごとの件数を見せて、確認をもらう
 
 ## やらないこと
 - モデルの形状やファイルの中身の変更
 - 仕様にないキーやフォルダの追加</pre>
+    </div>
   </section>
 
   <section>
-    <h3>置いたあと</h3>
+    <h3><span class="step-no">3</span>フォルダにまとめて items/ に置く</h3>
+    <p class="hint">フォルダ名は <b>作成日_名前</b>（例：20250612_流路セルホルダー）。作成日がわからなければ大体でかまいません。中にはファイルを並べるだけで、サブフォルダは作りません。名前が _ で始まるフォルダ（_template など）は一覧に出ません。</p>
+    <div class="way">
+      <h4><span class="way-tag">手でやる</span>フォルダを作って入れる</h4>
+      <ol class="steps">
+        <li><span class="no">1</span><span class="t">items/ に「作成日_名前」のフォルダを作り、1 のファイルと 2 の meta.json を入れる</span></li>
+      </ol>
+      <p class="small">Google ドライブ（パソコン版）ならエクスプローラーで普通に作業できます。Webの画面でアップロードするときは、同じ名前のファイルがあれば「置き換える」を選んでください（2つあると要対応になります）。</p>
+    </div>
+    <div class="way">
+      <h4><span class="way-tag auto">自動でやる</span>済んでいる</h4>
+      <p class="hint">Fusionのスクリプト（モード2）は items/ に直接書き出します。AIエージェントに頼んだときは、確認のあとフォルダに並べてくれます。</p>
+    </div>
+  </section>
+
+  <section>
+    <h3><span class="step-no">4</span>同期して確かめる</h3>
     <p class="hint" style="font-size:14.5px;color:var(--ink)">上の「今すぐ同期」を押すと一覧に出ます。出ないときは一覧の上に理由が表示されるので、その作品の meta.json を直してもう一度同期してください。</p>
   </section>

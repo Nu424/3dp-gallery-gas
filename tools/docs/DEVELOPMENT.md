@@ -38,7 +38,7 @@
 | `tools/gas/Code.gs` | サーバー側。同期処理、`doGet`、画面から呼ぶ関数、トリガー、スプシのメニュー、`setup()` |
 | `tools/gas/index.html` | 画面（一覧と詳細）。見た目とブラウザ側の処理はすべてここ。`<?!= include('guide') ?>` で `guide.html` を読み込む。GASとの境目は `loadData` / `syncNow` / `resyncItem` と、画像の取り直し（`getThumbnails`）だけ |
 | `tools/gas/appsscript.json` | GASの設定ファイル（マニフェスト）。`oauthScopes`（`drive.readonly` / `spreadsheets` / `script.scriptapp` / `script.container.ui`）で許可の範囲を絞り、`webapp`（`executeAs: USER_ACCESSING`、`access: DOMAIN`）を決める。エディタでは「プロジェクトの設定」で表示をオンにして編集する。貼り方は [SETUP.md](SETUP.md#4つ目appsscriptjson-を置き換える許可の範囲を絞る) |
-| `tools/gas/guide.html` | 「作品を追加する」パネルの本文（HTMLの断片）。文章の修正はこのファイルだけで済む。AIに渡すプロンプトは `#ai-prompt` の1か所にまとめてある。**スクリプトレット（`<?` で始まる構文）は書かない** |
+| `tools/gas/guide.html` | 「作品を追加する」パネルの本文（HTMLの断片）。文章の修正はこのファイルだけで済む。構成は、用意するものの順の段（1 3Dデータ → 2 meta.json → 3 フォルダ → 4 同期）で、各段に「手でやる」「自動でやる」の枠（`.way`）を並べる。AIに渡すプロンプトは `#ai-prompt` の1か所にまとめてある（計画書の版から改訂済み。こちらが正）。**スクリプトレット（`<?` で始まる構文）は書かない** |
 
 `Code.gs` は上から「設定」→「純粋な関数」→「エラーの扱い」→「Driveの読み取り」→「シートの読み書き」→「同期の本体」→「画面から呼ばれる関数」→「トリガー」→「スプシのメニューと初期設定」の順に並んでいる。変えたくなる値は先頭の「設定」にある。関数名の末尾が `_` のものは非公開（画面やメニューから直接呼べない）。テストから差し替えるため、一部の設定は `var` で宣言されている。
 
