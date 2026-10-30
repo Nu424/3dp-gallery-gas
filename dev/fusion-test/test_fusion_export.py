@@ -458,6 +458,21 @@ class TestResolvePaths(unittest.TestCase):
         self.assertIn("書き換え", problems[0])
         self.assertIn("設定されていません", fe.resolve_paths(2, "C:/t", "", "")[1][0])
 
+    def test_missing_r_prefix_is_reported(self):
+        # r を付け忘れた "G:\共有\3Dギャラリー" は "\3" が制御文字 \x03 に化ける
+        broken = "G:\\共有\x03Dギャラリー"
+        problems = fe.resolve_paths(1, broken, "", "")[1]
+        self.assertEqual(len(problems), 1)
+        self.assertIn("TRIAGE_DIR", problems[0])
+        self.assertIn("r", problems[0])
+        # モード2では TRIAGE_CSV・OUTPUT_DIR も調べる。OUTPUT_DIR は化けの指摘だけを出す
+        problems = fe.resolve_paths(2, "C:/t", "C:/t\tx.csv", "G:\\x\x07\\items")[1]
+        self.assertEqual(len(problems), 2)
+        self.assertIn("TRIAGE_CSV", problems[0])
+        self.assertIn("OUTPUT_DIR", problems[1])
+        # モード1は TRIAGE_CSV・OUTPUT_DIR を使わないので調べない
+        self.assertEqual(fe.resolve_paths(1, "C:/t", "a\tb", "c\x03d")[1], [])
+
     def test_default_settings(self):
         paths, problems = fe.resolve_paths(1, fe.TRIAGE_DIR, fe.TRIAGE_CSV, fe.OUTPUT_DIR, documents="C:/docs")
         self.assertEqual(problems, [])
@@ -731,6 +746,13 @@ class TestSettingPath(unittest.TestCase):
                  "THUMB_WIDTH =", "THUMB_HEIGHT ="]
         positions = [settings.index("\n" + n) for n in names]
         self.assertEqual(positions, sorted(positions))
+
+    def test_path_settings_are_raw_strings(self):
+        # パスの設定は最初から r"..." にしておく（r の付け忘れで \ が化けるのを防ぐ）
+        with open(SCRIPT, encoding="utf-8") as f:
+            text = f.read()
+        for name in ["TRIAGE_DIR", "TRIAGE_CSV", "OUTPUT_DIR"]:
+            self.assertRegex(text, r'\n' + name + r' = r"')
 
 
 class TestSelectProjects(unittest.TestCase):

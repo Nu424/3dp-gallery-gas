@@ -23,7 +23,7 @@ fusion_export.py — Fusion のクラウド上の f3d を開いて、3Dギャラ
 # =============================================================================
 
 # パスの書き方（下のパスの項目に共通）
-#   - Windows のパスは r"..." で囲む（\ をそのまま書けるようにするため）。
+#   - パスは r"..." の "" の中に書く。先頭の r は消さない（r が無いと \ のあとの文字が化けて、別の場所を指してしまう）。
 #   - "~" で始めると、このPCのユーザーのフォルダ（C:\Users\<名前>）を指す。
 
 # -----------------------------------------------------------------------------
@@ -50,22 +50,22 @@ TARGET_NAMES = []
 # モード1だけで使う
 # -----------------------------------------------------------------------------
 # モード1の出力先。triage.csv・サムネイル画像・ログがここに書かれる。
-# 空文字 "" なら「ドキュメント\3Dギャラリー_仕分け」（このPCの中。仕分けの作業用なので共有しなくてよい）。
+# 空（r""）なら「ドキュメント\3Dギャラリー_仕分け」（このPCの中。仕分けの作業用なので共有しなくてよい）。
 #   「ドキュメント」はエクスプローラーの「ドキュメント」と同じ場所（OneDrive に移している PC では、その移した先）。
 #   実際の場所は、終了時のダイアログに出る。
 # 共有ドライブに置きたければ書き換えてよい（例 r"G:\共有ドライブ\研究室\3Dギャラリー_仕分け"）。その場合は items の外にする
 # （items の中だと作品フォルダと間違えて同期されるため）。
 # モード2の TRIAGE_CSV が空のときは、ここの triage.csv を読む。
-TRIAGE_DIR = ""
+TRIAGE_DIR = r""
 
 # -----------------------------------------------------------------------------
 # モード2だけで使う
 # -----------------------------------------------------------------------------
 # モード2で読む triage.csv のパス（モード1で作り、rank と folder_name を記入したもの）。
-# 空文字 "" なら TRIAGE_DIR の中の triage.csv を読む（ふつうはこのままでよい）。
+# 空（r""）なら TRIAGE_DIR の中の triage.csv を読む（ふつうはこのままでよい）。
 # スプシで編集した場合は「ファイル → ダウンロード → カンマ区切り形式（.csv）」で保存し、
 # TRIAGE_DIR の triage.csv と置き換えるか、ここにそのパスを書く。
-TRIAGE_CSV = ""
+TRIAGE_CSV = r""
 
 # モード2の出力先＝ギャラリーの items フォルダ。ここに書き出すと、そのままギャラリーへの登録になる。
 #   - Googleドライブ（パソコン版）で見える「共有ドライブ」内の 3Dギャラリー を指す。
@@ -754,6 +754,7 @@ def resolve_paths(mode, triage_dir, triage_csv, output_dir, documents=None):
       - モード1は OUTPUT_DIR を調べない（未設定でも動く）
       - モード2は OUTPUT_DIR を調べる。<共有ドライブ名> の残りを止めるのは
         OUTPUT_DIR だけ（Googleドライブ上でなければならないのはここだけなので）
+      - 使うパスに制御文字があれば止める（r を付け忘れて "\3" や "\t" が化けた場合）
     """
     def clean(p):
         p = (p or "").strip()
@@ -765,7 +766,13 @@ def resolve_paths(mode, triage_dir, triage_csv, output_dir, documents=None):
     if not tcsv:
         tcsv = os.path.join(tdir, TRIAGE_FILENAME)
     problems = []
+    used = [(triage_dir, "TRIAGE_DIR")]
     if mode == 2:
+        used += [(triage_csv, "TRIAGE_CSV"), (output_dir, "OUTPUT_DIR")]
+    for raw, label in used:
+        if has_control_chars(raw):
+            problems.append(label + ' のパスに読めない文字があります。r"..." の先頭の r を付け忘れていないか確かめてください')
+    if mode == 2 and not has_control_chars(output_dir):
         problem = check_setting_path(odir, "OUTPUT_DIR")
         if problem:
             problems.append(problem)
@@ -1349,6 +1356,11 @@ class Progress:
             self.dlg.hide()
         except Exception:
             pass
+
+
+def has_control_chars(text):
+    """制御文字を含むか。設定欄のパスで r を付け忘れると "\3" "\t" などが制御文字に化けるので、その検出に使う。"""
+    return any(ord(c) < 0x20 or ord(c) == 0x7F for c in (text or ""))
 
 
 def check_setting_path(path, label):
