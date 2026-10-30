@@ -262,10 +262,9 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
    見せない方は visibility:hidden で高さだけ残す（切り替えても段の高さが変わらない）。960px 以下は余白が大きくなるので display:none */
 .way-seg{align-self:flex-start}
 .ways{display:grid}
-.ways > .way{grid-area:1 / 1}
+.ways > .way{grid-area:1 / 1;align-self:start}
 .sheet-body:not([data-way="auto"]) .way[data-way="auto"],.sheet-body[data-way="auto"] .way[data-way="manual"]{visibility:hidden}
 .way > .hint:last-child,.way > .small:last-child{padding-bottom:8px}
-.ways > .way{align-self:start}
 .way > h4 + .hint:last-child{padding-bottom:6px}
 .sheet-body code{font-family:ui-monospace,Consolas,monospace;font-size:.92em;background:var(--soft);padding:1px 5px;border-radius:4px;overflow-wrap:anywhere}
 .ai{background:var(--soft);border-color:var(--soft);padding:14px 16px 16px;gap:10px}
@@ -1404,7 +1403,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { closeLayer(false); return; }
   if (e.key === 'Tab') {
     const f = layer.el.querySelectorAll('button:not([hidden]):not([disabled]), a[href], input');
-    const vis = [...f].filter((x) => x.offsetParent !== null);
+    const vis = [...f].filter((x) => x.offsetParent !== null && getComputedStyle(x).visibility !== 'hidden');   // 作品を追加するパネルの隠した枠（visibility:hidden）を除く
     if (!vis.length) return;
     if (e.shiftKey && document.activeElement === vis[0]) { e.preventDefault(); vis[vis.length - 1].focus(); }
     else if (!e.shiftKey && document.activeElement === vis[vis.length - 1]) { e.preventDefault(); vis[0].focus(); }
