@@ -7,6 +7,11 @@
 // 例  THEN="document.querySelector('.card:nth-child(3)').click()" node --experimental-websocket dev/preview/cdp-check.mjs "scenario=many"
 // 環境変数 PAGE で out/ の別のページを開ける（例 PAGE=frame-390.html で "src=scenario%3Dmany"。このとき数値は iframe の外なので空）
 // drive.google.com は 127.0.0.1:9 に向けて、すぐ失敗させる（ネットワークの待ちで結果が揺れないように）。
+// 操作を続けて行うときは THEN2・THEN3 …（THEN の後に順に実行し、それぞれの後に待つ。待ち時間は STEP_WAIT で変えられる）。
+//   STEP_SHOTS=1 なら、各手順の後にもスクショを撮る（<スクショ>-1.png、-2.png …。最後はいつもの <スクショ>.png）。
+// FRAME=1 なら、THEN と結果の取り出しを、ページの中の iframe（frame-390.html の中のプレビュー）で行う。
+//   390px 幅は iframe に入れて撮る決まりなので、その中を操作するため。
+// 手順に "@size 幅,高さ" と書くと、JS の代わりに画面の大きさを変える（960px をまたいだときの確かめ用）。
 import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -40,11 +45,37 @@ try {
   });
   const send = (method, params = {}) => new Promise((r) => { const id = ++seq; waiting.set(id, r); ws.send(JSON.stringify({ id, method, params })); });
   await send('Page.enable');
+  // iframe の中で JS を動かすため、実行の文脈（frameId ごと）を集めておく
+  const contexts = [];
+  ws.addEventListener('message', (ev) => {
+    const m = JSON.parse(ev.data);
+    if (m.method === 'Runtime.executionContextCreated') contexts.push(m.params.context);
+  });
+  await send('Runtime.enable');
   await send('Page.navigate', { url: page });
   await sleep(Number(waitMs));
+  const tree = await send('Page.getFrameTree');
+  const mainFrame = tree.result.frameTree.frame.id;
+  const ctx = () => {
+    if (!process.env.FRAME) return {};
+    const c = contexts.filter((x) => x.auxData && x.auxData.isDefault && x.auxData.frameId !== mainFrame).pop();
+    return c ? { contextId: c.id } : {};
+  };
   // 環境変数 THEN に JS を書くと、待った後にそれを実行し、もう一度同じだけ待つ（描き直し・スクロールの後を調べる用）
-  if (process.env.THEN) { await send('Runtime.evaluate', { expression: process.env.THEN }); await sleep(Number(waitMs)); }
-  const res = await send('Runtime.evaluate', { returnByValue: true, expression: `(() => {
+  const steps = ['THEN', 'THEN2', 'THEN3', 'THEN4', 'THEN5', 'THEN6'].map((k) => process.env[k]).filter(Boolean);
+  for (let i = 0; i < steps.length; i++) {
+    const size = /^@size (\d+),(\d+)$/.exec(steps[i]);
+    const r = size
+      ? await send('Emulation.setDeviceMetricsOverride', { width: Number(size[1]), height: Number(size[2]), deviceScaleFactor: 1, mobile: false })
+      : await send('Runtime.evaluate', { expression: steps[i], ...ctx() });
+    if (r.result && r.result.exceptionDetails) console.error('THEN' + (i + 1) + ' でエラー：' + JSON.stringify(r.result.exceptionDetails.exception && r.result.exceptionDetails.exception.description));
+    await sleep(Number(process.env.STEP_WAIT || waitMs));
+    if (shot && process.env.STEP_SHOTS) {
+      const img = await send('Page.captureScreenshot', { format: 'png' });
+      writeFileSync(resolve(shot.replace(/\.png$/, '-' + (i + 1) + '.png')), Buffer.from(img.result.data, 'base64'));
+    }
+  }
+  const res = await send('Runtime.evaluate', { returnByValue: true, ...ctx(), expression: `(() => {
     const d = document.documentElement.dataset;
     const imgs = [...document.querySelectorAll('img')];
     return {
@@ -56,7 +87,13 @@ try {
       waiting: imgs.filter((i) => i.dataset.wait).map((i) => i.dataset.key),
       blobImgs: imgs.filter((i) => (i.getAttribute('src') || '').startsWith('blob:')).length,
       dataImgsFromServer: imgs.filter((i) => /^data:image\\/[^,]*;base64,/.test(i.getAttribute('src') || '')).length,
-      hero: (() => { const i = document.querySelector('.hero img'); return i ? { key: i.dataset.key, src: (i.getAttribute('src') || '').slice(0, 30), wait: !!i.dataset.wait, ok: i.complete && i.naturalWidth > 0 } : (document.querySelector('.hero svg') ? 'icon' : null); })()
+      hero: (() => { const i = document.querySelector('.hero img'); return i ? { key: i.dataset.key, src: (i.getAttribute('src') || '').slice(0, 30), wait: !!i.dataset.wait, ok: i.complete && i.naturalWidth > 0 } : (document.querySelector('.hero svg') ? 'icon' : null); })(),
+      // 第3ラウンド（重なり・履歴）の確かめ用：ページのスクロール位置、フォーカスのある要素、body のクラス、URL、履歴の呼び出し
+      pageY: Math.round(window.scrollY),
+      focus: (() => { const a = document.activeElement; return a && a !== document.body ? a.tagName.toLowerCase() + (a.id ? '#' + a.id : '') + (a.className ? '.' + String(a.className).split(' ').join('.') : '') + (a.dataset.select ? '[' + a.dataset.select + ']' : '') : 'body'; })(),
+      bodyClass: document.body.className,
+      search: location.search,
+      hist: d.hist ? JSON.parse(d.hist) : undefined
     };
   })()` });
   const v = res.result.result.value || { calls: [] };

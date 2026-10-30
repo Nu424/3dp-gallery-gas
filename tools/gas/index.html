@@ -15,6 +15,10 @@
  - 外部ライブラリなし。フォントだけ Google Fonts（Zen Kaku Gothic New）。
  - GASとの境目は loadData / syncNow / resyncItem と、画像の取り直し（pumpThumbs）だけ。
    google.script.run.getGalleryData() / syncNow() / resyncItem(folderId) / getThumbnails(ids, large) を呼ぶ。
+   ほかに、詳細の「戻る」と ?item= のリンク（第3ラウンドの M4・M7）で google.script.history と google.script.url を使う
+   （決まりは「詳細の重なりと履歴」の節）。
+ - 幅は3段階（第3ラウンドの M1）：1280px 以上は3列、961〜1279px は絞り込みを最初だけたたんだ3列、
+   960px 以下は1列（ヘッダーと検索の行を上に固定、絞り込みは下からのシート、詳細は右から重ねる）。
 
  サーバーとの約束
    getGalleryData() の戻り値
@@ -93,6 +97,13 @@ a{color:var(--accent)}a:hover{color:#174A84}
 .chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
 .chip[aria-pressed="true"] .count{color:#DCE7F5}
 .chip.dark[aria-pressed="true"]{background:var(--ink);border-color:var(--ink)}
+.filters-open > .filters-head,.f-search{margin-bottom:20px}
+.f-groups{display:flex;flex-direction:column;gap:20px}
+/* 960px 以下でだけ使う部品（絞り込みのシートの見出し・下の行、検索の行のボタン、件数の行の同期時刻、
+   要対応の開閉、詳細の「← 一覧」の行）。PC では出さない。
+   .f-sheet は PC では箱を作らない（中の絞り込みが今までどおり絞り込み欄に並ぶ）。960px 以下ではこれがシートになる */
+.m-filter-btn,.f-sheet-head,.f-sheet-foot,.m-sync,.issues-toggle,.detail-bar{display:none}
+.f-sheet{display:contents}
 .rail-btn{position:relative;background:var(--soft);color:var(--ink)}
 .badge{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:var(--accent);color:#fff;font-size:11.5px;font-weight:700;display:flex;align-items:center;justify-content:center}
 
@@ -246,15 +257,6 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
 .prompt{margin:0;padding:14px;background:#fff;border-radius:8px;font-family:inherit;font-size:13.5px;line-height:1.7;white-space:pre-wrap;max-height:260px;overflow:auto}
 .tabpanel[hidden]{display:none}
 
-@media (max-width: 960px){
-  .app{height:auto;overflow:visible}
-  .body{flex-direction:column}
-  .pane{overflow:visible}
-  .filters,.filters.closed,.detail{width:auto;border:none;align-items:stretch}
-  .detail{border-top:1px solid var(--line)}
-}
-@media (prefers-reduced-motion: reduce){*{transition:none !important}}
-
 /* 移植で加えた部分：読み込み中・エラー・要対応の各行・同期メッセージ */
 .sync-label.warn{color:var(--warn-ink);font-weight:700}
 .sync-label.err{color:var(--req);font-weight:700}
@@ -274,6 +276,94 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
 .resync .warn{color:var(--warn-ink);font-weight:700}
 @media (prefers-reduced-motion: reduce){.spinner{animation-duration:3s}}
 .issue-row .links .btn{min-height:36px;padding:0 10px;font-size:13px}
+/* ---- 幅の段階（docs/work-plan.md の M1）----
+   1280px 以上：3列（第2ラウンドのまま）。961〜1279px：3列のまま、絞り込みは最初だけたたむ（state.filtersOpen の初期値）。
+   960px 以下：1列。ヘッダーと検索の行を上に固定し、絞り込みは下からのシート、詳細は右から重ねる（M2〜M6）。
+   ページ全体がスクロールするので、シートや詳細を開いている間は body を止める（setScrollLock） */
+@media (max-width: 960px){
+  :root{--hdr-h:56px}
+  .app{height:auto;overflow:visible}
+  /* M2 ヘッダー：1行で上に固定。説明文は出さず、ボタンは絵だけ（名前は読み上げ用に残す） */
+  .topbar{position:sticky;top:0;z-index:3;flex-wrap:nowrap;gap:8px;height:calc(var(--hdr-h) + env(safe-area-inset-top));padding:env(safe-area-inset-top) max(10px,env(safe-area-inset-right)) 0 max(16px,env(safe-area-inset-left))}
+  .topbar h1{flex:1;min-width:0;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .topbar .sub{display:none}
+  .topbar .actions{flex:none;flex-wrap:nowrap;gap:6px}
+  .topbar .btn{width:44px;padding:0;justify-content:center}
+  /* 最終同期とメッセージは件数の行（.m-sync）に出す。ここは読み上げ（aria-live）のために見えない形で残す */
+  .topbar .sync-label,.btn-text,.f-search .f-label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  .body{flex-direction:column}
+  .pane{overflow:visible}
+  /* M3 検索の行：ヘッダーの下に固定。絞り込みの中身（.f-sheet）はボタンで下からのシートとして開く */
+  .filters,.filters.closed{position:sticky;top:calc(var(--hdr-h) + env(safe-area-inset-top));z-index:2;width:auto;gap:0;align-items:stretch;padding:8px max(16px,env(safe-area-inset-right)) 8px max(16px,env(safe-area-inset-left));border:none;border-bottom:1px solid var(--line)}
+  .filters-head,.filters-rail,.filters:not(.closed) .filters-rail{display:none}
+  .filters-open,.filters.closed .filters-open{display:flex;align-items:center;gap:8px}
+  .f-search{flex:1;min-width:0;margin:0}
+  .search{font-size:16px}   /* 16px 未満だと、iOS が入力のときに画面を拡大する */
+  .m-filter-btn{display:inline-flex;position:relative;flex:none;padding:0 14px}
+  .f-sheet{display:none}
+  body.fsheet-open .filters{z-index:9}   /* シートをヘッダーより上に出す（シートはこの中の position:fixed） */
+  body.fsheet-open .f-sheet{position:fixed;inset:0;z-index:1;display:flex;flex-direction:column;background:var(--panel);animation:sheet-up .22s ease-out}
+  .f-sheet-head{display:flex;align-items:center;gap:8px;min-height:calc(var(--hdr-h) + env(safe-area-inset-top));padding:env(safe-area-inset-top) max(8px,env(safe-area-inset-right)) 0 max(16px,env(safe-area-inset-left));border-bottom:1px solid var(--line-2)}
+  .f-sheet-head h2{flex:1;margin:0;font-size:17px;font-weight:700}
+  .f-sheet .f-groups{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:16px max(16px,env(safe-area-inset-right)) 24px max(16px,env(safe-area-inset-left))}
+  .f-sheet-foot{display:flex;gap:10px;padding:12px max(16px,env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));border-top:1px solid var(--line);background:var(--panel)}
+  .f-sheet-foot .btn-primary{flex:1;justify-content:center}
+  /* M5 一覧：ギャラリーは2列（768px では4列）。件数の行に最終同期を小さく出す。要対応は1行にたたむ */
+  .main{padding:12px max(16px,env(safe-area-inset-right)) calc(32px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));gap:12px}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+  .card{padding:8px 8px 10px;gap:6px}
+  .thumb{height:108px}
+  .thumb svg{width:120px;height:90px}
+  .card-name{font-size:14.5px}
+  .card-purpose{font-size:12.5px}
+  .m-sync{display:block;font-size:12.5px;color:var(--muted)}
+  .m-sync.warn{color:var(--warn-ink);font-weight:700}
+  .m-sync.err{color:var(--req);font-weight:700}
+  .m-sync:empty{display:none}
+  .issues{padding:0;gap:0}
+  .issues-toggle{display:flex;width:100%;min-height:44px;align-items:center;gap:8px;padding:0 14px;background:none;border:none;font-size:14px;font-weight:700;color:var(--warn-ink);text-align:left;cursor:pointer}
+  .issues-toggle .chev{margin-left:auto;transition:transform .15s}
+  .issues.open .issues-toggle .chev{transform:rotate(90deg)}
+  .issues:not(.open) .issues-head,.issues:not(.open) .issue-list{display:none}
+  .issues-head{padding:0 14px 6px}
+  .issue-list{padding:0 14px 8px}
+  /* M4 詳細：右から全画面で重ねる。中でスクロールするので、画像の見張りの枠はこの要素（scrollRootOf） */
+  .detail{display:none;width:auto;overflow-x:hidden;overflow-y:auto;border:none}
+  body.detail-open .detail{position:fixed;inset:0;z-index:8;display:flex;animation:detail-in .22s ease-out}
+  .detail-bar{display:flex;position:sticky;top:0;z-index:2;align-items:center;gap:4px;min-height:calc(var(--hdr-h) + env(safe-area-inset-top));padding:env(safe-area-inset-top) max(16px,env(safe-area-inset-right)) 0 max(4px,env(safe-area-inset-left));background:#fff;border-bottom:1px solid var(--line)}
+  .detail-back{flex:none;min-height:44px;display:inline-flex;align-items:center;gap:2px;padding:0 12px 0 6px;font-size:15px;font-weight:700;color:var(--accent);background:none;border:none;border-radius:8px;cursor:pointer}
+  .detail-back:hover{background:var(--soft)}
+  .detail-bar-name{flex:1;min-width:0;font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .detail-head{position:static;padding:12px max(16px,env(safe-area-inset-right)) 12px max(16px,env(safe-area-inset-left))}
+  .detail-body{padding:16px max(16px,env(safe-area-inset-right)) calc(40px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+  .detail h2{font-size:21px}
+  .hero{height:200px}
+  /* M6 作品を追加するパネル：全幅。見出しは上に固定（.sheet-head は sticky）。表は縦積み、コードは枠の中で横スクロール */
+  .sheet-panel{overscroll-behavior:contain;box-shadow:none}
+  .sheet-head{min-height:calc(var(--hdr-h) + env(safe-area-inset-top));padding:env(safe-area-inset-top) max(8px,env(safe-area-inset-right)) 0 max(16px,env(safe-area-inset-left))}
+  .sheet-head h2{font-size:18px}
+  .sheet-body{padding:16px max(16px,env(safe-area-inset-right)) calc(40px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));gap:28px}
+  .rule{grid-template-columns:minmax(0,1fr) auto;gap:2px 12px}
+  .rule .d{grid-column:1 / -1}
+  .meta-grid{grid-template-columns:minmax(0,1fr)}
+  .code,.prompt{min-width:0;max-width:100%}
+  .prompt{overflow-wrap:anywhere}
+  .ai{padding:14px}
+}
+/* 961〜1279px：たたんだ絞り込み欄（最初の表示）に横のスクロールバーが出ないようにする。
+   幅 60px から枠線 1px と左右の余白を引くと 43px で、44px のボタンが 1px はみ出すため。
+   1280px 以上でも、利用者がたたむと同じスクロールバーが出るが、第2ラウンドの見た目を変えない決まりなので触らない */
+@media (min-width: 961px) and (max-width: 1279px){.filters.closed{overflow-x:hidden}}
+/* 押せる場所を 44px 以上に（960px 以下と、1279px 以下のタッチ端末） */
+@media (max-width: 960px), (max-width: 1279px) and (pointer: coarse){
+  .chip,.status-row,.active-chip,.tag-btn,.file,.btn-small,.info a,.issue-row .links a,.issue-row .links .btn,.seg button{min-height:44px}
+  .seg button.icon{width:44px}
+  .linklike{min-height:44px;display:inline-flex;align-items:center}
+}
+@keyframes detail-in{from{transform:translateX(100%)}to{transform:none}}
+@keyframes sheet-up{from{transform:translateY(100%)}to{transform:none}}
+@media (prefers-reduced-motion: reduce){*{transition:none !important}body.detail-open .detail,body.fsheet-open .f-sheet{animation:none}}
+
 </style>
 </head>
 <body>
@@ -286,11 +376,11 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
       <span class="sync-label" id="sync-label" aria-live="polite"></span>
       <button class="btn" id="btn-sync" type="button">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/></svg>
-        今すぐ同期
+        <span class="btn-text">今すぐ同期</span>
       </button>
       <button class="btn btn-primary" id="btn-guide" type="button">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-        作品を追加する
+        <span class="btn-text">作品を追加する</span>
       </button>
     </div>
   </header>
@@ -298,17 +388,33 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
   <div class="body">
     <aside class="pane filters" id="filters" aria-label="絞り込み">
       <div class="filters-open">
-        <div class="filters-head" style="margin-bottom:20px">
+        <div class="filters-head">
           <span>絞り込み</span>
           <button class="icon-btn" type="button" data-action="toggle-filters" aria-label="絞り込みを閉じる">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
           </button>
         </div>
-        <label class="f-group" style="margin-bottom:20px">
+        <label class="f-group f-search">
           <span class="f-label">キーワード</span>
           <input class="search" id="search" type="search" placeholder="名前・用途・メモ" autocomplete="off">
         </label>
-        <div id="filter-groups" style="display:flex;flex-direction:column;gap:20px"></div>
+        <!-- 960px 以下：検索の横の「絞り込み」ボタン。押すと下の .f-sheet がシートとして開く -->
+        <button class="btn m-filter-btn" id="m-filter-btn" type="button" data-action="open-filter-sheet" aria-haspopup="dialog" aria-expanded="false">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16"/><path d="M7 12h10"/><path d="M10 18h4"/></svg>
+          <span>絞り込み</span><span class="badge" id="m-filter-badge" hidden></span>
+        </button>
+        <!-- 絞り込みの中身（renderFilters が描く）。PC では絞り込み欄にそのまま並び、960px 以下では同じ部品が
+             下からの全画面シートになる（見出しと下の行は 960px 以下だけ出す）。部品を二重に持たないため -->
+        <div class="f-sheet" id="f-sheet">
+          <div class="f-sheet-head">
+            <h2 id="f-sheet-title">絞り込み</h2>
+            <button class="icon-btn" id="f-sheet-close" type="button" data-action="close-filter-sheet" aria-label="閉じる">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
+            </button>
+          </div>
+          <div class="f-groups" id="filter-groups"></div>
+          <div class="f-sheet-foot" id="f-sheet-foot"></div>
+        </div>
       </div>
       <div class="filters-rail">
         <button class="icon-btn rail-btn" type="button" data-action="toggle-filters" aria-label="絞り込みを開く">
@@ -347,12 +453,19 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
 /* ============================================================
    状態
    ============================================================ */
+/* 960px 以下（1列の画面。M2〜M6）か。CSS の @media (max-width: 960px) と同じ境目 */
+const narrowMq = window.matchMedia('(max-width: 960px)');
 const state = {
   data: { items: [], issues: [], syncedAt: null, sheetUrl: '' },
   loading: true, loadError: '',                 // 初回の読み込み中／失敗
   q: '', status: 'all', tag: null, author: 'all',
   sort: 'new', view: 'gallery', selId: null,
-  filtersOpen: !window.matchMedia('(max-width: 960px)').matches, // スマホ幅では最初はたたむ
+  // 絞り込み欄を開いているか。1280px 未満では最初はたたむ（M1）。最初の表示のときだけで、その後は利用者の開け閉めのまま。
+  // 960px 以下ではこの値は使わない（絞り込みは fSheetOpen のシート）
+  filtersOpen: window.matchMedia('(min-width: 1280px)').matches,
+  detailOpen: false,     // 960px 以下：詳細を重ねて開いているか（M4）
+  fSheetOpen: false,     // 960px 以下：絞り込みのシートを開いているか（M3）
+  issuesOpen: false,     // 960px 以下：要対応の帯を開いているか（M5。PC では常に開いた見た目）
   syncing: false, resyncing: null, notice: null,   // resyncing: 再同期中の folderId。notice: { text, kind: ''|'warn'|'err' }（同期ボタン横に出す）
   lastIssues: null                              // 要対応の件数（変わったときだけ読み上げる）
 };
@@ -410,12 +523,22 @@ function resyncItem(folderId) {
     .withFailureHandler((err) => { state.resyncing = null; showError('読み直せませんでした：' + errMsg(err)); refreshBusy(); })
     .resyncItem(folderId);
 }
+const hasItem = (id) => !!id && state.data.items.some((it) => it.folderId === id);
+/* PC（961px 以上）では、選んでいなければ最初の作品を選ぶ。960px 以下では選ばない（M4：最初の表示では詳細を開かない。
+   選んだ印も付けない）。960px 以下から広げたときも、ここで最初の作品を選ぶ */
+function selectFirstOnPc() {
+  if (narrowMq.matches || hasItem(state.selId)) return;
+  const first = sortedItems(state.data.items)[0];
+  state.selId = first ? first.folderId : null;
+}
 function afterLoad() {
-  if (!state.selId || !state.data.items.some((it) => it.folderId === state.selId)) {
-    const first = sortedItems(state.data.items)[0];
-    state.selId = first ? first.folderId : null;
+  if (!hasItem(state.selId)) {
+    state.selId = null;
+    if (state.detailOpen) closeDetail(false);   // 開いていた作品が一覧から消えた
+    selectFirstOnPc();
   }
   renderAll();
+  applyStartItem();
 }
 function showError(msg) {
   state.notice = { text: msg, kind: 'err' };
@@ -608,8 +731,10 @@ function imgFail(img) {
   showFallback(img);
 }
 
-/* 画面に近いかの見張り。スクロールする枠（PC は各ペイン、スマホ幅はページ）ごとに1つ。
-   rootMargin は見張りの枠にしか効かないので、枠をペインにしておく */
+/* 画面に近いかの見張り。スクロールする枠（PC は各ペイン、960px 以下は一覧がページ・重ねた詳細はその要素）ごとに1つ。
+   rootMargin は見張りの枠にしか効かないので、枠をペインにしておく。
+   960px 以下の詳細は閉じている間も overflow-y:auto（display:none なだけ）なので、枠は開け閉めで変わらない。
+   閉じている間は見えない扱いで頼まず、開くと（見えるようになると）頼む */
 const thumbIO = new Map();       // スクロールの枠（null は画面）→ IntersectionObserver
 const watchedImg = new Set();    // 見張っている <img>
 const nearImg = new Set();       // 画面に近い <img>
@@ -656,8 +781,6 @@ function rewatchThumbs() {
   thumbIO.clear(); watchedImg.clear(); nearImg.clear();
   watchThumbs();
 }
-const narrowMq = window.matchMedia('(max-width: 960px)');
-if (narrowMq.addEventListener) narrowMq.addEventListener('change', rewatchThumbs); else narrowMq.addListener(rewatchThumbs); // 古い Safari
 
 function askServer(key) {
   if (!key || thumbQueue.has(key) || thumbSent.has(key) || serverImg.has(key)) return;
@@ -714,6 +837,7 @@ const ICON = {
   grid: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>',
   list: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6h11"/><path d="M9 12h11"/><path d="M9 18h11"/><path d="M4 6h.01"/><path d="M4 12h.01"/><path d="M4 18h.01"/></svg>',
   dl: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1F5FA8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>',
+  back: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="M11 6l-6 6 6 6"/></svg>',
   ext: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>',
   photo: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#55606B" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-8 7"/></svg>'
 };
@@ -756,12 +880,24 @@ function renderSync() {
   const btn = document.getElementById('btn-sync');
   btn.disabled = busy() || !canSync();
   btn.title = canSync() ? '' : NO_SYNC_TITLE;
+  const s = syncInfo();
   const label = document.getElementById('sync-label');
+  label.className = 'sync-label' + s.cls;
+  label.textContent = s.text;
+  // 960px 以下では件数の行（.m-sync）に同じ文を出す（ヘッダーの .sync-label は読み上げ用に見えない形で残る）
+  document.querySelectorAll('.m-sync').forEach((m) => { m.className = 'm-sync' + s.cls; m.textContent = s.text; });
+}
+/* 同期ボタン横の文（最終同期の時刻・同期中・結果のメッセージ）と、色のクラス */
+function syncInfo() {
   const last = state.data.syncedAt ? '最終同期 ' + timeShort(state.data.syncedAt) : (state.loading ? '' : '未同期');
   const n = state.notice;
-  label.className = 'sync-label' + (n && !busy() && n.kind ? ' ' + n.kind : '');
-  label.textContent = state.syncing ? '同期中…（数分かかることがあります）' : state.resyncing ? '読み直し中…' : (n ? n.text + (last ? '　' + last : '') : last);
+  return {
+    cls: n && !busy() && n.kind ? ' ' + n.kind : '',
+    text: state.syncing ? '同期中…（数分かかることがあります）' : state.resyncing ? '読み直し中…' : (n ? n.text + (last ? '　' + last : '') : last)
+  };
 }
+/* 件数の行に出す同期の文（960px 以下だけ見える。読み上げはヘッダーの .sync-label が担うので aria-hidden） */
+const mSyncHTML = () => { const s = syncInfo(); return `<span class="m-sync${s.cls}" aria-hidden="true">${esc(s.text)}</span>`; };
 
 function renderFilters() { keepFocus(renderFiltersBody); }
 function renderFiltersBody() {
@@ -771,6 +907,16 @@ function renderFiltersBody() {
   const n = activeFilters().length;
   const badge = document.getElementById('rail-badge');
   badge.hidden = n === 0; badge.textContent = n;
+  // 960px 以下の「絞り込み」ボタンのバッジ。キーワードは検索欄に見えているので数えない（シートの中の条件の数）
+  const nSheet = activeFilters().filter((a) => a.key !== 'q').length;
+  const mBtn = document.getElementById('m-filter-btn'), mBadge = document.getElementById('m-filter-badge');
+  mBadge.hidden = nSheet === 0; mBadge.textContent = nSheet;
+  mBtn.setAttribute('aria-label', nSheet ? `絞り込み（${nSheet}件の条件で絞り込み中）` : '絞り込み');
+  // シートの下の行：「n件を表示」で閉じる、「解除」でシートの中の条件（状態・タグ・作った人）を外す
+  const shown = items.filter((it) => matches(it, null)).length;
+  document.getElementById('f-sheet-foot').innerHTML = `
+    <button class="btn" type="button" data-action="clear-sheet">解除</button>
+    <button class="btn btn-primary" type="button" data-action="close-filter-sheet">${shown}件を表示</button>`;
 
   const statusRows = [['all', 'すべて', '#FFFFFF', '#1F252B']].concat(statusList().map((s) => [s, s, `var(--st-${ST_KEY[s] || 'oth'}-bg)`, `var(--st-${ST_KEY[s] || 'oth'}-bd)`]))
     .map(([k, label, bg, bd]) => {
@@ -802,7 +948,8 @@ function issuesBar() {
   if (!issues.length) return '';
   const link = (url, text) => url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${text}${ICON.ext}</a>` : '';
   return `
-    <div class="issues">
+    <div class="issues${state.issuesOpen ? ' open' : ''}">
+      <button class="issues-toggle" type="button" data-action="toggle-issues" aria-expanded="${state.issuesOpen}">${ICON.warn}<span>要対応 ${issues.length}件</span><span class="chev" aria-hidden="true">▸</span></button>
       <div class="issues-head">${ICON.warn}
         <strong>一覧に出ていない作品が${issues.length}件あります</strong>
         <button class="linklike" type="button" data-action="open-guide">直し方</button>
@@ -846,13 +993,14 @@ function renderMainBody() {
 
   // 作品が1件も無いとき：次の一手を出す
   if (!state.data.items.length) {
-    main.innerHTML = issuesHTML + `<div class="empty"><p>まだ作品がありません。「作品を追加する」から始めましょう。</p><p class="sub-note">フォルダを置いたあとは、上の「今すぐ同期」で一覧に出ます。</p><button class="btn btn-primary" type="button" data-action="open-guide">作品を追加する</button></div>`;
+    main.innerHTML = issuesHTML + mSyncHTML() + `<div class="empty"><p>まだ作品がありません。「作品を追加する」から始めましょう。</p><p class="sub-note">フォルダを置いたあとは、上の「今すぐ同期」で一覧に出ます。</p><button class="btn btn-primary" type="button" data-action="open-guide">作品を追加する</button></div>`;
     return;
   }
 
   const toolbar = `
     <div class="toolbar">
       <span class="count">${list.length}件</span>
+      ${mSyncHTML()}
       ${act.map((a) => `<button class="active-chip" type="button" data-clear="${a.key}" aria-label="${esc(a.aria)}">${esc(a.label)}${ICON.x}</button>`).join('')}
       ${act.length ? '<button class="linklike" type="button" data-action="reset" style="font-weight:400;font-size:13.5px">すべて解除</button>' : ''}
       <span class="right">
@@ -918,10 +1066,13 @@ function renderDetailBody() {
       <div class="fgroup-head"><b>${g.label}</b><span>${g.hint}</span></div>
       ${g.files.map((f) => `<a class="file" href="${esc(f.downloadUrl || f.url)}" target="_blank" rel="noopener" aria-label="${esc(f.name)}をダウンロード"><span class="ext">${esc(extOf(f.name).toUpperCase())}</span><span class="fname">${esc(f.name)}</span>${ICON.dl}</a>`).join('')}
     </div>`).join('');
+  // .detail-bar は 960px 以下で詳細を重ねたときの上の行（「← 一覧」と作品名）。PC では出さない。
+  // 重ねたときの見出し（aria-labelledby）は下の h2（#detail-title）
   el.innerHTML = `
+    <div class="detail-bar"><button class="detail-back" id="detail-back" type="button" data-action="close-detail" aria-label="一覧に戻る">${ICON.back}<span>一覧</span></button><span class="detail-bar-name" aria-hidden="true">${esc(it.name)}</span></div>
     <div class="detail-head"><span class="status-badge st-${stClass(it.status)}">${esc(it.status)}</span><span class="date">${dateLong(it.date)}作成</span></div>
     <div class="detail-body">
-      <h2>${esc(it.name)}</h2>
+      <h2 id="detail-title">${esc(it.name)}</h2>
       <p class="purpose" style="margin-top:-12px">${esc(it.purpose)}</p>
       <div class="tags">${tagButtons(it.tags)}</div>
       <div class="hero">${thumbHTML(it, it.name, true)}</div>
@@ -946,12 +1097,220 @@ function openGuide() {
   if (!body.childElementCount) body.appendChild(document.getElementById('guide-template').content.cloneNode(true));
   lastFocus = document.activeElement;
   sheet.hidden = false;
+  applyLayers();
   document.getElementById('sheet-close').focus();
 }
 function closeGuide() {
   document.getElementById('sheet').hidden = true;
-  if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
+  applyLayers();
+  if (lastFocus && document.contains(lastFocus)) lastFocus.focus({ preventScroll: narrowMq.matches });
 }
+
+/* ============================================================
+   960px 以下の重なり（絞り込みのシート・詳細・作品を追加するパネル）
+   開いている間は、後ろ（ヘッダー・検索の行・一覧）を inert にし、ページのスクロールを止める。
+   ページ全体がスクロールする幅なので、body を position:fixed にして今の位置で止め、閉じたら同じ位置に戻す
+   （後ろの一覧は開いている間も動かない。閉じたあとのスクロール位置も変わらない）。
+   PC（961px 以上）では何もしない（作品を追加するパネルは今までどおり。詳細は横のペイン）
+   ============================================================ */
+let lockY = null;   // 止めたときのページのスクロール位置（止めていなければ null）
+function setScrollLock(on) {
+  const b = document.body.style;
+  if (on && lockY === null) {
+    lockY = window.scrollY;
+    b.position = 'fixed'; b.top = -lockY + 'px'; b.left = '0'; b.right = '0';
+  } else if (!on && lockY !== null) {
+    const y = lockY; lockY = null;
+    b.position = ''; b.top = ''; b.left = ''; b.right = '';
+    window.scrollTo(0, y);
+  }
+}
+/* 重なりを dialog にする（PC・閉じているときは外す）。label は外したときに戻す aria-label */
+function setDialog(el, on, labelId, label) {
+  if (on) {
+    el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-labelledby', labelId);
+    el.removeAttribute('aria-label');
+  } else {
+    el.removeAttribute('role'); el.removeAttribute('aria-modal'); el.removeAttribute('aria-labelledby');
+    if (label) el.setAttribute('aria-label', label);
+  }
+}
+/* state（detailOpen・fSheetOpen）と作品を追加するパネルの開閉から、見た目のクラス・dialog・inert・スクロールの停止を決める。
+   開け閉めと、幅が 960px をまたいだときに呼ぶ */
+function applyLayers() {
+  const narrow = narrowMq.matches;
+  const guide = !document.getElementById('sheet').hidden;
+  const det = narrow && state.detailOpen;
+  const fs = narrow && state.fSheetOpen && !det;
+  document.body.classList.toggle('detail-open', det);
+  document.body.classList.toggle('fsheet-open', fs);
+  setDialog(document.getElementById('detail'), det, 'detail-title', '作品の詳細');
+  setDialog(document.getElementById('f-sheet'), fs, 'f-sheet-title', null);
+  document.getElementById('m-filter-btn').setAttribute('aria-expanded', fs);
+  // 後ろにするもの。作品を追加するパネルは .app の外なので .app ごと。シートは #filters の中なので、検索の行の部品だけ
+  const back = narrow && guide ? ['.app'] : det ? ['.topbar', '#filters', '#main'] : fs ? ['.topbar', '#main', '#detail', '.f-search', '#m-filter-btn'] : [];
+  document.querySelectorAll('.app, .topbar, #filters, #main, #detail, .f-search, #m-filter-btn').forEach((el) => {
+    el.inert = back.some((s) => el.matches(s));
+  });
+  setScrollLock(narrow && (det || fs || guide));
+}
+
+/* 絞り込みのシート（M3）。中身は PC の絞り込み欄と同じ部品（#f-sheet。renderFilters が描く） */
+function openFilterSheet() {
+  state.fSheetOpen = true;
+  applyLayers();
+  document.getElementById('f-sheet-close').focus();
+}
+function closeFilterSheet() {
+  if (!state.fSheetOpen) return;
+  state.fSheetOpen = false;
+  applyLayers();
+  document.getElementById('m-filter-btn').focus({ preventScroll: true });
+}
+
+/* ============================================================
+   詳細の重なり（M4）と履歴（端末の「戻る」で閉じる。M4・M7）
+   GAS の画面は sandbox の iframe の中なので、window.history ではなく google.script.history を使う。
+     push(state, params, hash) / replace(state, params, hash)：params は URL の ? 以降（null なら今のまま、{} なら消える）
+     setChangeHandler(fn)：「戻る」「進む」で fn({ state, location: { parameter, parameters, hash } }) が呼ばれる
+   最初の ?item= は google.script.url.getLocation(fn) で読む。プレビューでは build.mjs が history の偽物を入れる。
+   決めたこと：
+   - 960px 以下で一覧から詳細を開いたときだけ push する（state は { overlay: true, item }、URL は ?item=<フォルダID>）。
+     「戻る」で一覧に戻れるのはこの1段だけ
+   - 詳細を開いたまま別の作品を開くとき（「進む」で開き直したときなど）は replace。開くたびに積むと、
+     一覧に戻るまで「戻る」を何回も押すことになるため
+   - 「← 一覧」・Esc で閉じるときは、自分で積んだ段なら history.back() で消す（積んだままだと、次の「戻る」が
+     見た目の変わらない空振りになる）。back() の結果が来なければ（iframe で効かない場合に備えて）replace で ?item= を外す。
+     ?item= のリンクで開いた段は積んでいないので、replace で ?item= を外す（back() するとアプリの外に出てしまう）
+   - PC（961px 以上）では選んでも push しない。replace で URL の ?item= だけ替える（その URL を写せば同じ作品が開く）。
+     選ぶたびに履歴が増えると「戻る」が煩わしいため。最初の作品を自動で選んだときは URL を変えない
+   - 履歴が変わったら（setChangeHandler）、state.overlay の段なら詳細を開き、それ以外なら閉じる。
+     ?item= だけで決めないのは、PC で replace した段や、最初のリンクの段に戻ったときに、詳細が開き直さないようにするため
+   ============================================================ */
+const gsHistory = () => (window.google && google.script && google.script.history) || null;
+let detailPushed = false;   // 開いている詳細の段を自分で push したか（閉じるときに back() で消す）
+let awaitingBack = false;   // 自分で呼んだ back() の結果（履歴の変化）を待っている
+let pendingPush = null;     // back() の結果を待つ間に開いた作品（結果が来てから push する）
+const BACK_WAIT_MS = 600;   // back() の結果をこれだけ待つ
+function histPush(id) {
+  const h = gsHistory();
+  if (!h) return;
+  h.push({ overlay: true, item: id }, { item: id });
+  detailPushed = true;
+}
+function histReplace(st, params) { const h = gsHistory(); if (h) h.replace(st, params); }
+/* 詳細の段を履歴から外す（「← 一覧」・Esc で閉じたとき） */
+function leaveDetailEntry() {
+  if (!detailPushed) { histReplace(null, {}); return; }
+  detailPushed = false;
+  awaitingBack = true;
+  try { window.history.back(); } catch (_) { /* 下の待ちで replace に替える */ }
+  setTimeout(() => {
+    if (!awaitingBack) return;
+    awaitingBack = false;   // back() が効かなかった：今の段を書き換える
+    if (pendingPush) { const id = pendingPush; pendingPush = null; histReplace({ overlay: true, item: id }, { item: id }); detailPushed = true; }
+    else histReplace(null, {});
+  }, BACK_WAIT_MS);
+}
+function onHistoryChange(e) {
+  if (awaitingBack) {   // 自分の back() の結果。閉じるのは済んでいる
+    awaitingBack = false;
+    if (pendingPush) { const id = pendingPush; pendingPush = null; if (state.detailOpen && state.selId === id) histPush(id); }
+    return;
+  }
+  const st = e && e.state;
+  const id = st && st.overlay && hasItem(st.item) ? st.item : null;
+  if (!narrowMq.matches) {   // PC：段の作品を選ぶだけ（重なりは無い）
+    detailPushed = false;
+    if (id && id !== state.selId) { state.selId = id; renderMain(); renderDetail(); document.getElementById('detail').scrollTop = 0; }
+    return;
+  }
+  if (id) { detailPushed = true; openDetail(id, 'none'); }
+  else closeDetail(true);
+}
+/* 960px 以下で詳細を重ねて開く。how：'push'（一覧から。履歴を1段積む）／'none'（履歴の変化・?item= のリンクから） */
+function openDetail(id, how) {
+  const wasOpen = state.detailOpen;
+  state.selId = id; state.detailOpen = true;
+  applyLayers();                 // 先に後ろを止める（今のスクロール位置を覚える）
+  renderMain(); renderDetail();
+  document.getElementById('detail').scrollTop = 0;
+  if (!wasOpen) { const back = document.getElementById('detail-back'); if (back) back.focus({ preventScroll: true }); }
+  if (how !== 'push') return;
+  if (wasOpen) histReplace({ overlay: true, item: id }, { item: id });
+  else if (awaitingBack) pendingPush = id;
+  else histPush(id);
+}
+/* 重ねた詳細を閉じる。スクロール位置は applyLayers が戻す。フォーカスは開いた作品のカード（リストの行）へ。
+   fromHistory：「戻る」で閉じた（履歴はもう戻っている） */
+function closeDetail(fromHistory) {
+  if (!state.detailOpen) return;
+  state.detailOpen = false;
+  applyLayers();
+  const card = state.selId && document.querySelector(`#main [data-select="${CSS.escape(state.selId)}"]`);
+  if (card) {
+    card.focus({ preventScroll: true });
+    revealCard(card);
+  } else {
+    document.getElementById(narrowMq.matches ? 'm-filter-btn' : 'search').focus({ preventScroll: true });
+  }
+  if (fromHistory) detailPushed = false; else leaveDetailEntry();
+}
+/* カードが画面（960px 以下は上に固定した2行の下）から外れていれば、見える位置までスクロールする。
+   詳細のタグで絞り込んで一覧が変わったときや、PC で ?item= を開いたとき用 */
+function revealCard(card) {
+  const r = card.getBoundingClientRect();
+  if (narrowMq.matches) {
+    const top = document.getElementById('filters').getBoundingClientRect().bottom;
+    if (r.top < top || r.bottom > window.innerHeight) card.scrollIntoView({ block: 'center' });
+  } else {
+    const m = document.getElementById('main').getBoundingClientRect();
+    if (r.top < m.top || r.bottom > m.bottom) card.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+/* M7：URL の ?item=<フォルダID> で開いたときの作品。google.script.url.getLocation は非同期なので、
+   一覧の読み込みと両方そろってから一度だけ使う。960px 以下は詳細を重ねて開き（履歴は積まない。この URL がすでに
+   作品を指している）、PC はその作品を選んで一覧の中で見える位置に出す。一覧に無い ID は無視する */
+const start = { loc: false, item: '', done: false };
+function readStartLocation() {
+  const u = window.google && google.script && google.script.url;
+  if (!u) { start.loc = true; return; }
+  u.getLocation((loc) => {
+    start.item = (loc && loc.parameter && loc.parameter.item) || '';
+    start.loc = true;
+    applyStartItem();
+  });
+}
+function applyStartItem() {
+  if (start.done || !start.loc || state.loading || state.loadError) return;
+  start.done = true;
+  const id = start.item;
+  if (!hasItem(id)) return;
+  if (narrowMq.matches) { openDetail(id, 'none'); return; }
+  state.selId = id; renderMain(); renderDetail();
+  const card = document.querySelector(`#main [data-select="${CSS.escape(id)}"]`);
+  if (card) revealCard(card);
+}
+
+/* 幅が 960px をまたいだとき。PC に広げたら重なりを解く（詳細は横のペインに出る。履歴の段はそのまま）。
+   スクロールの枠も変わるので、画像の見張りをやり直す */
+function onNarrowChange() {
+  const a = document.activeElement;
+  const inLayer = !!(a && a.closest && a.closest('.detail-bar, .f-sheet-head, .f-sheet-foot'));   // PC では消える部品
+  if (!narrowMq.matches) {
+    state.fSheetOpen = false; state.detailOpen = false; detailPushed = false;
+    if (!state.loading) selectFirstOnPc();
+  }
+  applyLayers();
+  renderAll();
+  rewatchThumbs();
+  if (inLayer && !narrowMq.matches) {   // フォーカスを選んだ作品のカード（無ければ検索欄）へ移す
+    const card = state.selId && document.querySelector(`#main [data-select="${CSS.escape(state.selId)}"]`);
+    (card || document.getElementById('search')).focus({ preventScroll: true });
+  }
+}
+if (narrowMq.addEventListener) narrowMq.addEventListener('change', onNarrowChange); else narrowMq.addListener(onNarrowChange); // 古い Safari
 function setGuideTab(key) {
   ['manual', 'auto'].forEach((k) => {
     const on = k === key;
@@ -966,12 +1325,19 @@ document.addEventListener('click', (e) => {
   if (!t) return;
   const d = t.dataset;
   if (d.select) {
+    if (narrowMq.matches) { openDetail(d.select, 'push'); return; }   // 960px 以下：詳細を重ねて開く
     state.selId = d.select; renderMain(); renderDetail();
-    if (window.matchMedia('(max-width: 960px)').matches) document.getElementById('detail').scrollIntoView({ behavior: 'smooth' });
-    else document.getElementById('detail').scrollTop = 0;
+    document.getElementById('detail').scrollTop = 0;
+    histReplace({ item: d.select }, { item: d.select });   // PC は push しない（上の「履歴」の決まり）
     return;
   }
-  if (d.tag !== undefined) { state.tag = state.tag === d.tag ? null : d.tag; renderFilters(); renderMain(); renderDetail(); return; }
+  if (d.tag !== undefined) {
+    const inDetail = !!t.closest('#detail');   // 描き直すと t は外れるので先に調べる
+    state.tag = state.tag === d.tag ? null : d.tag; renderFilters(); renderMain(); renderDetail();
+    // 960px 以下で重ねた詳細のタグを押したら、絞り込んだ一覧を見せるために詳細を閉じる
+    if (state.detailOpen && narrowMq.matches && inDetail) closeDetail(false);
+    return;
+  }
   if (d.status) { state.status = d.status; renderFilters(); renderMain(); return; }
   if (d.author) { state.author = d.author; renderFilters(); renderMain(); return; }
   if (d.sort) { state.sort = d.sort; renderMain(); return; }
@@ -988,6 +1354,11 @@ document.addEventListener('click', (e) => {
     case 'reload': state.loading = true; state.loadError = ''; renderAll(); loadData(); break;
     case 'open-guide': openGuide(); break;
     case 'close-guide': closeGuide(); break;
+    case 'close-detail': closeDetail(false); break;
+    case 'open-filter-sheet': openFilterSheet(); break;
+    case 'close-filter-sheet': closeFilterSheet(); break;
+    case 'clear-sheet': Object.assign(state, { status: 'all', tag: null, author: 'all' }); renderFilters(); renderMain(); renderDetail(); break;
+    case 'toggle-issues': state.issuesOpen = !state.issuesOpen; renderMain(); break;
     case 'resync': if (state.selId) resyncItem(state.selId); break;
     case 'resync-issue': resyncItem(d.id); break;
     case 'copy-prompt': {
@@ -1009,16 +1380,25 @@ document.addEventListener('click', (e) => {
 document.getElementById('btn-guide').addEventListener('click', openGuide);
 document.getElementById('btn-sync').addEventListener('click', syncNow);
 document.getElementById('search').addEventListener('input', (e) => { state.q = e.target.value; renderFilters(); renderMain(); });
-document.addEventListener('keydown', (e) => {
+/* いちばん上の重なり（Esc で閉じる・Tab をその中で回す）。作品を追加するパネル → 960px 以下の詳細 → 絞り込みのシート */
+function topLayer() {
   const sheet = document.getElementById('sheet');
-  if (sheet.hidden) return;
-  if (e.key === 'Escape') { closeGuide(); return; }
-  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+  if (!sheet.hidden) return { el: sheet.querySelector('.sheet-panel'), close: closeGuide, guide: true };
+  if (!narrowMq.matches) return null;
+  if (state.detailOpen) return { el: document.getElementById('detail'), close: () => closeDetail(false) };
+  if (state.fSheetOpen) return { el: document.getElementById('f-sheet'), close: closeFilterSheet };
+  return null;
+}
+document.addEventListener('keydown', (e) => {
+  const layer = topLayer();
+  if (!layer) return;
+  if (e.key === 'Escape') { layer.close(); return; }
+  if (layer.guide && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
     const tab = e.target.closest('[role="tab"]');
     if (tab) { const next = tab.dataset.tab === 'manual' ? 'auto' : 'manual'; setGuideTab(next); document.getElementById('tab-' + next).focus(); }
   }
   if (e.key === 'Tab') {
-    const f = sheet.querySelectorAll('.sheet-panel button:not([hidden]), .sheet-panel a[href]');
+    const f = layer.el.querySelectorAll('button:not([hidden]):not([disabled]), a[href], input');
     const vis = [...f].filter((x) => x.offsetParent !== null);
     if (!vis.length) return;
     if (e.shiftKey && document.activeElement === vis[0]) { e.preventDefault(); vis[vis.length - 1].focus(); }
@@ -1026,7 +1406,10 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+{ const h = gsHistory(); if (h) h.setChangeHandler(onHistoryChange); }
+readStartLocation();   // ?item=（一覧の読み込みと並行して読む）
 renderAll();   // まず「読み込み中」を出す
+applyLayers();
 loadData();
 </script>
 </body>

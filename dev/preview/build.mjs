@@ -12,6 +12,9 @@
 //   &scroll=end           一覧の最後の作品が見えるところまでスクロールする（PC は一覧の枠、スマホ幅はページ）
 //   &blobfail=1           URL.createObjectURL が壊れた blob: の URL を返す（本物の GAS で blob: が表示できない場合の再現）
 //   &scroll=bottom        一覧の枠とページを、どちらも一番下までスクロールする
+// 作品へのリンク（M7）：&item=<folderId> を付けると、その作品を開いた状態で始まる（本番の ?item= と同じ。画面が
+//   google.script.url.getLocation で読む）。google.script.history の偽物は history.pushState / popstate で動き、
+//   呼び出しを <html data-hist="[...]"> に残す（cdp-check.mjs の出力の hist）。
 // 撮るときは --virtual-time-budget=5000 を付ける（読み込みの待ち時間を進めるため）。
 // getThumbnails の呼び出しは <html data-thumb-calls="[...]"> に残す（--dump-dom で確かめる用）。
 //   各呼び出しは { ids, large, tops }。tops は呼ばれた時点での、その画像の <img> の上端の位置（画面の上から。px）。
@@ -144,7 +147,41 @@ const fake = `<script>
     });
     return r;
   }
-  window.google = { script: { run: runner() } };
+  // google.script.history / google.script.url の偽物（本物は GAS が親のページの履歴と URL を操作する）。
+  // ここでは自分の history.pushState / replaceState と popstate で代わりをする。
+  // params：null・undefined なら今の ? 以降のまま、{} なら消す（配列は同じキーを繰り返す）。
+  // プレビュー専用の指定（scenario など）は、消さずに残す（再読み込みしても同じ場面になるように）
+  const PREVIEW_KEYS = ['scenario', 'view', 'select', 'click', 'scroll', 'blobfail'];
+  const locationObj = () => {
+    const sp = new URLSearchParams(location.search), parameter = {}, parameters = {};
+    sp.forEach((v, k) => { if (!(k in parameter)) parameter[k] = v; (parameters[k] = parameters[k] || []).push(v); });
+    return { hash: location.hash.replace(/^#/, ''), parameter, parameters };
+  };
+  const urlFor = (p, hash) => {
+    let search = location.search;
+    if (p != null) {
+      const cur = new URLSearchParams(location.search), sp = new URLSearchParams();
+      PREVIEW_KEYS.forEach((k) => cur.getAll(k).forEach((v) => sp.append(k, v)));
+      Object.keys(p).forEach((k) => [].concat(p[k]).forEach((v) => sp.append(k, v)));
+      search = sp.toString() ? '?' + sp.toString() : '';
+    }
+    const h = hash == null ? location.hash : (hash ? '#' + hash : '');
+    return location.pathname + search + h;
+  };
+  // 本物は親のページの履歴を操作するので、「戻る」でこの画面（iframe の中）のスクロール位置は変わらない。
+  // 偽物は自分の履歴を使うので、ブラウザがスクロール位置を戻さないようにして本物に合わせる
+  history.scrollRestoration = 'manual';
+  const histLog = [];   // 呼び出しの記録（<html data-hist="[...]"> に残す。確かめる用）
+  const logHist = (what, s, p) => { histLog.push(what + ' ' + JSON.stringify(s) + ' ' + JSON.stringify(p)); document.documentElement.dataset.hist = JSON.stringify(histLog); };
+  const history_ = {
+    push(s, p, hash) { logHist('push', s, p); history.pushState(s == null ? null : s, '', urlFor(p, hash)); },
+    replace(s, p, hash) { logHist('replace', s, p); history.replaceState(s == null ? null : s, '', urlFor(p, hash)); },
+    setChangeHandler(fn) {
+      window.addEventListener('popstate', (e) => { logHist('change', e.state, location.search); fn({ state: e.state, location: locationObj() }); });
+    }
+  };
+  const url_ = { getLocation(fn) { wait(0, () => fn(locationObj())); } };
+  window.google = { script: { run: runner(), history: history_, url: url_ } };
 })();
 </script>
 `;
