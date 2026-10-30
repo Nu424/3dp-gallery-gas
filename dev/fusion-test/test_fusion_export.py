@@ -464,7 +464,7 @@ class TestResolvePaths(unittest.TestCase):
         problems = fe.resolve_paths(1, broken, "", "")[1]
         self.assertEqual(len(problems), 1)
         self.assertIn("TRIAGE_DIR", problems[0])
-        self.assertIn("r", problems[0])
+        self.assertIn("先頭の r", problems[0])
         # モード2では TRIAGE_CSV・OUTPUT_DIR も調べる。OUTPUT_DIR は化けの指摘だけを出す
         problems = fe.resolve_paths(2, "C:/t", "C:/t\tx.csv", "G:\\x\x07\\items")[1]
         self.assertEqual(len(problems), 2)

@@ -126,7 +126,7 @@ a{color:var(--accent)}a:hover{color:#174A84}
 .seg{display:flex;background:var(--seg);padding:3px;border-radius:8px}
 .seg button{min-height:36px;padding:0 12px;font-size:13.5px;font-weight:500;background:transparent;border:none;border-radius:6px;cursor:pointer}
 .seg button.icon{width:40px;padding:0;display:flex;align-items:center;justify-content:center}
-.seg button[aria-pressed="true"],.seg button[aria-selected="true"]{background:#fff;box-shadow:0 1px 2px rgba(31,37,43,.2)}
+.seg button[aria-pressed="true"]{background:#fff;box-shadow:0 1px 2px rgba(31,37,43,.2)}
 
 .status-badge{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:4px;border:1px solid;white-space:nowrap}
 /* 既知の3種（使用中・参考・引退）の色。それ以外の状態は st-other（グレーの破線枠） */
@@ -232,7 +232,7 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
 .sheet-head h2{margin:0;font-size:20px;font-weight:700}
 .sheet-head .icon-btn{margin-left:auto;color:var(--ink)}
 .sheet-body{padding:24px 28px 48px;display:flex;flex-direction:column;gap:32px}
-.sheet-body h3{margin:0;font-size:17px;font-weight:700}
+.sheet-body h3{margin:0;font-size:17px;font-weight:700;display:flex;align-items:center;gap:10px}
 .sheet-body section{display:flex;flex-direction:column;gap:12px}
 .lead{margin:0;font-size:15.5px;line-height:1.8;color:var(--ink-2)}
 .hint{margin:0;font-size:14px;line-height:1.7;color:var(--ink-3)}
@@ -246,7 +246,7 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
 .rule .d{line-height:1.65;color:var(--ink-2)}
 .meta-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;align-items:start}
 .code{margin:0;padding:14px 16px;background:var(--ink);color:#F1F3F5;border-radius:10px;font-size:13px;line-height:1.6;overflow-x:auto}
-.keyrow{display:grid;grid-template-columns:64px 36px 1fr;gap:8px;font-size:13.5px;padding:7px 0;border-bottom:1px solid var(--line-2)}
+.keyrow{display:grid;grid-template-columns:76px 36px 1fr;gap:8px;font-size:13.5px;padding:7px 0;border-bottom:1px solid var(--line-2)}
 .keyrow b{font-weight:700}
 .keyrow span:last-child{color:var(--ink-2);line-height:1.6}
 .steps{margin:0;padding:0;list-style:none;display:flex;flex-direction:column}
@@ -255,13 +255,13 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
 .steps .t{font-size:14.5px;line-height:1.7}
 .steps li:last-child{border-bottom:none}
 /* 1〜3 の段の見出しと、各段の「手でやる」「自動でやる」の枠 */
-.sheet-body h3{display:flex;align-items:center;gap:10px}
 .step-no{flex:none;width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center}
 .way{border:1px solid var(--line);border-radius:10px;padding:12px 16px 6px;display:flex;flex-direction:column;gap:6px}
 .way h4{margin:0;font-size:15px;font-weight:700;display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px}
 .way-tag{font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--soft);color:var(--ink-2);border:1px solid var(--line)}
 .way-tag.auto{background:var(--accent);color:#fff;border-color:var(--accent)}
 .way > .hint:last-child,.way > .small:last-child{padding-bottom:8px}
+.way > h4 + .hint:last-child{padding-bottom:6px}
 .sheet-body code{font-family:ui-monospace,Consolas,monospace;font-size:.92em;background:var(--soft);padding:1px 5px;border-radius:4px;overflow-wrap:anywhere}
 .ai{background:var(--soft);border-color:var(--soft);padding:14px 16px 16px;gap:10px}
 .ai code{background:#fff}
