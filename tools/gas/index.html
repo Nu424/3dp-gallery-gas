@@ -378,6 +378,106 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
 .ed-broken label{display:flex;align-items:center;gap:8px;min-height:44px;font-weight:700}
 .ed-broken input{width:20px;height:20px}
 
+/* ---- 作品を追加する（画面から。第6ラウンドの A）。PC は真ん中のモーダル、960px 以下は全画面 ---- */
+.addm{position:fixed;inset:0;z-index:12;display:flex;align-items:center;justify-content:center;padding:24px}
+.addm-backdrop{position:absolute;inset:0;background:rgba(31,37,43,.42);border:none;cursor:default}
+.addm-panel{position:relative;width:min(1240px,100%);height:min(880px,100%);display:flex;flex-direction:column;background:#fff;border-radius:16px;box-shadow:0 24px 64px rgba(31,37,43,.28);overflow:hidden}
+.addm-head{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:12px 12px 12px 24px;border-bottom:1px solid var(--line-2)}
+.addm-head h2{margin:0;font-size:20px;font-weight:700}
+.addm-steps{margin:0;padding:0;list-style:none;display:flex;gap:6px;font-size:13px;color:var(--muted)}
+.addm-steps li{padding:3px 10px;border-radius:12px;background:var(--soft)}
+.addm-steps li[aria-current="step"]{background:var(--accent-soft);color:var(--accent-ink);font-weight:700}
+.addm-head .other-way{margin-left:auto;font-weight:500;font-size:13.5px}
+.addm-head .icon-btn{color:var(--ink)}
+.addm-body{flex:1;min-height:0;display:flex;flex-direction:column}
+.addm-foot{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:12px 20px;background:#fff;border-top:1px solid var(--line)}
+.addm-foot .grow{flex:1 1 220px;font-size:13.5px;color:var(--muted)}
+/* はじめ（まだファイルが無い） */
+.addm-hero{flex:1;margin:24px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;border:2px dashed var(--chip-line);border-radius:14px}
+.addm-hero .big{margin:0;font-size:19px;font-weight:700}
+.addm-hero > svg{width:44px;height:44px;color:var(--accent)}
+.addm-hero .btns{display:flex;flex-wrap:wrap;justify-content:center;gap:10px}
+.addm-hero ul{margin:6px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;font-size:14px;line-height:1.6;color:var(--ink-3);text-align:left}
+.addm-hero ul li::before{content:"・";color:var(--muted)}
+/* 3列（ファイル・作品・情報）。作品が1つで仕分けるものが無ければ2列（ファイル・情報） */
+.addm-tabs{display:none}
+.addm-cols{flex:1;min-height:0;display:grid;grid-template-columns:300px 340px minmax(0,1fr)}
+.addm-cols.single{grid-template-columns:360px minmax(0,1fr)}
+.addm-cols.single > [data-col="groups"]{display:none}
+.addm-col{min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:16px;display:flex;flex-direction:column;gap:12px;border-right:1px solid var(--line-2)}
+.addm-col:last-child{border-right:none}
+.addm-col[data-col="files"]{background:var(--soft)}
+.col-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px}
+.col-head h3{margin:0;font-size:15px;font-weight:700}
+.col-head .n{font-size:13px;color:var(--muted)}
+.col-head .btn{margin-left:auto}
+.addm-drop{display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px;font-size:13.5px;color:var(--muted);text-align:center;background:#fff;border:2px dashed var(--chip-line);border-radius:10px}
+.addm-drop .btns{display:flex;flex-wrap:wrap;justify-content:center;gap:6px}
+.addm-zone.over{outline:3px dashed var(--accent);outline-offset:2px;background:var(--accent-row)}
+.addm-hero.over{border-color:var(--accent);background:var(--accent-row)}
+.fchips{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px}
+.fchip{display:flex;align-items:center;gap:6px;min-height:42px;padding:3px 2px 3px 8px;font-size:13.5px;background:#fff;border:1px solid var(--line);border-radius:8px;cursor:grab}
+.fchip.dragging{opacity:.4}
+.fchip .ext{flex:none;min-width:36px;padding:2px 3px;font-size:10.5px;font-weight:700;text-align:center;color:#fff;background:var(--ink);border-radius:4px}
+.fchip .fname{flex:1;min-width:0;line-height:1.35;overflow-wrap:anywhere}
+.fchip .fname small{display:block;font-size:11.5px;color:var(--req)}
+.fchip .up{flex:none;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700}
+.fchip.is-done .up{color:#2E6B3A}
+.fchip.is-fail{border-color:#F3B8B0;background:#FDF4F2}
+.fchip.is-fail .up{color:var(--req)}
+.fchip.is-wait .up{color:var(--faint)}
+.mini-spin{width:13px;height:13px;border-radius:50%;border:2px solid var(--chip-line);border-top-color:var(--accent);animation:spin .9s linear infinite}
+.fchip .mv{position:relative;flex:none;width:34px;height:34px;display:flex;align-items:center;justify-content:center;color:var(--muted);border-radius:6px}
+.fchip .mv:hover,.fchip .mv:focus-within{color:var(--ink);background:var(--soft)}
+.fchip .mv:focus-within{outline:3px solid var(--accent)}
+.fchip .mv select{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.fchip .rm{width:34px;height:34px}
+.fchip input[type="checkbox"]{flex:none;width:18px;height:18px;margin:0}
+.role{display:inline-block;margin-left:6px;padding:0 6px;font-size:11px;font-weight:700;color:var(--accent-ink);background:var(--accent-soft);border-radius:8px;white-space:nowrap}
+.bulk{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font-size:13px}
+.bulk select,.addm-select{min-height:36px;padding:0 8px;font:inherit;font-size:13.5px;background:#fff;border:1px solid var(--field-line);border-radius:8px}
+.zone-note{padding:12px;font-size:13px;color:var(--muted);text-align:center;border:2px dashed var(--line);border-radius:10px}
+.gtools{display:flex;flex-wrap:wrap;gap:6px}
+.gcards{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px}
+.gcard{display:flex;flex-direction:column;gap:6px;padding:8px;background:#fff;border:1px solid var(--line);border-radius:12px}
+.gcard[aria-current="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.gcard-top{display:flex;align-items:flex-start;gap:4px}
+.gcard-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;padding:6px 8px;font-size:inherit;text-align:left;background:none;border:none;border-radius:8px;cursor:pointer}
+.gcard-main:hover{background:var(--soft)}
+.gcard-main b{font-size:14px;overflow-wrap:anywhere}
+.gcard-main .st{font-size:12.5px;font-weight:700}
+.st.ok{color:#2E6B3A}.st.ng{color:var(--warn-ink)}
+.gcard .fchips{padding:0 2px 2px}
+.gcard .empty-note{padding:8px;font-size:12.5px;color:var(--muted);text-align:center;border:1px dashed var(--line);border-radius:8px}
+.ed-row2{display:grid;grid-template-columns:minmax(0,1fr) 180px;gap:10px}
+.fname-preview{margin:-8px 0 0;font-size:13px;line-height:1.7;color:var(--ink-3);overflow-wrap:anywhere}
+.fname-preview b{padding:1px 6px;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:var(--soft);border-radius:4px}
+.fname-preview .warn{color:var(--warn-ink);font-weight:700}
+.imgs{display:flex;flex-direction:column;gap:6px}
+.imgrow{display:flex;flex-wrap:wrap;align-items:center;gap:2px 14px;padding:4px 10px;font-size:13.5px;background:var(--soft);border-radius:8px}
+.imgrow .fname{flex:1 1 150px;min-width:0;overflow-wrap:anywhere}
+.imgrow label{display:inline-flex;align-items:center;gap:6px;min-height:40px;cursor:pointer}
+.imgrow input{width:18px;height:18px;margin:0}
+/* 確認・登録 */
+.addm-confirm{flex:1;min-height:0;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:14px}
+.ccard{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px 24px;padding:14px 16px;border:1px solid var(--line);border-radius:12px}
+.ccard h3{grid-column:1 / -1;margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:15px}
+.ccard h3 code{padding:2px 8px;font-family:ui-monospace,Consolas,monospace;font-size:13.5px;background:var(--soft);border-radius:6px;overflow-wrap:anywhere}
+.ccard dl{margin:0;display:grid;grid-template-columns:72px minmax(0,1fr);gap:4px 10px;font-size:13.5px}
+.ccard dt{color:var(--muted)}
+.ccard dd{margin:0;overflow-wrap:anywhere}
+.ccard ul{margin:4px 0 0;padding-left:18px;font-size:13.5px;line-height:1.7;overflow-wrap:anywhere}
+.ccard .sub{font-size:12.5px;color:var(--muted)}
+.ccard .probs{grid-column:1 / -1;margin:0;padding:8px 12px;font-size:13.5px;line-height:1.7;color:var(--req);background:#FDF4F2;border-radius:8px}
+.ccard .res{grid-column:1 / -1;display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font-size:14px;font-weight:700}
+.res.ok{color:#2E6B3A}.res.ng{color:var(--req)}.res.wait,.res.run{color:var(--muted)}
+/* ページ全体にファイルを持ってきたとき */
+.drop-veil{position:fixed;inset:0;z-index:40;pointer-events:none;display:flex;align-items:flex-end;justify-content:center;padding:28px;background:rgba(31,95,168,.08);box-shadow:inset 0 0 0 4px var(--accent)}
+.drop-veil span{padding:12px 20px;font-size:15px;font-weight:700;color:#fff;background:var(--accent);border-radius:12px;box-shadow:0 8px 24px rgba(31,37,43,.24)}
+/* 追加の下書きがあるとき、ヘッダーの「作品を追加する」に印 */
+.split-main{position:relative}
+.split-main.has-draft::after{content:"";position:absolute;top:5px;left:5px;width:9px;height:9px;border-radius:50%;background:#F5D447;box-shadow:0 0 0 2px var(--ink)}
+
 /* 移植で加えた部分：読み込み中・エラー・要対応の各行・同期メッセージ */
 .sync-label.warn{color:var(--warn-ink);font-weight:700}
 .sync-label.err{color:var(--req);font-weight:700}
@@ -395,7 +495,7 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
 @keyframes spin{to{transform:rotate(360deg)}}
 .resync .err{color:var(--req);font-weight:700}
 .resync .warn{color:var(--warn-ink);font-weight:700}
-@media (prefers-reduced-motion: reduce){.spinner{animation-duration:3s}}
+@media (prefers-reduced-motion: reduce){.spinner,.mini-spin{animation-duration:3s}}
 .issue-row .links .btn{min-height:36px;padding:0 10px;font-size:13px}
 /* ---- 幅の段階（docs/work-plan.md の M1）----
    1280px 以上：3列（第2ラウンドのまま）。961〜1279px：3列のまま、絞り込みは最初だけたたむ（state.filtersOpen の初期値）。
@@ -460,6 +560,27 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
   .detail h2{font-size:21px}
   .hero{height:200px}
   .ed-foot{padding:10px max(16px,env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+  /* 作品を追加する：全画面。3列はタブで1列ずつ */
+  .addm{padding:0}
+  .addm-panel{width:100%;height:100%;border-radius:0;box-shadow:none}
+  .addm-head{gap:4px 8px;padding:calc(6px + env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) 6px max(16px,env(safe-area-inset-left))}
+  .addm-head h2{flex:1;font-size:18px}
+  .addm-steps{display:none}
+  .addm-head .other-way{order:3;flex-basis:100%;margin:0}
+  .addm-hero{margin:12px;padding:16px}
+  .addm-tabs{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:4px;padding:6px 12px;background:var(--seg)}
+  .addm-tabs button{min-height:44px;font-size:14px;font-weight:700;background:transparent;border:none;border-radius:7px;cursor:pointer}
+  .addm-tabs button[aria-selected="true"]{background:#fff;box-shadow:0 1px 2px rgba(31,37,43,.2)}
+  .addm-cols,.addm-cols.single{display:block;overflow-y:auto;overscroll-behavior:contain}
+  .addm-col{display:none;overflow:visible;border:none;padding:14px max(16px,env(safe-area-inset-right)) 24px max(16px,env(safe-area-inset-left))}
+  .addm-cols[data-tab="files"] > [data-col="files"],.addm-cols[data-tab="groups"] > [data-col="groups"],.addm-cols[data-tab="form"] > [data-col="form"]{display:flex}
+  .pick-dir{display:none}   /* スマホはフォルダを選べないことが多い */
+  .addm-foot{padding:10px max(16px,env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+  .addm-foot .grow{flex-basis:100%;font-size:12.5px}
+  .addm-foot .btn{flex:1;justify-content:center}
+  .addm-confirm{padding:14px max(16px,env(safe-area-inset-right)) 24px max(16px,env(safe-area-inset-left))}
+  .ccard{grid-template-columns:minmax(0,1fr)}
+  .ed-row2{grid-template-columns:minmax(0,1fr)}
   .ed-input,.ed-tag-input{font-size:16px}   /* 16px 未満だと、iOS が入力のときに画面を拡大する */
   .dlg,.dlg-wide{width:100vw;max-width:100vw;height:100svh;max-height:100svh;margin:0;border-radius:0}
   .dlg-head{padding:calc(12px + env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) 4px max(16px,env(safe-area-inset-left))}
@@ -514,7 +635,7 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
       </button>
       <!-- 「作品を追加する」：本体と ▾（ほかの追加方法と説明書のメニュー。renderAddMenu が中身を描く） -->
       <div class="add-split" id="add-split">
-        <button class="btn btn-primary split-main" id="btn-guide" type="button">
+        <button class="btn btn-primary split-main" id="btn-add" type="button">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
           <span class="m-sr">作品を追加する</span>
         </button>
@@ -592,6 +713,27 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
 </div>
 
 
+<!-- 作品を追加する（画面から）。中身は renderAdd が描く -->
+<div class="addm" id="add" hidden>
+  <button class="addm-backdrop" type="button" data-action="close-add" aria-label="閉じる" tabindex="-1"></button>
+  <section class="addm-panel" role="dialog" aria-modal="true" aria-labelledby="add-title">
+    <header class="addm-head">
+      <h2 id="add-title">作品を追加する</h2>
+      <ol class="addm-steps" id="add-steps"></ol>
+      <button class="linklike other-way" type="button" data-action="open-guide" data-guide="drive">ほかの方法（ドライブ・Fusion）</button>
+      <button class="icon-btn" type="button" data-action="close-add" aria-label="閉じる（入れた内容は残ります）" id="add-close">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
+      </button>
+    </header>
+    <div class="addm-body" id="add-body"></div>
+    <footer class="addm-foot" id="add-foot"></footer>
+  </section>
+  <input type="file" multiple hidden id="add-pick-files">
+  <input type="file" multiple webkitdirectory hidden id="add-pick-dir">
+</div>
+<!-- ページにファイルを持ってきたときの印（pointer-events なし。落とした先の判断は drop の処理） -->
+<div class="drop-veil" id="drop-veil" hidden><span></span></div>
+
 <!-- ダイアログ：確かめ（askConfirm）と、要対応を画面で直す（openIssueEdit）。中身は JS が描く -->
 <dialog class="dlg" id="confirm-dlg" aria-labelledby="confirm-title"></dialog>
 <dialog class="dlg dlg-wide" id="issue-dlg" aria-labelledby="issue-dlg-title"></dialog>
@@ -615,7 +757,8 @@ const state = {
   // 絞り込み欄を開いているか。1280px 未満では最初はたたむ（M1）。最初の表示のときだけで、その後は利用者の開け閉めのまま。
   // 960px 以下ではこの値は使わない（絞り込みは layer:'sheet' のシート）
   filtersOpen: window.matchMedia('(min-width: 1280px)').matches,
-  layer: null,           // 開いている重なり：null・'guide'（ドライブ・Fusion から追加する）・'sheet'（960px 以下の絞り込み。M3）・'detail'（960px 以下の詳細。M4）
+  layer: null,           // 開いている重なり：null・'add'（作品を追加する）・'guide'（ドライブ・Fusion から追加する）・'sheet'（960px 以下の絞り込み。M3）・'detail'（960px 以下の詳細。M4）
+  add: null,             // 作品を追加する画面の中身（addState。閉じても残る）
   guideWay: 'drive',     // ドライブ・Fusion から追加するパネルで見せるやり方：'drive'（ドライブに直接置く）・'fusion'（Fusion からまとめて書き出す）
   issuesOpen: false,     // 960px 以下：要対応の帯を開いているか（M5。PC では常に開いた見た目）
   syncing: false, resyncing: null, notice: null,   // resyncing: 再同期中の folderId。notice: { text, kind: ''|'warn'|'err' }（同期ボタン横に出す）
@@ -996,6 +1139,7 @@ const ICON = {
   pen: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg>',
   trash: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg>',
   upload: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M5 20h14"/></svg>',
+  move: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13"/><path d="M14 5l3 3-3 3"/><path d="M20 16H7"/><path d="M10 13l-3 3 3 3"/></svg>',
   close: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>',
   folder: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
   stack: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>',
@@ -1154,7 +1298,7 @@ function renderMainBody() {
 
   // 作品が1件も無いとき：次の一手を出す
   if (!state.data.items.length) {
-    main.innerHTML = issuesHTML + mSyncHTML() + `<div class="empty"><p>まだ作品がありません。「作品を追加する」から始めましょう。</p><p class="sub-note">フォルダを置いたあとは、上の「今すぐ同期」で一覧に出ます。</p><button class="btn btn-primary" type="button" data-action="open-guide">作品を追加する</button></div>`;
+    main.innerHTML = issuesHTML + mSyncHTML() + `<div class="empty"><p>まだ作品がありません。「作品を追加する」から始めましょう。</p><p class="sub-note">ファイルをこの画面に落としても始められます。</p><button class="btn btn-primary" type="button" data-action="open-add">作品を追加する</button></div>`;
     return;
   }
 
@@ -1299,20 +1443,22 @@ function setDialog(el, on, labelId, label) {
 function applyLayers() {
   const narrow = narrowMq.matches;
   const guide = state.layer === 'guide';
+  const add = state.layer === 'add';
   const det = narrow && state.layer === 'detail';
   const fs = narrow && state.layer === 'sheet';
   document.getElementById('sheet').hidden = !guide;
+  document.getElementById('add').hidden = !add;
   document.body.classList.toggle('detail-open', det);
   document.body.classList.toggle('fsheet-open', fs);
   setDialog(document.getElementById('detail'), det, 'detail-title', '作品の詳細');
   setDialog(document.getElementById('f-sheet'), fs, 'f-sheet-title', null);
   document.getElementById('m-filter-btn').setAttribute('aria-expanded', fs);
   // 後ろにするもの。作品を追加するパネルは .app の外なので .app ごと。シートは #filters の中なので、検索の行の部品だけ
-  const back = narrow && guide ? ['.app'] : det ? ['.topbar', '#filters', '#main'] : fs ? ['.topbar', '#main', '#detail', '.f-search', '#m-filter-btn'] : [];
+  const back = add || (narrow && guide) ? ['.app'] : det ? ['.topbar', '#filters', '#main'] : fs ? ['.topbar', '#main', '#detail', '.f-search', '#m-filter-btn'] : [];
   document.querySelectorAll('.app, .topbar, #filters, #main, #detail, .f-search, #m-filter-btn').forEach((el) => {
     el.inert = back.some((s) => el.matches(s));
   });
-  setScrollLock(narrow && (guide || det || fs));
+  setScrollLock(narrow && (guide || add || det || fs));
 }
 const cardOf = (id) => id ? document.querySelector(`#main [data-select="${CSS.escape(id)}"]`) : null;
 /* 重なりを開く。fromHistory：「戻る」「進む」で開いた（履歴はもう動いている）。detail のときは id の作品 */
@@ -1326,12 +1472,15 @@ function openLayer(kind, id, fromHistory) {
     // メニューから開いたときは、閉じたら ▾ に戻す（メニューの項目は隠れている）
     if (!was) lastFocus = document.activeElement && document.activeElement.closest('#add-menu') ? document.getElementById('btn-add-menu') : document.activeElement;
   }
+  if (kind === 'add' && !was) lastFocus = document.activeElement && document.activeElement.closest('#add-menu') ? document.getElementById('btn-add-menu') : document.activeElement;
   if (kind === 'detail') state.selId = id;
   state.layer = kind;
   applyLayers();                 // 先に後ろを止める（今のスクロール位置を覚える）
   if (kind === 'detail') { renderMain(); renderDetail(); document.getElementById('detail').scrollTop = 0; }
+  if (kind === 'add') renderAdd();
   if (was !== kind) {
-    const f = document.getElementById(kind === 'guide' ? 'sheet-close' : kind === 'sheet' ? 'f-sheet-close' : 'detail-back');
+    const f = kind === 'add' ? (document.getElementById('add-first') || document.getElementById('add-close'))
+      : document.getElementById(kind === 'guide' ? 'sheet-close' : kind === 'sheet' ? 'f-sheet-close' : 'detail-back');
     if (f && f.offsetParent !== null) f.focus({ preventScroll: true });
   }
   if (!fromHistory) recordOpen(kind);
@@ -1345,8 +1494,9 @@ function closeLayer(fromHistory) {
   state.layer = null;
   applyLayers();
   const narrow = narrowMq.matches;
-  if (!narrow && kind !== 'guide') { if (!fromHistory) recordClose(kind); return; }   // PC では見えていなかった
-  let f = kind === 'guide' ? (lastFocus && lastFocus !== document.body ? lastFocus : document.getElementById('btn-guide')) : kind === 'sheet' ? document.getElementById('m-filter-btn') : cardOf(state.selId);
+  if (kind === 'add') renderAdd();   // ヘッダーの下書きの印
+  if (!narrow && kind !== 'guide' && kind !== 'add') { if (!fromHistory) recordClose(kind); return; }   // PC では見えていなかった
+  let f = kind === 'guide' || kind === 'add' ? (lastFocus && lastFocus !== document.body ? lastFocus : document.getElementById('btn-add')) : kind === 'sheet' ? document.getElementById('m-filter-btn') : cardOf(state.selId);
   if (!f || !document.contains(f) || f.offsetParent === null) f = cardOf(state.selId) || document.getElementById(narrow ? 'm-filter-btn' : 'search');
   f.focus({ preventScroll: narrow });
   if (kind === 'detail' && f.dataset.select) revealCard(f);
@@ -1372,7 +1522,7 @@ function revealCard(card) {
      setChangeHandler(fn)：「戻る」「進む」で fn({ state, location: { parameter, parameters, hash } }) が呼ばれる
    最初の ?item= は google.script.url.getLocation(fn) で読む。プレビューでは build.mjs が history の偽物を入れる。
    決まり（状態は histLayer の1つの値：今の段に積んでいる重なり。null なら積んでいない＝一覧の段）：
-   - 段は一覧の段の上に高々1つ。state は { overlay: 'detail', item } / { overlay: 'sheet' } / { overlay: 'guide' }。
+   - 段は一覧の段の上に高々1つ。state は { overlay: 'detail', item } / { overlay: 'sheet' } / { overlay: 'guide' } / { overlay: 'add' }。
      詳細の段だけ URL を ?item=<フォルダID> にする
    - 960px 以下で重なりを開く：積んでいなければ push、積んでいれば replace（載せ替え。何段も積むと、
      一覧に戻るまで「戻る」を何回も押すことになるため）
@@ -1431,7 +1581,7 @@ function onHistoryChange(e) {
   const st = e && e.state;
   let kind = st && st.overlay;
   if (kind === 'detail' && !hasItem(st.item)) kind = null;
-  if (kind !== 'detail' && kind !== 'sheet' && kind !== 'guide') kind = null;
+  if (kind !== 'detail' && kind !== 'sheet' && kind !== 'guide' && kind !== 'add') kind = null;
   const had = histLayer;
   histLayer = kind;
   if (kind) openLayer(kind, st.item, true);
@@ -1477,7 +1627,7 @@ function onNarrowChange() {
   rewatchThumbs();
   const a = document.activeElement;
   if (a && a !== document.body && a.offsetParent !== null) return;
-  const layerEl = narrow && state.layer && state.layer !== 'guide'
+  const layerEl = state.layer === 'add' ? document.getElementById('add-close') : narrow && state.layer && state.layer !== 'guide'
     ? document.getElementById(state.layer === 'sheet' ? 'f-sheet-close' : 'detail-back') : null;
   const f = layerEl || cardOf(state.selId);
   if (f && f.offsetParent !== null) f.focus({ preventScroll: true });
@@ -1517,7 +1667,9 @@ function newEditor(scope, id, src, fp) {
 }
 const isDirty = (ed) => !!ed && (JSON.stringify(cleanFields(ed.fields)) !== JSON.stringify(cleanFields(ed.base)) || !!ed.tagInput.trim());
 const uploading = (ed) => !!ed && ed.uploads.some((u) => u.status === 'wait' || u.status === 'send');
-const edFor = (el) => el.closest('#issue-dlg') ? state.issueEdit : el.closest('#detail') ? state.edit : null;
+const edFor = (el) => el.closest('#issue-dlg') ? state.issueEdit : el.closest('#add') ? selGroup() : el.closest('#detail') ? state.edit : null;
+/* 編集の箱を描いている枠（詳細・要対応のダイアログ・作品を追加する画面） */
+const boxOf = (ed) => document.getElementById(ed.scope === 'issue' ? 'issue-dlg' : ed.scope === 'add' ? 'add' : 'detail');
 /* 入力の検査（サーバーの checkMeta と同じ決まり。正はサーバー） */
 function validate(ed) {
   const f = cleanFields(ed.fields), e = {};
@@ -1583,7 +1735,8 @@ function edFootHTML(ed) {
 }
 /* 入力のたびに、下の行の文と保存ボタンの名前だけを直す（フォームは描き直さない） */
 function updateFoot(ed) {
-  const box = ed.scope === 'issue' ? document.getElementById('issue-dlg') : document.getElementById('detail');
+  if (ed.scope === 'add') { paintGroup(ed); return; }
+  const box = boxOf(ed);
   const text = box.querySelector('[data-ed-foot-text]');
   if (text && ed.scope === 'detail') { text.textContent = edFootText(ed); text.classList.toggle('dirty', isDirty(ed) && !ed.saving); }
   const save = box.querySelector('[data-ed-save]');
@@ -1617,10 +1770,11 @@ function detailEditHTML(it, ed) {
 /* 形が変わったときに描き直し、focusSel の要素にフォーカスを置く（末尾にカーソル） */
 function rerenderEditor(ed, focusSel) {
   if (ed.scope === 'issue') renderIssueDialog();
+  else if (ed.scope === 'add') renderAdd();
   else if (state.edit === ed) { forceDetail = true; renderDetail(); }
   else return;
   if (!focusSel) return;
-  const box = ed.scope === 'issue' ? document.getElementById('issue-dlg') : document.getElementById('detail');
+  const box = boxOf(ed);
   const el = box.querySelector(focusSel);
   if (!el) return;
   el.focus();
@@ -1633,7 +1787,7 @@ function renderEdFiles(ed) {
   updateFoot(ed);
 }
 function refreshSugg(ed, kind) {
-  const box = ed.scope === 'issue' ? document.getElementById('issue-dlg') : document.getElementById('detail');
+  const box = boxOf(ed);
   const el = box.querySelector(`[data-sugg="${kind}"]`);
   if (el) el.innerHTML = kind === 'tags' ? suggTagsHTML(ed) : suggAuthorsHTML(ed);
 }
@@ -1962,13 +2116,711 @@ document.addEventListener('drop', (e) => {
   const z = e.target.closest && e.target.closest('[data-ed-drop]');
   if (!z || !hasFiles(e) || !state.edit) return;
   e.preventDefault();
+  e.stopPropagation();
   z.classList.remove('over');
   addFilesToItem(state.edit, [...e.dataTransfer.files]);
 });
 /* 保存していない変更・上げている途中でページを離れるときは、ブラウザに確かめてもらう */
 window.addEventListener('beforeunload', (e) => {
   const eds = [state.edit, state.issueEdit].concat([...drafts.values()]).filter(Boolean);
-  if (eds.some((x) => isDirty(x) || uploading(x))) { e.preventDefault(); e.returnValue = ''; }
+  if (eds.some((x) => isDirty(x) || uploading(x)) || addPending()) { e.preventDefault(); e.returnValue = ''; }
+});
+
+/* ============================================================
+   作品を追加する（画面から。第6ラウンドの A）
+   流れ：ファイルを落とす・選ぶ → すぐ置き場（サーバーの beginUpload が items の直下に作る _up_…）へ上げ始める →
+   その間に仕分け（どのファイルがどの作品か）と、作品ごとの説明を入れる → 確認 → 登録（registerItems が
+   置き場のファイルを作品フォルダへ移し、meta.json を書き、フォルダ名を付けて一覧に出す）。
+   - 仕分けは画面の中だけの情報。上げる先は仕分けに関係ないので、上げ終わりを待たずに仕分けできる
+   - 落としたときに仕分けの案を作る（autoSort）：フォルダ1つ＝作品1つ（中がフォルダだけなら、その1つずつ）。
+     ばらのファイルは、3Dの元データ（f3d・step など）の名前の先頭の語で作品にまとめ、ほかのファイルは同じ語の作品へ。
+     元データが無ければ、まとめて1作品。どこにも当たらないものは「まだ仕分けていない」に残す
+   - 作品が1つで仕分けるものが無ければ、作品の列を畳んで2列（ファイル・情報）にする（いちばん多い「1件だけ追加」）
+   - 作品ごとの説明のフォームは、詳細の編集と同じもの（editFormHTML。作品が編集の箱を兼ねる。scope 'add'）
+   - 閉じても（×・Esc・戻る）中身は残る（state.add）。ヘッダーの「作品を追加する」に印が付く。捨てるのは「取り消す」だけ
+   ============================================================ */
+const ADD_SKIP = /^(\.ds_store|thumbs\.db|desktop\.ini)$/i;   // 落としたフォルダの中でも読まないファイル（ほかに . で始まるもの・*.tmp）
+const fileKind = (name) => {
+  const e = extOf(name);
+  if (['f3d', 'f3z', 'step', 'stp', 'iges', 'igs'].includes(e)) return 'design';
+  if (['stl', '3mf', 'obj'].includes(e)) return 'model';
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'heif'].includes(e)) return 'image';
+  return 'other';
+};
+const THUMB_EXTS = ['png', 'jpg', 'jpeg'];   // 代表画像（thumb.<拡張子>）にできる形式（Code.gs の THUMB_FILE_NAMES）
+const LAST_AUTHOR_KEY = 'gallery.lastAuthor';  // 前回入れた「作った人」（この端末だけ）
+const lsGet = (k) => { try { return localStorage.getItem(k) || ''; } catch (_) { return ''; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (_) { /* 覚えられなくても困らない */ } };
+let addSeq = 0;
+function addState() {
+  if (!state.add) state.add = { stagingId: '', staging: null, files: [], groups: [], sel: null, step: 'sort', tab: 'files', picked: new Set(), multi: false, busy: false };
+  return state.add;
+}
+const liveFiles = () => (state.add ? state.add.files.filter((f) => !f.removed) : []);
+const filesOf = (gid) => liveFiles().filter((f) => f.group === gid);
+const groupById = (gid) => (state.add ? state.add.groups.find((g) => g.id === gid) : null) || null;
+const selGroup = () => (state.add ? groupById(state.add.sel) : null);
+/* 閉じても残っている中身があるか（ヘッダーの印・ページを離れるときの確かめ） */
+const addPending = () => !!state.add && state.add.step !== 'done' && (liveFiles().length > 0 || state.add.groups.length > 0);
+const stemOf = (n) => String(n).replace(/\.[^.]*$/, '');
+const tokenOf = (n) => stemOf(n).split(/[_\-\s.]+/).find(Boolean) || stemOf(n);
+const ymd = (ms) => { const d = new Date(ms); return isNaN(d) ? '' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const parseDirName = (n) => { const m = /^(\d{4})(\d{2})(\d{2})_(.+)$/.exec(n); return m ? { date: `${m[1]}-${m[2]}-${m[3]}`, name: m[4] } : null; };
+/* サーバーの cleanFolderLabel と同じ整え方 */
+const cleanLabel = (n) => String(n || '').replace(/[\u0000-\u001f\u007f/\\:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim().slice(0, 80).trim();
+const folderLabel = (g) => (g.date ? g.date.replace(/-/g, '') : 'YYYYMMDD') + '_' + (cleanLabel(g.name) || '（名前）');
+const realDate = (s) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || ''); if (!m) return false; const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])); return +m[1] >= 1900 && d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3]; };
+
+function newGroup(name, date, from) {
+  const A = addState();
+  const g = Object.assign(newEditor('add', 'g' + (++addSeq), { author: lsGet(LAST_AUTHOR_KEY), status: '使用中' }, ''),
+    { name: name || '', date: date || '', from: from || 'manual', token: '', extraMeta: {}, fromMeta: false, result: null });
+  A.groups.push(g);
+  if (!selGroup()) A.sel = g.id;
+  return g;
+}
+function addFileEntry(file, gid) {
+  const A = addState();
+  const f = { key: 'f' + (++addSeq), file, name: cleanName(file.name) || 'file', size: file.size, type: file.type || '', lm: file.lastModified || 0,
+    status: 'wait', error: '', fileId: '', group: gid || null, role: null, removed: false };
+  if (f.size > uploadMax()) {
+    f.status = 'fail'; f.big = true;
+    f.error = `大きすぎます（${Math.round(uploadMax() / 1048576)}MB まで）。登録したあと、ドライブで直接入れてください`;
+  }
+  A.files.push(f);
+  return f;
+}
+/* 作品の日付の案：3Dデータ（無ければ全部）のファイルの更新日のうち古いもの */
+function guessDate(g) {
+  const fs = filesOf(g.id), model = fs.filter((f) => ['design', 'model'].includes(fileKind(f.name)));
+  const ms = (model.length ? model : fs).map((f) => f.lm).filter(Boolean);
+  return ms.length ? ymd(Math.min(...ms)) : ymd(Date.now());
+}
+/* 画像の役割の案：thumb.png があればそれ、無ければ最初の png・jpg を代表画像に。ほかの画像は写真欄に出す。
+   利用者が決めたもの（role が null でないもの）は変えない */
+function autoRoles(g) {
+  const imgs = filesOf(g.id).filter((f) => fileKind(f.name) === 'image');
+  if (!imgs.some((f) => f.role === 'thumb')) {
+    const t = imgs.find((f) => f.role === null && /^thumb\.(png|jpe?g)$/i.test(f.name))
+      || imgs.find((f) => f.role === null && THUMB_EXTS.includes(extOf(f.name)) && !/^photo_/i.test(f.name));
+    if (t) t.role = 'thumb';
+  }
+  imgs.forEach((f) => { if (f.role === null) f.role = 'photo'; });
+}
+/* 登録するときの名前（代表画像は thumb.<拡張子>、写真は photo_ を付ける） */
+function finalName(f) {
+  if (f.role === 'thumb' && THUMB_EXTS.includes(extOf(f.name))) return 'thumb.' + extOf(f.name);
+  if (f.role === 'photo' && !/^photo_/i.test(f.name)) return 'photo_' + f.name;
+  return f.name;
+}
+/* 落としたフォルダにあった meta.json を作品の説明に入れる（説明のキー以外の fusion_id などは、登録のときに引き継ぐ） */
+async function applyMetaFile(g, file) {
+  try {
+    const obj = JSON.parse((await file.text()).replace(/^\uFEFF/, ''));
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) throw new Error('not object');
+    const s = (v) => (typeof v === 'string' ? v : '');
+    const list = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string') : typeof v === 'string' ? v.split(/\r?\n/) : []);
+    g.fields = { author: s(obj.author) || g.fields.author, purpose: s(obj.purpose), status: s(obj.status) || g.fields.status, tags: list(obj.tags), note: list(obj.note) };
+    g.extraMeta = {};
+    Object.keys(obj).forEach((k) => { if (!['author', 'purpose', 'status', 'tags', 'note'].includes(k)) g.extraMeta[k] = obj[k]; });
+    g.fromMeta = true;
+  } catch (_) {
+    g.error = 'フォルダの meta.json を読めなかったので、空欄から書いてください';
+  }
+}
+
+/* ---- 落とした・選んだファイルを受け取る ---- */
+/* ドロップの中身 → [{ file, path }]。path はフォルダからのパス（ばらのファイルは名前だけ）。
+   webkitGetAsEntry は drop の処理の中で呼ばないと読めなくなるので、ここ（同期の部分）で取り出す */
+function filesFromDrop(dt) {
+  const entries = [...(dt.items || [])].filter((i) => i.kind === 'file').map((i) => (i.webkitGetAsEntry ? i.webkitGetAsEntry() : null));
+  if (!entries.length || entries.some((e) => !e)) return Promise.resolve([...dt.files].map((file) => ({ file, path: file.name })));
+  const readAll = (dir) => new Promise((ok, ng) => {
+    const r = dir.createReader(), out = [];
+    const step = () => r.readEntries((es) => { if (!es.length) ok(out); else { out.push(...es); step(); } }, ng);   // 1回に100件までしか返らないので空になるまで
+    step();
+  });
+  const walk = async (e) => {
+    if (e.isFile) return [{ file: await new Promise((ok, ng) => e.file(ok, ng)), path: e.fullPath.replace(/^\//, '') }];
+    const out = [];
+    for (const k of await readAll(e)) out.push(...await walk(k));
+    return out;
+  };
+  return Promise.all(entries.map(walk)).then((ls) => ls.flat());
+}
+const filesFromInput = (input) => [...input.files].map((file) => ({ file, path: file.webkitRelativePath || file.name }));
+/* 受け取ったファイルを仕分けの案つきで加える。target：作品のID（そこへ入れる）・'__new'（新しい作品へ）・null（案を作る） */
+async function ingest(list, target) {
+  const A = addState();
+  list = list.filter((x) => x.file && !ADD_SKIP.test(x.file.name) && !/^\./.test(x.file.name) && !/\.tmp$/i.test(x.file.name));
+  if (!list.length) return;
+  if (A.busy) { showError('登録の途中です。終わってから足してください'); return; }
+  if (A.step === 'done') { resetAdd(); return ingest(list, target); }
+  A.step = 'sort';
+  const touched = new Set();
+  const metaOf = (xs) => xs.find((x) => x.file.name.toLowerCase() === 'meta.json');
+  if (target) {
+    const g = target === '__new' ? newGroup(tokenOf(list[0].file.name), '', 'manual') : groupById(target);
+    const meta = metaOf(list);
+    if (meta && !g.fromMeta) await applyMetaFile(g, meta.file);
+    list.filter((x) => x !== meta).forEach((x) => addFileEntry(x.file, g.id));
+    touched.add(g);
+  } else {
+    // フォルダごと：先頭のフォルダ1つ＝作品1つ。中がフォルダだけなら、その中のフォルダ1つずつ
+    const byTop = new Map(), loose = [];
+    list.forEach((x) => {
+      const parts = String(x.path || '').split('/').filter(Boolean);
+      if (parts.length >= 2) { if (!byTop.has(parts[0])) byTop.set(parts[0], []); byTop.get(parts[0]).push({ ...x, parts }); } else loose.push(x);
+    });
+    for (const [top, xs] of byTop) {
+      const onlyDirs = !xs.some((x) => x.parts.length === 2);
+      const byDir = new Map();
+      xs.forEach((x) => { const k = onlyDirs ? x.parts[1] : top; if (!byDir.has(k)) byDir.set(k, []); byDir.get(k).push(x); });
+      for (const [dir, ys] of byDir) {
+        const parsed = parseDirName(dir);
+        const g = newGroup(parsed ? parsed.name : dir, parsed ? parsed.date : '', 'folder');
+        const meta = ys.find((y) => y.file.name.toLowerCase() === 'meta.json' && y.parts.length === (onlyDirs ? 3 : 2));
+        if (meta) await applyMetaFile(g, meta.file);
+        ys.filter((y) => y !== meta && y.file.name.toLowerCase() !== 'meta.json').forEach((y) => addFileEntry(y.file, g.id));
+        if (!parsed) g.date = guessDate(g);
+        touched.add(g);
+      }
+    }
+    if (loose.length) placeLoose(loose, touched);
+  }
+  touched.forEach((g) => { if (!g.date) g.date = guessDate(g); autoRoles(g); });
+  if (!selGroup() && A.groups.length) A.sel = A.groups[0].id;
+  renderAdd();
+  pumpAddUploads();
+}
+/* ばらのファイルの仕分けの案（上の「流れ」の説明） */
+function placeLoose(xs, touched) {
+  const A = addState();
+  const byToken = new Map();
+  A.groups.forEach((g) => { if (g.token) byToken.set(g.token, g); });
+  const meta = xs.find((x) => x.file.name.toLowerCase() === 'meta.json');
+  xs = xs.filter((x) => x !== meta);
+  const design = xs.filter((x) => fileKind(x.file.name) === 'design');
+  const created = [];
+  design.forEach((x) => {
+    const tk = tokenOf(x.file.name).toLowerCase();
+    let g = byToken.get(tk);
+    if (!g) { g = newGroup(tokenOf(x.file.name), '', 'name'); g.token = tk; byToken.set(tk, g); created.push(g); }
+    addFileEntry(x.file, g.id);
+    touched.add(g);
+  });
+  let fallback = null;
+  if (created.length === 1) fallback = created[0];
+  else if (!design.length && A.groups.length <= 1) {   // 3Dの元データが無い：まとめて1作品（作品が1つあればそこへ）
+    fallback = A.groups[0] || newGroup(tokenOf((xs.find((x) => fileKind(x.file.name) === 'model') || xs[0]).file.name), '', 'name');
+  }
+  xs.filter((x) => !design.includes(x)).forEach((x) => {
+    const g = byToken.get(tokenOf(x.file.name).toLowerCase()) || fallback;
+    addFileEntry(x.file, g ? g.id : null);
+    if (g) touched.add(g);
+  });
+  if (meta && touched.size === 1) { const g = [...touched][0]; if (!g.fromMeta) applyMetaFile(g, meta.file).then(() => renderAdd()); }
+}
+
+/* ---- 置き場へ上げる（落とした順に、同時に UPLOAD_PARALLEL 本まで）---- */
+let addRunning = 0;
+function ensureStaging() {
+  const A = addState();
+  if (!A.staging) {
+    A.staging = callServer('beginUpload').then((r) => { A.stagingId = r.id; return r.id; }, (err) => { A.staging = null; throw err; });
+  }
+  return A.staging;
+}
+function pumpAddUploads() {
+  const A = state.add;
+  if (!A) return;
+  while (addRunning < UPLOAD_PARALLEL) {
+    const f = A.files.find((x) => x.status === 'wait' && !x.removed);
+    if (!f) break;
+    addRunning++;
+    sendOne(f, async (u, b64) => callServer('uploadItemFile', await ensureStaging(), u.name, u.type, b64, false), () => paintFile(f)).then(() => {
+      addRunning--;
+      if (f.status === 'done') f.fileId = f.result.id;
+      if (f.removed && f.fileId && A.stagingId) callServer('discardUploadedFile', A.stagingId, f.fileId).catch(() => {});
+      paintFile(f); paintAddFoot();
+      pumpAddUploads();
+    });
+  }
+  paintAddFoot();
+}
+const upIcon = (f) => f.status === 'send' ? '<span class="mini-spin" aria-hidden="true"></span>' : f.status === 'done' ? '✓' : f.status === 'fail' ? '!' : '…';
+const upTitle = (f) => ({ wait: '上げる順番を待っています', send: '上げています', done: '上げました', fail: '上げられませんでした' })[f.status];
+/* 上げている途中の表示だけを直す（全体を描き直さない。入力の途中でも邪魔しない） */
+function paintFile(f) {
+  document.querySelectorAll(`#add [data-fkey="${f.key}"]`).forEach((el) => {
+    el.className = 'fchip is-' + f.status;
+    const up = el.querySelector('.up');
+    if (up) { up.innerHTML = upIcon(f); up.title = upTitle(f); }
+    const nm = el.querySelector('.fname');
+    if (nm && f.status === 'fail' && !nm.querySelector('small')) nm.insertAdjacentHTML('beforeend', `<small>${esc(f.error)}</small>`);
+  });
+}
+
+/* ---- 作品の入力の検査 ---- */
+function groupProblems(g) {
+  const e = validate(g), p = [];
+  if (!cleanLabel(g.name)) p.push(['name', '名前']);
+  if (!realDate(g.date)) p.push(['date', '作った日']);
+  if (e.purpose) p.push(['purpose', '用途']);
+  if (e.status) p.push(['status', '状態']);
+  if (e.author) p.push(['author', '作った人']);
+  if (!filesOf(g.id).some((f) => f.status !== 'fail')) p.push(['files', 'ファイル']);
+  return p;
+}
+const takenNames = (g) => state.data.items.map((i) => i.folderName).concat((state.data.issues || []).map((i) => i.folderName), state.add.groups.filter((x) => x !== g).map(folderLabel));
+function fnamePreviewHTML(g) {
+  const label = folderLabel(g), dup = takenNames(g).includes(label);
+  return `フォルダ名：<b>${esc(label)}</b>${dup ? ' <span class="warn">同じ名前があるので、末尾に -v2 などが付きます</span>' : ''}<br><span class="small">作った日は、モデルを作った日です（登録した日ではありません）。わからなければ大体で</span>`;
+}
+/* 作品のカードの見出しと状態、フォルダ名の見本だけを直す（入力のたびに呼ぶ） */
+function paintGroup(g) {
+  const p = groupProblems(g);
+  document.querySelectorAll(`#add [data-glabel="${g.id}"]`).forEach((el) => { el.textContent = folderLabel(g); });
+  document.querySelectorAll(`#add [data-gstate="${g.id}"]`).forEach((el) => { el.className = 'st ' + (p.length ? 'ng' : 'ok'); el.textContent = p.length ? 'まだ：' + p.map((x) => x[1]).join('・') : '✓ 入力済み'; });
+  const pv = document.querySelector('#add [data-fpreview]');
+  if (pv && selGroup() === g) pv.innerHTML = fnamePreviewHTML(g);
+  paintAddFoot();
+}
+
+/* ---- 描く ---- */
+function chipHTML(f, pickable) {
+  const A = state.add;
+  const opts = A.groups.filter((g) => g.id !== f.group).map((g) => `<option value="${g.id}">${esc(folderLabel(g))}</option>`).join('');
+  const role = f.group && f.role === 'thumb' && THUMB_EXTS.includes(extOf(f.name)) ? '<span class="role">代表画像</span>' : f.group && f.role === 'photo' ? '<span class="role">写真</span>' : '';
+  return `<li class="fchip is-${f.status}" draggable="true" data-fkey="${f.key}">
+    ${pickable ? `<input type="checkbox" data-add-pick="${f.key}"${A.picked.has(f.key) ? ' checked' : ''} aria-label="「${esc(f.name)}」を選ぶ">` : ''}
+    <span class="ext">${esc((extOf(f.name) || '?').toUpperCase())}</span>
+    <span class="fname">${esc(f.name)}${role}${f.status === 'fail' ? `<small>${esc(f.error)}</small>` : ''}</span>
+    <span class="up" title="${upTitle(f)}">${upIcon(f)}</span>
+    ${f.status === 'fail' && !f.big ? `<button class="btn btn-small" type="button" data-add-retry="${f.key}">もう一度</button>` : ''}
+    <label class="mv" title="ほかの作品へ移す">${ICON.move}<select data-add-move="${f.key}" aria-label="「${esc(f.name)}」を移す先"><option value="" selected>移す先…</option>${opts}${f.group ? '<option value="__none">仕分けに戻す</option>' : ''}<option value="__new">新しい作品にする</option></select></label>
+    <button class="icon-btn rm" type="button" data-add-rm="${f.key}" aria-label="「${esc(f.name)}」を外す">${ICON.x}</button>
+  </li>`;
+}
+const dropBoxHTML = () => `<div class="addm-drop">${ICON.upload}<span>ファイルやフォルダをここに落とす</span><div class="btns"><button class="btn btn-small" type="button" data-action="add-pick-files">ファイルを選ぶ</button><button class="btn btn-small pick-dir" type="button" data-action="add-pick-dir">フォルダを選ぶ</button></div></div>`;
+function filesColHTML() {
+  const A = state.add, un = liveFiles().filter((f) => !f.group);
+  const picked = un.filter((f) => A.picked.has(f.key)).length;
+  const targets = A.groups.map((g) => `<option value="${g.id}">${esc(folderLabel(g))}</option>`).join('');
+  return `<div class="col-head"><h3>まだ仕分けていないファイル</h3><span class="n">${un.length}件</span></div>
+    ${dropBoxHTML()}
+    ${un.length ? `<div class="bulk"><span>${picked ? `選んだ ${picked} 件を` : '選んでまとめて移す：'}</span><select class="addm-select" data-add-bulk aria-label="選んだファイルを移す先"${picked ? '' : ' disabled'}><option value="">移す先…</option>${targets}<option value="__new">新しい作品にする</option></select></div>
+      <ul class="fchips addm-zone" data-add-zone="__none">${un.map((f) => chipHTML(f, true)).join('')}</ul>`
+    : `<div class="zone-note addm-zone" data-add-zone="__none">${A.groups.length ? 'すべて作品に入っています。作品から外すときは、ここへドラッグ' : ''}</div>`}`;
+}
+function singleFilesHTML(g) {
+  return `<div class="col-head"><h3>ファイル</h3><span class="n">${filesOf(g.id).length}件</span></div>
+    ${dropBoxHTML()}
+    <ul class="fchips addm-zone" data-add-zone="${g.id}">${filesOf(g.id).map((f) => chipHTML(f, false)).join('')}</ul>
+    <button class="btn btn-small" type="button" data-action="add-multi" style="align-self:flex-start">複数の作品に分けて登録する</button>`;
+}
+function groupsColHTML() {
+  const A = state.add;
+  const card = (g) => {
+    const p = groupProblems(g), fs = filesOf(g.id);
+    return `<li class="gcard addm-zone" data-add-zone="${g.id}"${A.sel === g.id ? ' aria-current="true"' : ''}>
+      <div class="gcard-top"><button class="gcard-main" type="button" data-add-sel="${g.id}"><b data-glabel="${g.id}">${esc(folderLabel(g))}</b><span class="st ${p.length ? 'ng' : 'ok'}" data-gstate="${g.id}">${p.length ? 'まだ：' + p.map((x) => x[1]).join('・') : '✓ 入力済み'}</span></button>
+        <button class="icon-btn" type="button" data-add-del-group="${g.id}" aria-label="作品「${esc(folderLabel(g))}」をやめる（ファイルは仕分けに戻ります）">${ICON.x}</button></div>
+      ${fs.length ? `<ul class="fchips">${fs.map((f) => chipHTML(f, false)).join('')}</ul>` : '<div class="empty-note">ファイルをここへドラッグ</div>'}
+    </li>`;
+  };
+  return `<div class="col-head"><h3>作品</h3><span class="n">${A.groups.length}件</span><button class="btn btn-small" type="button" data-action="add-new-group">＋ 作品を足す</button></div>
+    ${A.groups.length ? `<div class="gtools"><button class="btn btn-small" type="button" data-action="add-merge-all">全部を1つの作品に</button><button class="btn btn-small" type="button" data-action="add-split-all">3Dデータごとに分ける</button></div>` : ''}
+    <p class="small">ファイルを作品へドラッグして仕分けます（各ファイルの ⇄ からも移せます）。作品を押すと、その説明を書けます。</p>
+    <ul class="gcards">${A.groups.map(card).join('')}</ul>
+    <div class="zone-note addm-zone" data-add-zone="__new">ここにファイルを落とすと、新しい作品になります</div>`;
+}
+function imagesHTML(g) {
+  const imgs = filesOf(g.id).filter((f) => fileKind(f.name) === 'image');
+  if (!imgs.length) return `<div class="ed-field"><span class="ed-label">画像</span><p class="small">画像が無いと、一覧では形のアイコンになります。あとから詳細の「編集」で足せます。</p></div>`;
+  return `<div class="ed-field" role="group" aria-labelledby="add-img-l"><span class="ed-label" id="add-img-l">画像</span><div class="imgs">${imgs.map((f) => {
+    const can = THUMB_EXTS.includes(extOf(f.name));
+    return `<div class="imgrow"><span class="fname">${esc(f.name)}</span>
+      ${can ? `<label><input type="radio" name="add-thumb-${g.id}" data-add-thumb="${f.key}"${f.role === 'thumb' ? ' checked' : ''}>一覧の代表画像</label>` : '<span class="small">代表画像は png・jpg だけ</span>'}
+      <label><input type="checkbox" data-add-photo="${f.key}"${f.role === 'photo' ? ' checked' : ''}${f.role === 'thumb' && can ? ' disabled' : ''}>詳細の写真欄に出す</label></div>`;
+  }).join('')}</div><span class="small">代表画像は thumb.${'{'}png/jpg{'}'}、写真は photo_〜 という名前で登録します</span></div>`;
+}
+function groupFormHTML(g) {
+  const A = state.add, i = A.groups.indexOf(g);
+  return `<div class="col-head"><h3>作品の説明</h3>${A.groups.length > 1 ? `<span class="n">${i + 1} / ${A.groups.length}</span>` : ''}</div>
+    ${g.fromMeta ? '<p class="small">フォルダにあった meta.json の内容を入れました</p>' : ''}
+    <div class="ed" data-editor="add">
+      <div class="ed-row2">
+        <div class="ed-field"><label class="ed-label" for="add-name">名前 <span class="req req-must">必須</span></label><input class="ed-input" id="add-name" data-add="name" value="${esc(g.name)}" placeholder="一覧で見て何かわかる名前" autocomplete="off"></div>
+        <div class="ed-field"><label class="ed-label" for="add-date">作った日 <span class="req req-must">必須</span></label><input class="ed-input" id="add-date" type="date" data-add="date" value="${esc(g.date)}"></div>
+      </div>
+      <p class="fname-preview" data-fpreview>${fnamePreviewHTML(g)}</p>
+      ${editFormHTML(g)}
+      ${imagesHTML(g)}
+      ${A.groups.length > 1 ? '<button class="btn btn-small" type="button" data-action="add-copy-common" style="align-self:flex-start">作った人・状態・タグを、ほかの作品にも入れる</button>' : ''}
+    </div>`;
+}
+function confirmHTML() {
+  const A = state.add, un = liveFiles().filter((f) => !f.group);
+  const resHTML = (g) => {
+    const r = g.result;
+    if (!r) return '';
+    if (r.state === 'ok') return `<span class="res ok">✓ 登録しました（${esc(r.folderName)}）${r.id ? `<button class="btn btn-small" type="button" data-add-open="${esc(r.id)}">一覧で見る</button>` : ''}</span>`;
+    if (r.state === 'fail') return `<span class="res ng">登録できませんでした：${esc(r.error)}</span>`;
+    if (r.state === 'run') return '<span class="res run"><span class="mini-spin" aria-hidden="true"></span>登録しています…</span>';
+    const left = filesOf(g.id).filter((f) => f.status === 'wait' || f.status === 'send').length;
+    return `<span class="res wait">${left ? `ファイルを上げ終わるのを待っています（あと ${left} 件）` : '順番を待っています'}</span>`;
+  };
+  return `<div class="addm-confirm">
+    ${A.step === 'confirm' ? '<p class="hint">この内容で、items フォルダに作品フォルダを作ります。登録した作品はすぐ一覧に出ます（同期は要りません）。あとから詳細の「編集」で直せます。</p>' : ''}
+    ${un.length && A.step === 'confirm' ? `<p class="ed-problem">${ICON.warn}<span>仕分けていないファイルが ${un.length} 件あります。これは登録しません。</span></p>` : ''}
+    <ul class="gcards">${A.groups.map((g) => {
+      const f = cleanFields(g.fields), fs = filesOf(g.id), ok = fs.filter((x) => x.status !== 'fail'), bad = fs.filter((x) => x.status === 'fail');
+      const p = A.step === 'confirm' ? groupProblems(g) : [];
+      const dup = !(g.result && g.result.state === 'ok') && takenNames(g).includes(folderLabel(g));
+      return `<li class="ccard">
+        <h3><code>${esc(folderLabel(g))}</code>${dup ? '<span class="small">（同じ名前があるので -v2 などが付きます）</span>' : ''}</h3>
+        ${resHTML(g) ? `<div class="res-wrap" style="grid-column:1/-1">${resHTML(g)}</div>` : ''}
+        <div><dl><dt>用途</dt><dd>${esc(f.purpose) || '—'}</dd><dt>状態</dt><dd>${esc(f.status) || '—'}</dd><dt>タグ</dt><dd>${f.tags.length ? f.tags.map((x) => '#' + esc(x)).join(' ') : '—'}</dd><dt>作った人</dt><dd>${esc(f.author) || '—'}</dd></dl>
+          ${f.note.length ? `<ul>${f.note.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}</div>
+        <div><b style="font-size:13.5px">ファイル ${ok.length} 件</b><ul>${ok.map((x) => `<li>${esc(finalName(x))}${finalName(x) !== x.name ? ` <span class="sub">（${esc(x.name)}）</span>` : ''}${x.status !== 'done' ? ' <span class="sub">…上げています</span>' : ''}</li>`).join('')}</ul>
+          ${bad.length ? `<p class="small" style="color:var(--req);margin-top:4px">上げられなかった ${bad.length} 件（${bad.map((x) => esc(x.name)).join('、')}）は登録しません</p>` : ''}</div>
+        ${p.length ? `<p class="probs">まだ入っていないもの：${p.map((x) => x[1]).join('・')} <button class="linklike" type="button" data-add-fix="${g.id}">直す</button></p>` : ''}
+      </li>`;
+    }).join('')}</ul></div>`;
+}
+function addSummary() {
+  const fs = liveFiles(), done = fs.filter((f) => f.status === 'done').length, fail = fs.filter((f) => f.status === 'fail').length;
+  const ng = state.add.groups.filter((g) => groupProblems(g).length).length;
+  return `ファイル ${fs.length} 件（上げ終わり ${done}${fail ? `・失敗 ${fail}` : ''}）・作品 ${state.add.groups.length} 件${ng ? `（まだ書いていない作品 ${ng} 件）` : ''}`;
+}
+function paintAddFoot() {
+  const el = document.querySelector('#add [data-add-sum]');
+  if (el && state.add) el.textContent = addSummary();
+  document.getElementById('btn-add').classList.toggle('has-draft', addPending());
+}
+function renderAdd() {
+  const A = state.add;
+  const body = document.getElementById('add-body'), foot = document.getElementById('add-foot');
+  document.getElementById('btn-add').classList.toggle('has-draft', addPending());
+  const steps = [['sort', '① ファイルと説明'], ['confirm', '② 確かめて登録']];
+  const cur = !A || A.step === 'sort' ? 'sort' : 'confirm';
+  document.getElementById('add-steps').innerHTML = steps.map(([k, l]) => `<li${k === cur ? ' aria-current="step"' : ''}>${l}</li>`).join('');
+  if (state.layer !== 'add') return;
+  if (!A || (!liveFiles().length && !A.groups.length)) {
+    body.innerHTML = `<div class="addm-hero addm-zone" data-add-zone="">
+      ${ICON.upload}<p class="big">3Dデータや画像を、ここに落としてください</p>
+      <div class="btns"><button class="btn btn-primary" type="button" data-action="add-pick-files" id="add-first">ファイルを選ぶ</button><button class="btn pick-dir" type="button" data-action="add-pick-dir">フォルダを選ぶ</button></div>
+      <ul><li>1つの作品のファイル（f3d・step・stl・写真など）をまとめて落とすと、そのまま1作品になります</li>
+        <li>作品ごとのフォルダを落とすと、フォルダ1つが作品1つになります（中に meta.json があれば説明も読みます）</li>
+        <li>落とした時点から上がり始めます。上がっている間に、説明を書いておけます</li></ul></div>`;
+    foot.innerHTML = '<span class="grow">登録した作品はすぐ一覧に出ます（同期は要りません）。大きいファイル（' + Math.round(uploadMax() / 1048576) + 'MB を超えるもの）は、登録したあとドライブで入れてください</span>';
+    return;
+  }
+  if (A.step === 'sort') {
+    const un = liveFiles().filter((f) => !f.group).length;
+    const single = A.groups.length === 1 && !un && !A.multi;
+    if (single && A.tab === 'groups') A.tab = 'form';
+    const g = selGroup();
+    const tabs = single ? [['files', `ファイル（${liveFiles().length}）`], ['form', '説明']] : [['files', `未仕分け（${un}）`], ['groups', `作品（${A.groups.length}）`], ['form', '説明']];
+    body.innerHTML = `<div class="addm-tabs" role="tablist" aria-label="表示する列">${tabs.map(([k, l]) => `<button type="button" role="tab" aria-selected="${A.tab === k}" data-add-tab="${k}">${l}</button>`).join('')}</div>
+      <div class="addm-cols${single ? ' single' : ''}" data-tab="${A.tab}">
+        <div class="addm-col" data-col="files">${single ? singleFilesHTML(g) : filesColHTML()}</div>
+        <div class="addm-col" data-col="groups">${single ? '' : groupsColHTML()}</div>
+        <div class="addm-col" data-col="form">${g ? groupFormHTML(g) : '<p class="hint">作品を選ぶと、ここで説明を書けます。</p>'}</div>
+      </div>`;
+    foot.innerHTML = `<span class="grow" data-add-sum aria-live="polite">${addSummary()}</span>
+      <button class="btn" type="button" data-action="add-discard">取り消す</button>
+      <button class="btn btn-primary" type="button" data-action="add-next"${A.groups.length ? '' : ' disabled'}>確かめる（${A.groups.length} 作品）</button>`;
+    return;
+  }
+  body.innerHTML = confirmHTML();
+  if (A.step === 'confirm') {
+    const ng = A.groups.some((g) => groupProblems(g).length);
+    foot.innerHTML = `<button class="btn" type="button" data-action="add-back">← 戻って直す</button>
+      <span class="grow" data-add-sum aria-live="polite">${ng ? 'まだ入っていない作品があります。「直す」から書いてください' : addSummary()}</span>
+      <button class="btn btn-primary" type="button" data-action="add-register"${ng ? ' disabled' : ''}>登録する（${A.groups.length} 作品）</button>`;
+  } else if (A.step === 'register') {
+    const n = A.groups.filter((g) => g.result && (g.result.state === 'ok' || g.result.state === 'fail')).length;
+    foot.innerHTML = `<span class="grow" aria-live="polite">登録しています…（${n} / ${A.groups.length}）。この画面を閉じても続きます</span>`;
+  } else {
+    const ok = A.groups.filter((g) => g.result && g.result.state === 'ok').length, ng = A.groups.length - ok;
+    foot.innerHTML = `<span class="grow" aria-live="polite">${ok} 件を登録しました${ng ? `。${ng} 件は登録できませんでした` : ''}</span>
+      ${ng ? '<button class="btn" type="button" data-action="add-back">戻って直す</button><button class="btn" type="button" data-action="add-register">できなかった分をもう一度</button>' : '<button class="btn" type="button" data-action="add-again">続けて追加する</button>'}
+      <button class="btn btn-primary" type="button" data-action="add-finish">閉じる</button>`;
+  }
+}
+
+/* ---- 操作 ---- */
+function moveFiles(keys, to) {
+  const A = state.add;
+  let g = null;
+  if (to === '__new') { const f0 = A.files.find((f) => f.key === keys[0]); g = newGroup(f0 ? tokenOf(f0.name) : '', '', 'manual'); A.sel = g.id; A.multi = true; }
+  else if (to && to !== '__none') g = groupById(to);
+  const from = new Set();
+  keys.forEach((k) => {
+    const f = A.files.find((x) => x.key === k);
+    if (!f) return;
+    if (f.group) from.add(f.group);
+    f.group = g ? g.id : null;
+    if (g && f.role === 'thumb' && filesOf(g.id).some((x) => x !== f && x.role === 'thumb')) f.role = 'photo';
+    A.picked.delete(k);
+  });
+  if (!g || to === '__none') A.multi = true;
+  if (g) { if (!g.date) g.date = guessDate(g); autoRoles(g); }
+  // 空になった作品は、説明もまだ書いていなければ消す（仕分けの案で自動に作ったもの）
+  from.forEach((gid) => {
+    const x = groupById(gid);
+    if (x && !filesOf(gid).length && !cleanFields(x.fields).purpose && !x.fromMeta) removeGroup(gid);
+  });
+  renderAdd();
+}
+/* 3Dデータごとに分ける：元データ（無ければ印刷用）の名前の先頭の語で作品を作り直す。同じ語のファイルはその作品へ、ほかは仕分けに戻す */
+async function splitByDesign() {
+  const A = state.add;
+  if (A.groups.some((g) => cleanFields(g.fields).purpose) && !(await askConfirm({ title: '作品を作り直しますか？', text: '今の作品の分け方と、書いた説明が消えます。', ok: '作り直す', cancel: '戻る', danger: true }))) return;
+  const fs = liveFiles();
+  A.groups = []; A.sel = null; A.multi = true; A.picked.clear();
+  fs.forEach((f) => { f.group = null; });
+  const byTok = new Map();
+  const make = (kind) => fs.filter((f) => !f.group && fileKind(f.name) === kind).forEach((f) => {
+    const tk = tokenOf(f.name).toLowerCase();
+    if (!byTok.has(tk)) { const g = newGroup(tokenOf(f.name), '', 'name'); g.token = tk; byTok.set(tk, g); }
+    f.group = byTok.get(tk).id;
+  });
+  make('design');
+  if (!byTok.size) make('model');
+  fs.filter((f) => !f.group).forEach((f) => { const g = byTok.get(tokenOf(f.name).toLowerCase()); if (g) f.group = g.id; });
+  A.groups.forEach((g) => { g.date = guessDate(g); autoRoles(g); });
+  renderAdd();
+}
+function removeGroup(gid) {
+  const A = state.add;
+  A.files.forEach((f) => { if (f.group === gid) f.group = null; });
+  A.groups = A.groups.filter((g) => g.id !== gid);
+  if (A.sel === gid) A.sel = A.groups[0] ? A.groups[0].id : null;
+}
+function removeFile(key) {
+  const A = state.add, f = A.files.find((x) => x.key === key);
+  if (!f) return;
+  f.removed = true;
+  A.picked.delete(key);
+  if (f.fileId && A.stagingId) callServer('discardUploadedFile', A.stagingId, f.fileId).catch(() => {});
+  renderAdd();
+}
+function resetAdd() {
+  state.add = null;
+  renderAdd();
+}
+async function discardAdd() {
+  const A = state.add;
+  if (A && liveFiles().length && !(await askConfirm({ title: '取り消しますか？', text: '落としたファイルと書いた説明が消えます（まだ登録していない分）。登録した作品はそのまま残ります。', ok: '取り消す', cancel: '戻る', danger: true }))) return;
+  if (A && A.staging) A.staging.then((id) => callServer('abandonUpload', id)).catch(() => {});
+  resetAdd();
+  closeLayer(false);
+}
+/* 確かめる：書いていないところに印を付けて、確認の画面へ */
+function goConfirm() {
+  const A = state.add;
+  A.groups.forEach((g) => { commitTagInput(g); g.errors = validate(g); });
+  A.step = 'confirm';
+  renderAdd();
+  const b = document.querySelector('#add [data-action="add-register"]:not([disabled])') || document.querySelector('#add [data-add-fix]');
+  if (b) b.focus();
+}
+function fixGroup(gid) {
+  const A = state.add, g = groupById(gid);
+  A.step = 'sort'; A.sel = gid; A.tab = 'form';
+  renderAdd();
+  const p = groupProblems(g)[0];
+  const sel = !p ? '#add-name' : p[0] === 'name' ? '#add-name' : p[0] === 'date' ? '#add-date' : p[0] === 'status' ? '[data-ed-status]' : p[0] === 'files' ? '[data-action="add-pick-files"]' : `#ed-add-${p[0]}`;
+  const el = document.querySelector('#add ' + sel);
+  if (el) el.focus();
+}
+/* 登録：作品を1つずつ。その作品のファイルを上げ終わるのを待ってから registerItems を呼ぶ */
+const waitUploads = (g) => new Promise((ok) => {
+  const check = () => (filesOf(g.id).some((f) => f.status === 'wait' || f.status === 'send') ? setTimeout(check, 400) : ok());
+  check();
+});
+async function registerAll() {
+  const A = state.add;
+  if (A.busy) return;
+  A.busy = true;
+  A.step = 'register';
+  const todo = A.groups.filter((g) => !(g.result && g.result.state === 'ok'));
+  todo.forEach((g) => { g.result = { state: 'wait' }; });
+  renderAdd();
+  for (const g of todo) {
+    await waitUploads(g);
+    const fs = filesOf(g.id).filter((f) => f.status === 'done' && f.fileId);
+    if (!fs.length) { g.result = { state: 'fail', error: '上がったファイルがありません' }; renderAdd(); continue; }
+    g.result = { state: 'run' }; renderAdd();
+    try {
+      const r = await callServer('registerItems', await ensureStaging(), [{ key: g.id, name: g.name, date: g.date, fields: cleanFields(g.fields), extraMeta: g.extraMeta, files: fs.map((f) => ({ id: f.fileId, name: finalName(f) })) }]);
+      const x = r.results[0];
+      if (x.ok) {
+        const e = x.entry || {}, id = e.item ? e.item.folderId : e.issue ? e.issue.folderId : '';
+        if (id) applyEntry(id, e);
+        g.result = { state: 'ok', folderName: x.folderName, id: e.item ? id : '' };
+        lsSet(LAST_AUTHOR_KEY, cleanFields(g.fields).author);
+        renderFilters(); renderMain();
+      } else g.result = { state: 'fail', error: x.error };
+    } catch (err) {
+      g.result = { state: 'fail', error: errMsg(err) };
+    }
+    renderAdd();
+  }
+  A.busy = false;
+  A.step = 'done';
+  const ok = A.groups.filter((g) => g.result.state === 'ok').length;
+  state.notice = { text: ok + ' 件の作品を登録しました', kind: '' }; renderSync();
+  if (ok === A.groups.length && A.staging) A.staging.then((id) => callServer('abandonUpload', id)).catch(() => {});   // 置き場（仕分けなかった分）を片付ける
+  renderAdd();
+  const f = document.querySelector('#add [data-action="add-finish"]');
+  if (f && state.layer === 'add') f.focus();
+}
+/* 作品を追加する画面を開く（書き込めない人は、ドライブに直接置く説明を開く） */
+function openAdd(list) {
+  if (!canEdit()) { openGuide('drive'); return; }
+  if (state.layer !== 'add') openLayer('add', null, false);
+  if (list && list.length) ingest(list, null);
+}
+function addClick(t, d) {
+  const A = state.add;
+  switch (d.action) {
+    case 'add-pick-files': document.getElementById('add-pick-files').click(); return true;
+    case 'add-pick-dir': document.getElementById('add-pick-dir').click(); return true;
+    case 'add-new-group': { const g = newGroup('', ymd(Date.now()), 'manual'); A.sel = g.id; A.multi = true; A.tab = 'form'; renderAdd(); const n = document.getElementById('add-name'); if (n) n.focus(); return true; }
+    case 'add-multi': A.multi = true; A.tab = 'groups'; renderAdd(); return true;
+    case 'add-merge-all': {
+      const g = selGroup() || A.groups[0];
+      if (!g) return true;
+      liveFiles().forEach((f) => { f.group = g.id; });
+      A.groups = [g]; A.sel = g.id; A.multi = false; A.picked.clear();
+      autoRoles(g); renderAdd(); return true;
+    }
+    case 'add-split-all': splitByDesign(); return true;
+    case 'add-copy-common': {
+      const g = selGroup(), src = cleanFields(g.fields);
+      A.groups.forEach((x) => { if (x === g) return; x.fields.author = src.author; x.fields.status = src.status; src.tags.forEach((tg) => { if (!x.fields.tags.includes(tg)) x.fields.tags.push(tg); }); });
+      renderAdd(); state.notice = { text: 'ほかの作品にも入れました', kind: '' }; renderSync(); return true;
+    }
+    case 'add-next': goConfirm(); return true;
+    case 'add-back': A.step = 'sort'; A.groups.forEach((g) => { if (g.result && g.result.state !== 'ok') g.result = null; }); renderAdd(); return true;
+    case 'add-register': registerAll(); return true;
+    case 'add-discard': discardAdd(); return true;
+    case 'add-again': resetAdd(); { const b = document.getElementById('add-first'); if (b) b.focus(); } return true;
+    case 'add-finish': if (A && A.step === 'done' && A.groups.every((g) => g.result && g.result.state === 'ok')) state.add = null; closeLayer(false); renderAdd(); return true;
+    case 'close-add': closeLayer(false); return true;
+  }
+  if (d.addTab) { A.tab = d.addTab; renderAdd(); const b = document.querySelector(`#add [data-add-tab="${d.addTab}"]`); if (b) b.focus(); return true; }
+  if (d.addSel) { A.sel = d.addSel; if (narrowMq.matches) A.tab = 'form'; renderAdd(); const b = narrowMq.matches ? document.getElementById('add-name') : document.querySelector(`#add [data-add-sel="${d.addSel}"]`); if (b) b.focus(); return true; }
+  if (d.addDelGroup) { removeGroup(d.addDelGroup); A.multi = true; renderAdd(); return true; }
+  if (d.addRm) { removeFile(d.addRm); return true; }
+  if (d.addRetry) { const f = A.files.find((x) => x.key === d.addRetry); if (f) { f.status = 'wait'; f.error = ''; renderAdd(); pumpAddUploads(); } return true; }
+  if (d.addFix) { fixGroup(d.addFix); return true; }
+  if (d.addOpen) {
+    const id = d.addOpen;
+    if (A && A.groups.every((g) => g.result && g.result.state === 'ok')) state.add = null;
+    closeLayer(false);
+    if (narrowMq.matches) { openLayer('detail', id, false); return true; }
+    state.selId = id; renderMain(); renderDetail(); recordSelect(id);
+    const c = cardOf(id); if (c) { revealCard(c); c.focus({ preventScroll: true }); }
+    return true;
+  }
+  return false;
+}
+document.getElementById('add').addEventListener('change', (e) => {
+  const el = e.target, A = state.add;
+  if (el.id === 'add-pick-files' || el.id === 'add-pick-dir') { const list = filesFromInput(el); el.value = ''; ingest(list, null); return; }
+  if (!A) return;
+  if (el.dataset.addMove !== undefined) { if (el.value) moveFiles([el.dataset.addMove], el.value); return; }
+  if (el.dataset.addBulk !== undefined) { if (el.value) moveFiles([...A.picked].filter((k) => liveFiles().some((f) => f.key === k && !f.group)), el.value); return; }
+  if (el.dataset.addPick !== undefined) {
+    if (el.checked) A.picked.add(el.dataset.addPick); else A.picked.delete(el.dataset.addPick);
+    const bar = document.querySelector('#add .bulk'), n = A.picked.size;
+    if (bar) { bar.querySelector('span').textContent = n ? `選んだ ${n} 件を` : '選んでまとめて移す：'; bar.querySelector('select').disabled = !n; }
+    return;
+  }
+  const g = selGroup();
+  if (el.dataset.addThumb !== undefined && g) {
+    filesOf(g.id).forEach((f) => { if (f.role === 'thumb') f.role = 'photo'; });
+    const f = A.files.find((x) => x.key === el.dataset.addThumb); if (f) f.role = 'thumb';
+    renderAdd(); const r = document.querySelector(`#add [data-add-thumb="${el.dataset.addThumb}"]`); if (r) r.focus(); return;
+  }
+  if (el.dataset.addPhoto !== undefined && g) {
+    const f = A.files.find((x) => x.key === el.dataset.addPhoto); if (f) f.role = el.checked ? 'photo' : '';
+    return;
+  }
+});
+document.getElementById('add').addEventListener('input', (e) => {
+  const el = e.target, g = selGroup();
+  if (!g || !el.dataset.add) return;
+  g[el.dataset.add] = el.value;
+  paintGroup(g);
+});
+/* ファイルのチップのドラッグ（作品の間で移す）。選んだチップを持てば、選んだもの全部を移す */
+document.getElementById('add').addEventListener('dragstart', (e) => {
+  const c = e.target.closest && e.target.closest('.fchip');
+  if (!c || !state.add) return;
+  const k = c.dataset.fkey, keys = state.add.picked.has(k) ? [...state.add.picked] : [k];
+  e.dataTransfer.setData('text/x-fkeys', keys.join(','));
+  e.dataTransfer.effectAllowed = 'move';
+  keys.forEach((x) => document.querySelectorAll(`#add [data-fkey="${x}"]`).forEach((el) => el.classList.add('dragging')));
+});
+document.getElementById('add').addEventListener('dragend', () => {
+  document.querySelectorAll('#add .dragging, #add .over').forEach((el) => el.classList.remove('dragging', 'over'));
+});
+const isChipDrag = (e) => !!e.dataTransfer && [...(e.dataTransfer.types || [])].includes('text/x-fkeys');
+document.getElementById('add').addEventListener('dragover', (e) => {
+  const z = e.target.closest && e.target.closest('[data-add-zone]');
+  if (!z || (!isChipDrag(e) && !hasFiles(e))) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = isChipDrag(e) ? 'move' : 'copy';
+  document.querySelectorAll('#add .over').forEach((el) => { if (el !== z) el.classList.remove('over'); });
+  z.classList.add('over');
+});
+document.getElementById('add').addEventListener('dragleave', (e) => {
+  const z = e.target.closest && e.target.closest('[data-add-zone]');
+  if (z && !z.contains(e.relatedTarget)) z.classList.remove('over');
+});
+document.getElementById('add').addEventListener('drop', (e) => {
+  const z = e.target.closest && e.target.closest('[data-add-zone]');
+  document.querySelectorAll('#add .over, #add .dragging').forEach((el) => el.classList.remove('over', 'dragging'));
+  if (isChipDrag(e)) {
+    e.preventDefault(); e.stopPropagation();
+    if (z) moveFiles(e.dataTransfer.getData('text/x-fkeys').split(',').filter(Boolean), z.dataset.addZone || '__none');
+    return;
+  }
+  if (!hasFiles(e)) return;
+  e.preventDefault(); e.stopPropagation();
+  const zone = z ? z.dataset.addZone : '';
+  filesFromDrop(e.dataTransfer).then((list) => ingest(list, zone && zone !== '__none' ? zone : null));
+});
+/* ページ全体へのドロップ：どこに落としても「作品を追加する」で受ける（編集中の詳細のファイル欄・追加の画面の中は、そちらが受ける） */
+let dragDepth = 0;
+const veil = () => document.getElementById('drop-veil');
+window.addEventListener('dragenter', (e) => {
+  if (!hasFiles(e) || !canEdit() || document.querySelector('dialog[open]')) return;
+  dragDepth++;
+  veil().querySelector('span').textContent = state.layer === 'add' ? '離すと、この画面にファイルを足します'
+    : state.edit ? '離すと「作品を追加する」が開きます（この作品に足すときは、下のファイル欄へ）' : '離すと「作品を追加する」が開きます';
+  veil().hidden = false;
+});
+window.addEventListener('dragleave', (e) => {
+  if (!hasFiles(e)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (!dragDepth) veil().hidden = true;
+});
+window.addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });   // 落としたファイルをブラウザが開いてしまわないように
+window.addEventListener('drop', (e) => {
+  dragDepth = 0; veil().hidden = true;
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  if (!canEdit() || document.querySelector('dialog[open]')) return;
+  const p = filesFromDrop(e.dataTransfer);
+  openAdd(null);
+  p.then((list) => ingest(list, null));
 });
 
 /* ============================================================
@@ -2073,7 +2925,9 @@ document.addEventListener('click', (e) => {
   if (!t) return;
   const d = t.dataset;
   if (d.guideWay) { setGuideWay(d.guideWay); return; }
-  if (t.closest('#detail, #issue-dlg') && handleEditClick(t, d)) return;
+  if (t.closest('#detail, #issue-dlg, #add') && handleEditClick(t, d)) return;
+  if (t.closest('#add') && (d.action !== 'open-guide' && addClick(t, d))) return;
+  if (d.action === 'open-add') { openAdd(null); return; }
   if (d.action === 'fix-issue') { openIssueEdit(d.id); return; }
   if (d.select) {
     if (state.edit && state.edit.id !== d.select) leaveEdit(true);   // 編集中に別の作品を選んだ：変更は下書きに残す
@@ -2126,12 +2980,13 @@ document.addEventListener('click', (e) => {
     }
   }
 });
-document.getElementById('btn-guide').addEventListener('click', () => openGuide(null));
+document.getElementById('btn-add').addEventListener('click', () => openAdd(null));
 document.getElementById('btn-sync').addEventListener('click', syncNow);
 document.getElementById('search').addEventListener('input', (e) => { state.q = e.target.value; renderFilters(); renderMain(); });
 /* 開いている重なり（Esc で閉じる・Tab をその中で回す） */
 function topLayer() {
   if (state.layer === 'guide') return { el: document.querySelector('#sheet .sheet-panel'), guide: true };
+  if (state.layer === 'add') return { el: document.querySelector('#add .addm-panel') };
   if (!narrowMq.matches || !state.layer) return null;   // PC では詳細・シートは重ならない
   return { el: document.getElementById(state.layer === 'detail' ? 'detail' : 'f-sheet') };
 }
@@ -2141,7 +2996,7 @@ document.addEventListener('keydown', (e) => {
   if (!layer) return;
   if (e.key === 'Escape') { closeLayer(false); return; }
   if (e.key === 'Tab') {
-    const f = layer.el.querySelectorAll('button:not([hidden]):not([disabled]), a[href], input:not([type="file"])');
+    const f = layer.el.querySelectorAll('button:not([hidden]):not([disabled]), a[href], input:not([type="file"]):not([disabled]), select:not([disabled])');
     const vis = [...f].filter((x) => x.offsetParent !== null && getComputedStyle(x).visibility !== 'hidden');   // 隠した要素を除く
     if (!vis.length) return;
     if (e.shiftKey && document.activeElement === vis[0]) { e.preventDefault(); vis[vis.length - 1].focus(); }

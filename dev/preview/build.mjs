@@ -7,6 +7,7 @@
 //                 | heic（作品30件。large=true の返事がブラウザで表示できない画像 → 画面は S で頼み直す）
 //                 | conflict（最初の保存は「ほかの人が先に変更」で返す）| broken（要対応の meta.json が壊れている）
 //                 | upfail（名前に fail を含むファイルの送信が失敗する）| denytrash（ゴミ箱へ移す権限がない）
+//                 | regfail（名前に fail を含む作品の登録が失敗する）
 // 画面からの書き込み（updateItemMeta・trashItemFile・uploadItemFile・refreshItem）は、メモリの上の DATA を書き換える。
 //   呼び出しは <html data-writes="[...]"> に残す。送信は大きさに応じて待つ（1MB あたり 400ms）
 // プレビュー専用の指定（ヘッドレス Chrome の --screenshot で、操作した後の状態を撮るため）：
@@ -177,6 +178,26 @@ const fake = `<script>
         (pending[id] = pending[id] || []).push({ file, replace });
         ok({ id: file.id, name, size });
       });
+    },
+    beginUpload(ok) { logWrite('beginUpload'); wait(400, () => ok({ id: 'staging-1' })); },
+    discardUploadedFile(ok, fail, sid, fileId) { logWrite('discardUploadedFile ' + fileId); wait(200, () => ok({ ok: true })); },
+    abandonUpload(ok, fail, sid) { logWrite('abandonUpload ' + sid); wait(200, () => ok({ ok: true })); },
+    registerItems(ok, fail, sid, works) {
+      logWrite('registerItems ' + JSON.stringify(works));
+      wait(900, () => ok({ results: works.map((w) => {
+        if (scenario === 'regfail' && /fail/.test(w.name)) return { key: w.key, ok: false, error: '作品フォルダに書き込めませんでした：プレビュー用の疑似エラー' };
+        const base = w.date.replace(/-/g, '') + '_' + w.name;
+        const taken = DATA.items.map((x) => x.folderName);
+        let name = base; for (let i = 2; taken.includes(name); i++) name = base + '-v' + i;
+        const id = 'id-new-' + (++fileSeq);
+        const files = w.files.map((f) => ({ id: f.id, name: f.name, url: '#', downloadUrl: '#' })).concat([{ id: id + '-meta', name: 'meta.json', url: '#', downloadUrl: '#' }]).sort((a, b) => (a.name < b.name ? -1 : 1));
+        const thumb = files.find((f) => /^thumb\./.test(f.name));
+        const item = { folderId: id, folderName: name, folderUrl: '#', date: w.date, name: name.slice(9), ...w.fields, fp: 'fp-n' + (++fpSeq),
+          thumbUrl: thumb ? 'https://drive.google.com/thumbnail?id=preview-new-' + thumb.id + '&sz=w600' : null,
+          photos: files.filter((f) => /^photo_/.test(f.name)).map((f) => ({ name: f.name, url: 'https://drive.google.com/thumbnail?id=preview-new-' + f.id + '&sz=w600' })), files };
+        DATA.items.unshift(item);
+        return { key: w.key, ok: true, folderName: name, entry: { item: copy(item) } };
+      }) }));
     },
     refreshItem(ok, fail, id) {
       logWrite('refreshItem ' + id);

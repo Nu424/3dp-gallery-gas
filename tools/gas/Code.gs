@@ -134,6 +134,7 @@ var UPLOAD_MAX_BYTES = 20 * 1024 * 1024;  // 1ファイルの上限。google.scr
 var UPLOAD_NAME_MAX = 120;                // ファイル名の長さの上限（文字数）
 var STAGING_PREFIX = '_up_';              // 画面からの追加の置き場・作業中のフォルダ（先頭が _ なので同期の対象外）
 var STAGING_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 置き去りの置き場を同期で片付けるまでの時間
+var FOLDER_LABEL_MAX = 80;                // 画面から登録する作品の名前の長さの上限（文字数）
 var MSG_WRITE_PERMISSION = '作品フォルダを書き換える権限がありません。共有ドライブのメンバー（投稿者以上）か確かめてください';
 var MSG_TRASH_PERMISSION = 'ファイルをゴミ箱に移す権限がありません。共有ドライブでは「コンテンツ管理者」以上が必要です';
 var MSG_CONFLICT = 'ほかの人が先にこの作品を変更していました。最新の内容を読み込んだので、確かめてもう一度保存してください';
@@ -683,6 +684,39 @@ function cleanUploadName(name) {
   return s;
 }
 
+/**
+ * 画面から登録する作品の名前（フォルダ名の「名前」の部分）を整える。ファイル名に使えない記号と制御文字を _ にし、
+ * 前後の空白を除いて、FOLDER_LABEL_MAX 文字に収める。使えなければ空文字。
+ */
+function cleanFolderLabel(name) {
+  var s = String(name || '').replace(/[\u0000-\u001f\u007f\/\\:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim();
+  return s.slice(0, FOLDER_LABEL_MAX).trim();
+}
+
+/** 既にある名前（names）と重ならないフォルダ名。重なれば -v2、-v3 … を付ける（同期は -v2 を名前の一部として読む） */
+function uniqueFolderName(base, names) {
+  var taken = {};
+  (names || []).forEach(function (n) { taken[n] = true; });
+  if (!taken[base]) return base;
+  for (var i = 2; ; i++) {
+    if (!taken[base + '-v' + i]) return base + '-v' + i;
+  }
+}
+
+/** 1つのフォルダに入れるファイル名の並びで、重なる名前に _2、_3 … を付ける（拡張子の前） */
+function dedupeNames(names) {
+  var seen = {};
+  return names.map(function (n) {
+    var key = n.toLowerCase();
+    if (!seen[key]) { seen[key] = 1; return n; }
+    var m = /^(.*?)(\.[^.]*)?$/.exec(n);
+    for (var i = seen[key] + 1; ; i++) {
+      var cand = m[1] + '_' + i + (m[2] || '');
+      if (!seen[cand.toLowerCase()]) { seen[key] = i; seen[cand.toLowerCase()] = 1; return cand; }
+    }
+  });
+}
+
 /** 置き場（画面からの追加の作業用フォルダ）の名前か */
 function isStagingFolderName(name) {
   return String(name).indexOf(STAGING_PREFIX) === 0;
@@ -1206,6 +1240,7 @@ function runSync_(options) {
 
     var removed = 0;
     var warning = '';
+    if (!timedOut) cleanupStaging_(itemsFolder);
     if (!timedOut) {
       var alive = {};
       folders.forEach(function (f) { alive[f.id] = true; });
@@ -1431,11 +1466,14 @@ function uploadItemFile_(folderId, name, mimeType, base64, replace) {
   if (bytes.length > UPLOAD_MAX_BYTES) {
     throw userError_('「' + clean + '」は大きすぎます（' + Math.round(UPLOAD_MAX_BYTES / 1024 / 1024) + 'MB まで）。ドライブで直接入れてください');
   }
+  // 置き場の中は同じ名前を許す（別々のフォルダから来た base.stl など。登録のときに ID で選ぶ）
   var olds = [];
-  var it = folder.getFilesByName(clean);
-  while (it.hasNext()) {
-    var f = it.next();
-    if (!f.isTrashed()) olds.push(f);
+  if (!isStagingFolderName(folder.getName())) {
+    var it = folder.getFilesByName(clean);
+    while (it.hasNext()) {
+      var f = it.next();
+      if (!f.isTrashed()) olds.push(f);
+    }
   }
   if (olds.length && !replace) throw userError_('同じ名前のファイル「' + clean + '」があります');
   var created;
@@ -1452,6 +1490,116 @@ function uploadItemFile_(folderId, name, mimeType, base64, replace) {
     }
   });
   return { id: created.getId(), name: created.getName(), size: created.getSize() };
+}
+
+
+/** items の直下の、ゴミ箱に入っていないフォルダの名前（先頭 _ も含む。登録するフォルダ名の重なりを避けるため） */
+function childFolderNames_(itemsFolder) {
+  var names = [];
+  var it = itemsFolder.getFolders();
+  while (it.hasNext()) {
+    var f = it.next();
+    if (!f.isTrashed()) names.push(f.getName());
+  }
+  return names;
+}
+
+/** 置き場ごとの作業用フォルダの名前。やり直したときに同じフォルダを使えるよう、置き場の ID と作品のキーから決める */
+function workFolderName_(stagingId, key) {
+  return STAGING_PREFIX + 'w_' + String(stagingId).slice(-8) + '_' + String(key || '').replace(/[^\w-]/g, '').slice(0, 20);
+}
+
+/**
+ * 画面から追加する作品を1つ登録する（ロックは呼ぶ側が取る）。
+ *   1. items の直下に作業用フォルダ（_up_w_…。同期の対象外）を作る（やり直しなら前のものを使う）
+ *   2. 置き場のファイルをそこへ移し（送り直さない）、名前を変える（代表画像・写真の名前など）。
+ *      移せない（共有ドライブの投稿者など）ときは Drive の中でコピーする（置き場のほうは同期が片付ける）
+ *   3. meta.json を書き、フォルダ名を「YYYYMMDD_名前」にする（重なれば -v2）。最後に名前を変えるので、
+ *      途中で止まっても一覧にも要対応にも出ない
+ *   4. その作品の行を作り、画面用のデータを返す
+ * @param {Object} work { key, name, date:'YYYY-MM-DD', fields, extraMeta, files:[{id, name}] }
+ *   extraMeta：落としたフォルダにあった meta.json の、EDITABLE_META_KEYS 以外のキー（fusion_id など）
+ */
+function registerWork_(staging, itemsFolder, work) {
+  var label = cleanFolderLabel(work.name);
+  if (!label) throw userError_('作品の名前を入れてください');
+  var base = String(work.date || '').replace(/-/g, '') + '_' + label;
+  var parsed = parseFolderName(base);
+  if (!parsed.ok) throw userError_(parsed.error);
+  var keep = {};
+  var extra = work.extraMeta && typeof work.extraMeta === 'object' ? work.extraMeta : {};
+  Object.keys(extra).forEach(function (k) {
+    if (EDITABLE_META_KEYS.indexOf(k) < 0) keep[k] = extra[k];
+  });
+  var meta = mergeMetaText(keep, work.fields);
+  if (meta.errors.length) throw userError_('説明に直すところがあります：' + meta.errors.join(' / '));
+  var files = Array.isArray(work.files) ? work.files : [];
+  if (!files.length) throw userError_('ファイルがありません');
+  var names = dedupeNames(files.map(function (f) { return cleanUploadName(f.name) || 'file'; }));
+  if (names.some(function (n) { return n.toLowerCase() === META_FILE_NAME; })) throw userError_('meta.json はファイルとしては登録できません');
+
+  var tmpName = workFolderName_(staging.getId(), work.key);
+  var dirs = itemsFolder.getFoldersByName(tmpName);
+  var dir = null;
+  while (dirs.hasNext()) {
+    var d = dirs.next();
+    if (!d.isTrashed()) { dir = d; break; }
+  }
+  try {
+    if (!dir) dir = itemsFolder.createFolder(tmpName);
+    files.forEach(function (f, i) {
+      var file;
+      try {
+        file = DriveApp.getFileById(String(f.id || ''));
+      } catch (e) {
+        throw userError_('上げたファイルが見つかりません（' + f.name + '）。外してから、もう一度上げてください');
+      }
+      var inStaging = !file.isTrashed() && isDirectChildOf_(file, staging.getId());
+      var inDir = !file.isTrashed() && isDirectChildOf_(file, dir.getId());
+      if (!inStaging && !inDir) throw userError_('上げたファイルが見つかりません（' + f.name + '）。外してから、もう一度上げてください');
+      if (inStaging) {
+        try {
+          file.moveTo(dir);
+        } catch (e) {
+          if (!isPermissionError(e)) throw e;
+          if (dir.getFilesByName(names[i]).hasNext()) return;   // やり直し：前の回でコピー済み
+          file = file.makeCopy(names[i], dir);
+        }
+      }
+      if (file.getName() !== names[i]) file.setName(names[i]);
+    });
+    var metas = metaFilesIn_(dir);
+    if (metas.length) metas[0].setContent(meta.text);
+    else dir.createFile(META_FILE_NAME, meta.text, 'application/json');
+    var finalName = uniqueFolderName(base, childFolderNames_(itemsFolder));
+    dir.setName(finalName);
+  } catch (e) {
+    throw writeError_(e);
+  }
+  var r = resyncUnlocked_(dir.getId());
+  return { ok: true, folderName: finalName, entry: r.entry };
+}
+
+/**
+ * 置き去りの置き場・作業用フォルダ（_up_ で始まり、作ってから STAGING_MAX_AGE_MS を過ぎたもの）をゴミ箱へ移す。
+ * 同期の最後に呼ぶ。移せなくても（権限が無いなど）同期は止めない。
+ * @return {number} ゴミ箱へ移した数
+ */
+function cleanupStaging_(itemsFolder) {
+  var n = 0;
+  var it = itemsFolder.getFolders();
+  while (it.hasNext()) {
+    var f = it.next();
+    try {
+      if (f.isTrashed() || !isStagingFolderName(f.getName())) continue;
+      if (nowMs() - f.getDateCreated().getTime() < STAGING_MAX_AGE_MS) continue;
+      f.setTrashed(true);
+      n++;
+    } catch (e) {
+      Logger.log('置き場を片付けられませんでした（' + f.getName() + '）：' + (e && e.message ? e.message : e));
+    }
+  }
+  return n;
 }
 
 
@@ -1569,6 +1717,96 @@ function uploadItemFile(folderId, name, mimeType, base64, replace) {
   return withUserErrors_(function () {
     return uploadItemFile_(folderId, name, mimeType, base64, replace === true);
   }, { permission: MSG_WRITE_PERMISSION, prefix: '上げられませんでした：' });
+}
+
+/**
+ * 作品を追加する画面を始める：items の直下に置き場（_up_<日時>_<乱数>。同期の対象外）を作る。
+ * 画面は、ファイルを落とした時点からここへ上げ始め、その間に仕分けと入力をしてもらう。
+ * @return {{id:string}}
+ */
+function beginUpload() {
+  return withUserErrors_(function () {
+    var itemsFolder = getItemsFolder_();
+    var name = STAGING_PREFIX + nowIso_().replace(/[^0-9]/g, '').slice(0, 14) + '_' + Math.random().toString(36).slice(2, 6);
+    try {
+      return { id: itemsFolder.createFolder(name).getId() };
+    } catch (e) {
+      throw writeError_(e);
+    }
+  }, { permission: MSG_WRITE_PERMISSION, prefix: '始められませんでした：' });
+}
+
+/**
+ * 置き場に上げたファイルを外す（画面でファイルを外したとき）。ゴミ箱へ移せなくても失敗にしない（同期が片付ける）。
+ * @return {{ok:boolean}}
+ */
+function discardUploadedFile(stagingId, fileId) {
+  return withUserErrors_(function () {
+    var staging = writableFolder_(stagingId, 'staging');
+    var file = DriveApp.getFileById(String(fileId || ''));
+    if (!isDirectChildOf_(file, staging.getId())) throw userError_('このファイルは置き場にありません');
+    try {
+      file.setTrashed(true);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false };
+    }
+  }, { permission: MSG_WRITE_PERMISSION, prefix: '外せませんでした：' });
+}
+
+/**
+ * 置き場から作品を登録する（registerWork_ を1作品ずつ。1つが失敗してもほかは続ける）。
+ * @param {Array<Object>} works registerWork_ の work の配列
+ * @return {{results: Array<{key:string, ok:boolean, folderName?:string, entry?:Object, error?:string}>}}
+ */
+function registerItems(stagingId, works) {
+  return withUserErrors_(function () {
+    var staging = writableFolder_(stagingId, 'staging');
+    var itemsFolder = getItemsFolder_();
+    var results = (Array.isArray(works) ? works : []).map(function (w) {
+      var r;
+      try {
+        r = withSyncLock_(function () {
+          var sheet = getOrCreateSheet_();
+          assertCanWriteSheet_(sheet);
+          return registerWork_(staging, itemsFolder, w || {});
+        });
+      } catch (e) {
+        r = { ok: false, error: toUserError_(e, { permission: MSG_WRITE_PERMISSION, prefix: '登録できませんでした：' }).message };
+      }
+      r.key = String((w && w.key) || '');
+      return r;
+    });
+    return { results: results };
+  }, { permission: MSG_WRITE_PERMISSION, prefix: '登録できませんでした：' });
+}
+
+/**
+ * 作品を追加する画面を取り消した・登録を終えた：置き場と作業用フォルダをゴミ箱へ移す
+ * （登録した作品のフォルダは名前が変わっているので、ここには入らない）。移せなくても失敗にしない（同期が片付ける）。
+ * @return {{ok:boolean}}
+ */
+function abandonUpload(stagingId) {
+  return withUserErrors_(function () {
+    var staging = writableFolder_(stagingId, 'staging');
+    var itemsFolder = getItemsFolder_();
+    var prefix = workFolderName_(staging.getId(), '');
+    var ok = true;
+    var targets = [staging];
+    var it = itemsFolder.getFolders();
+    while (it.hasNext()) {
+      var f = it.next();
+      if (!f.isTrashed() && f.getName().indexOf(prefix) === 0) targets.push(f);
+    }
+    targets.forEach(function (f) {
+      try {
+        f.setTrashed(true);
+      } catch (e) {
+        ok = false;
+      }
+    });
+    return { ok: ok };
+  }, { permission: MSG_WRITE_PERMISSION, prefix: '片付けられませんでした：' });
 }
 
 /**
