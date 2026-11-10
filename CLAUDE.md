@@ -32,10 +32,11 @@ node dev/preview/build.mjs                     # プレビュー dev/preview/out
 ## 守ること（設計上の制約）
 
 - GAS は4ファイルのまま。ファイルの追加・分割、外部ライブラリ、拡張サービスは入れない（コピペで動くことが前提）
-- `appsscript.json` の `oauthScopes` を広げない。必要なら理由を添えてユーザーに確認する
+- `appsscript.json` の `oauthScopes` を広げない（今は `drive` / `spreadsheets` / `script.scriptapp` / `script.container.ui`。`drive` は第6ラウンドで画面からの追加・編集のためにユーザーの承認を得て広げた）。必要なら理由を添えてユーザーに確認する
+- 画面からの書き込みは Drive の作品フォルダと meta.json だけ。書いたあとは `resyncUnlocked_` で行を作り直す（スプシを直接書き換えない）。対象は毎回 `writableFolder_` で items の直下か確かめる
 - `guide.html` にスクリプトレット（`<?` で始まる構文）を書かない。AI 用の文は `#ai-prompt` の1か所が正
 - meta.json の既存キーの意味を変えない。`fusion_id` は済み判定の印（消さない・書き換えない）
-- 960px 以下の重なり（詳細・絞り込みシート・追加パネル）と「戻る」の履歴は `state.layer` / `applyLayers` に集約している。個別に hidden や history を触らない
+- 960px 以下の重なり（詳細・絞り込みシート・ドライブ・Fusion から追加するパネル・作品を追加する画面）と「戻る」の履歴は `state.layer` / `applyLayers` に集約している。個別に hidden や history を触らない。確かめと「画面で直す」は `<dialog>`（重なりにも履歴にも入れない）
 - PC（1280px 以上）の見た目を変える改修は、変える前と見比べてから
 - データ仕様を変えたら、DEVELOPMENT.md の「データ仕様を変えるときに直す箇所」を全部直す（Code.gs・guide.html・テスト・文書）
 

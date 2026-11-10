@@ -36,9 +36,9 @@
 | ファイル | 役割 |
 | --- | --- |
 | `tools/gas/Code.gs` | サーバー側。同期処理、`doGet`、画面から呼ぶ関数、トリガー、スプシのメニュー、`setup()` |
-| `tools/gas/index.html` | 画面（一覧と詳細）。見た目とブラウザ側の処理はすべてここ。`<?!= include('guide') ?>` で `guide.html` を読み込む。GASとの境目は `loadData` / `syncNow` / `resyncItem` と、画像の取り直し（`getThumbnails`）だけ |
-| `tools/gas/appsscript.json` | GASの設定ファイル（マニフェスト）。`oauthScopes`（`drive.readonly` / `spreadsheets` / `script.scriptapp` / `script.container.ui`）で許可の範囲を絞り、`webapp`（`executeAs: USER_ACCESSING`、`access: DOMAIN`）を決める。エディタでは「プロジェクトの設定」で表示をオンにして編集する。貼り方は [SETUP.md](SETUP.md#4つ目appsscriptjson-を置き換える許可の範囲を絞る) |
-| `tools/gas/guide.html` | 「作品を追加する」パネルの本文（HTMLの断片）。文章の修正はこのファイルだけで済む。構成は、用意するものの順の段（1 3Dデータ → 2 meta.json → 3 フォルダ → 4 同期）で、各段に「手でやる」「自動でやる」の枠（`.way` の `data-way`）を置き、段ごとの切り替え（`.way-seg`）で片方だけ見せる。切り替えは全段で連動し（`.sheet-body` の `data-way`。`setGuideWay`）、押した切り替えの画面上の位置を保つ。PC は2つの枠を同じ升に重ねて見せない方を `visibility:hidden` にし、切り替えても段の高さが変わらない。960px 以下は余白が大きくなるので `display:none`（位置の保持だけで、ずれを抑える）。AIに渡すプロンプトは `#ai-prompt` の1か所にまとめてある（計画書の版から改訂済み。こちらが正）。**スクリプトレット（`<?` で始まる構文）は書かない** |
+| `tools/gas/index.html` | 画面（一覧と詳細、詳細の編集、作品を追加する画面、ダイアログ）。見た目とブラウザ側の処理はすべてここ。`<?!= include('guide') ?>` で `guide.html` を読み込む。GASとの境目は `loadData` / `syncNow` / `resyncItem`、画像の取り直し（`getThumbnails`）、画面からの書き込み（`callServer` で呼ぶ関数。下の「画面からの書き込み」） |
+| `tools/gas/appsscript.json` | GASの設定ファイル（マニフェスト）。`oauthScopes`（`drive` / `spreadsheets` / `script.scriptapp` / `script.container.ui`）で許可の範囲を絞り、`webapp`（`executeAs: USER_ACCESSING`、`access: DOMAIN`）を決める。エディタでは「プロジェクトの設定」で表示をオンにして編集する。貼り方は [SETUP.md](SETUP.md#4つ目appsscriptjson-を置き換える許可の範囲を絞る) |
+| `tools/gas/guide.html` | 「ドライブ・Fusion から追加する」パネルの本文（HTMLの断片）。文章の修正はこのファイルだけで済む。構成は、用意するものの順の段（1 3Dデータ → 2 meta.json → 3 フォルダ → 4 同期）で、やり方ごとの部分を `.way`（`data-way` が `drive`＝ドライブに直接置く／`fusion`＝Fusion からまとめて書き出す）に入れる。どちらを見せるかは、パネルの見出しの下の切り替え（`index.html` の `.way-switch`。見出しごと上に固定）の1か所で決める（`state.guideWay`・`setGuideWay`。切り替えても、読んでいた段の見出しの位置を保つ）。`a[data-link="<key>"]` には links シートの URL が入る（登録が無ければ隠れる。`fillGuideLinks`）。AIに渡すプロンプトは `#ai-prompt` の1か所にまとめてある（計画書の版から改訂済み。こちらが正）。**スクリプトレット（`<?` で始まる構文）は書かない** |
 
 `Code.gs` は上から「設定」→「純粋な関数」→「エラーの扱い」→「Driveの読み取り」→「シートの読み書き」→「同期の本体」→「画面から呼ばれる関数」→「トリガー」→「スプシのメニューと初期設定」の順に並んでいる。変えたくなる値は先頭の「設定」にある。関数名の末尾が `_` のものは非公開（画面やメニューから直接呼べない）。テストから差し替えるため、一部の設定は `var` で宣言されている。
 
@@ -64,6 +64,9 @@
 | `buildSyncMessage(r, mode)` | 同期結果の文（mode: web / menu / trigger） |
 | `normalizeThumbIds(ids, max)` / `galleryImageIds` / `thumbCacheKey` / `blobToDataUrl` / `isBrowserImageMime` | 画像の取り直し：IDの整理（重複除去・上限件数）／一覧に出ている画像のIDの集合／キャッシュのキー／data URL 化／ブラウザで出せる画像形式か |
 | `nowMs` / `nowIso_` | 現在時刻（テストで差し替え） |
+| `linkTargetUrl` / `parseLinkRows` | links シートの target → URL（http(s) はそのまま、Drive の ID は `open?id=`、それ以外は捨てる）／行 → 画面に渡すリンクの配列 |
+| `cleanMetaFields` / `parseMetaObject` / `mergeMetaText` | 画面からの編集：項目を整える／meta.json の文字列 → オブジェクト／元の meta に画面の項目を重ねた文字列（知らないキーと並びは残す。検査は `checkMeta`） |
+| `cleanUploadName` / `cleanFolderLabel` / `uniqueFolderName` / `dedupeNames` / `isStagingFolderName` | 画面から上げるファイル名・作品の名前を整える／重ならないフォルダ名（`-v2`）／1フォルダの中で重なるファイル名に `_2`／置き場（`_up_`）の名前か |
 
 ### I/O（Drive・シート・Properties・Lock・Trigger に触る）
 
@@ -78,6 +81,11 @@
 | `withSyncLock_` / `userError_` / `toUserError_` / `withUserErrors_` | ロックとエラーの言い換え |
 | `runSyncFromTrigger_` / `scheduleContinuation_` / `deleteTriggersFor_` / `ensureDailyTrigger_` | トリガー |
 | `runSyncFromMenu_(rebuild)` | メニューからの同期 |
+| `resyncUnlocked_(folderId)` | `resyncItem_` の中身（ロックは呼ぶ側）。画面用のデータ（`entry`）も返す。書き込みのあとに同じロックの中で使う |
+| `readLinks_` / `findLinkTargets_` / `ensureLinksSheet_` | links シートを読む（読めなくても一覧は止めない）／Drive の決まった場所をたどる／シートを用意して足りない key の行を足す（`setup`） |
+| `writableFolder_` / `metaFilesIn_` / `writeError_` | 書き込んでよいフォルダか（items の直下・作品か置き場か）を確かめて返す／meta.json を並べる／Drive の書き込みの失敗の言い換え |
+| `updateItemMeta_` / `trashItemFile_` / `uploadItemFile_` | 画面からの編集の本体（下の「画面からの書き込み」） |
+| `registerWork_` / `childFolderNames_` / `workFolderName_` / `cleanupStaging_` | 画面からの追加の本体（1作品の登録）／フォルダ名の重なりの確認／作業用フォルダの名前／置き去りの置き場の片付け（同期の最後） |
 
 ### 公開関数（画面・メニュー・トリガーから呼ばれる）
 
@@ -89,6 +97,8 @@
 | `syncNow()` | 画面の「今すぐ同期」 | 同期（続きのトリガーは作らない） |
 | `resyncItem(folderId)` | 詳細の「この作品だけ再同期」 | 1件の再同期 |
 | `getThumbnails(ids, large)` | 画面（Driveの画像URLが読めなかったとき） | 画像を data URL で返す（下の「画像の取り直し」） |
+| `updateItemMeta` / `trashItemFile` / `uploadItemFile` / `refreshItem` | 詳細の「編集」・要対応の「画面で直す」 | meta.json の書き換え／ファイルをゴミ箱へ／ファイルを上げる／1作品を読み直して返す |
+| `beginUpload` / `discardUploadedFile` / `registerItems` / `abandonUpload` | 作品を追加する画面 | 置き場を作る／置き場のファイルを外す／置き場から作品を登録する／置き場を片付ける |
 | `dailySync()` / `continueSync()` | トリガー | 毎日の同期／時間切れの続き |
 | `onOpen()` | スプシを開いたとき | メニュー「ギャラリー」を追加 |
 | `menuSyncNow` / `menuRebuild` / `menuSetup` | メニュー | 今すぐ同期／全部作り直す／初期設定 |
@@ -98,16 +108,18 @@
 
 - **時間切れ対策**：名前順に処理し、約4.5分（`SYNC_TIME_BUDGET_MS`）で区切る。続きの位置を `SYNC_RESUME_AFTER`（スクリプトプロパティ、内部用）に保存し、メニュー・トリガー経由なら1分後の1回限りトリガーで再開。消えたフォルダの行の削除は全件を見終えた回だけ。全件完了時に `SYNC_LAST_COMPLETED_AT` を記録（画面の「最終同期」）。
 - **二重実行**：`LockService.getScriptLock()`（待ち5秒）。続きのトリガー（`continueSync`）がロックを取れなかったときは、1分後にもう一度挑戦する。
-- **同期前の権限確認**：`runSync_` / `resyncItem_` はまず `assertCanWriteSheet_` でスプシに書けるかを試し、無ければすぐ「同期にはスプシの編集権限が必要です（items フォルダは閲覧できれば足ります）」を返す（`items/` は閲覧でよい。Drive のスコープは `drive.readonly`）。
+- **同期前の権限確認**：`runSync_` / `resyncItem_` はまず `assertCanWriteSheet_` でスプシに書けるかを試し、無ければすぐ「同期にはスプシの編集権限が必要です（items フォルダは閲覧できれば足ります）」を返す（同期だけなら `items/` は閲覧でよい。画面からの追加・編集には `items/` への書き込みも要る）。
+- **画面からの書き込み**（第6ラウンド）：書くのは Drive の作品フォルダと meta.json だけで、そのあと `resyncUnlocked_` でその作品の行を作り直す（フォルダが唯一の正のまま）。書き込みとシートの更新は同期と同じロックの中。対象は毎回 `writableFolder_` で items の直下かを確かめる。Drive のスコープはこのために `drive`（第5ラウンドまでは `drive.readonly`）。
+- **置き場**：画面からの追加は、items の直下の `_up_<日時>_<乱数>`（先頭が `_` なので同期の対象外）へファイルを先に上げ、登録で作業用フォルダ `_up_w_<置き場IDの末尾>_<作品のキー>` へ移してから名前を付ける。置き去りのもの（作って `STAGING_MAX_AGE_MS`＝24時間を過ぎた `_up_` のフォルダ）は、全件を見終えた同期の最後にゴミ箱へ移す（`cleanupStaging_`。移せなくても同期は止めない）。
 - **削除の安全装置**：全件を見終えたとき、`items/` で見つかったフォルダが0件なのに既存の行がある、または既存の行が `DELETE_GUARD_MIN_ROWS`（10）以上で半数超を消すことになる場合は、削除を見送ってメッセージを返し、完了時刻も更新しない。「全部作り直す」には効かない。
 - **セル上限**：1セル50000文字（`CELL_CHAR_LIMIT`）。超える値は切り詰めて `error` に理由を残す（作品は要対応になる）。
 - **指紋**：フォルダ名＋各ファイルの名前・**ID**・サイズ・更新日時＋**検査ルール（`STATUS_CHOICES` と `REQUIRED_META_KEYS`）**。ルールを変えると次の同期で全作品が読み直される。
-- **ユーザーが設定するスクリプトプロパティは `ITEMS_FOLDER_ID` のみ**。`SYNC_RESUME_AFTER` と `SYNC_LAST_COMPLETED_AT` はコードが管理する。
+- **ユーザーが設定するスクリプトプロパティは `ITEMS_FOLDER_ID` のみ**。`SYNC_RESUME_AFTER` と `SYNC_LAST_COMPLETED_AT` はコードが管理する。説明書などのリンクは、スクリプトプロパティではなくスプシの links シートで登録する（下の「シート links」）。
 - **シートの列順や追加列を変えたら**「全部作り直す」が必要（`HEADERS` の変更）。
 
 ## 画面とサーバーの約束
 
-画面（`index.html`）はサーバーを `google.script.run` 経由で4つの関数（`getGalleryData` / `syncNow` / `resyncItem` / `getThumbnails`）だけ呼ぶ。失敗時は日本語のメッセージ入りの `Error` が投げられ、`withFailureHandler` の `err.message` で表示される。
+画面（`index.html`）はサーバーを `google.script.run` 経由で、一覧と同期の4つの関数（`getGalleryData` / `syncNow` / `resyncItem` / `getThumbnails`）と、画面からの書き込みの8つの関数（下の「画面からの書き込み」）を呼ぶ。失敗時は日本語のメッセージ入りの `Error` が投げられ、`withFailureHandler` の `err.message` で表示される。
 
 ### `getGalleryData()` の戻り値
 
@@ -116,21 +128,26 @@
   syncedAt: "2026-10-30T04:12:00+09:00" | null,  // 最後に全件を見終えた時刻（削除を見送った回は更新されない）。未同期なら null
   sheetUrl: "https://docs.google.com/spreadsheets/d/…/edit",
   statuses: ["使用中", "参考", "引退"],           // STATUS_CHOICES（並び順どおり。画面の状態の選択肢）
-  canSync: true | false,                          // スプシの編集権限があるか。false なら画面は同期ボタンを無効にする
+  canSync: true | false,                          // スプシの編集権限があるか。false なら画面は同期ボタンを無効にし、編集・追加も出さない
+  links: [ { key, label, url } ],                 // links シートのリンク（key は manual/admin/fusion/template/items/repo か ''）。items は無くても ITEMS_FOLDER_ID から作る
+  uploadMaxBytes: 20971520,                       // 画面から上げられる1ファイルの上限（UPLOAD_MAX_BYTES）
   items: [ {                                      // error が空の行
     folderId, folderName, folderUrl,
     date: "2025-06-12", name: "流路セルホルダー",
     author, purpose, status,                      // status は statuses のどれか
     tags: ["顕微鏡", "治具"],
     note: ["M3ネジ×4で固定。", …],               // 1要素＝1行
+    fp: "…",                                      // 指紋（fingerprint 列）。編集の保存で「読んだあとに変わっていないか」に使う
     thumbUrl: "https://drive.google.com/thumbnail?id=…&sz=w600" | null,
     photos: [ { name, url } ],                    // photo_ で始まる画像（サムネイルURL）
-    files:  [ { name, url, downloadUrl } ]        // フォルダ内の全ファイル
+    files:  [ { id, name, url, downloadUrl } ]    // フォルダ内の全ファイル（id は編集のゴミ箱で使う）
   } ],
   issues: [ {                                     // error がある行（「要対応」）
     folderId /* 「再同期」ボタンで resyncItem に渡す */,
     folderName, problem /* error 列の文 */,
-    url /* Driveのフォルダ */, rowUrl /* スプシの該当行 */
+    url /* Driveのフォルダ */, rowUrl /* スプシの該当行 */,
+    date, name,                                   // フォルダ名から。date が空ならフォルダ名の不備で、画面では直せない
+    fp, meta: { author, purpose, status, tags, note }   // 「画面で直す」のフォームの初期値
   } ]
 }
 ```
@@ -153,7 +170,7 @@ getThumbnails(["<ファイルID>", …], large) → { "<ファイルID>": "data:
 - 通常は `getThumbnail()`（Driveの縮小画像。幅220px程度）。`large=true`（詳細の大きな画像）は、MIME が `image/png`・`image/jpeg`・`image/gif`・`image/webp`（`THUMB_LARGE_MIME_TYPES`、判定は `isBrowserImageMime`）で 2MB（`THUMB_LARGE_MAX_BYTES`）以下のときだけ元のファイル。HEIC・TIFF などブラウザで出せない形式や、大きいものは縮小画像。
 - **一覧に出ている作品の代表画像と写真のIDしか読まない**（それ以外は null）。**キャッシュを引く前に**シートを1回読んで一覧で絞るので、一覧から外れたIDはキャッシュにあっても null。キャッシュ（`CacheService.getScriptCache()`、6時間）は利用者全員で共有なので、絞らないと、見る権限の無い人にキャッシュ経由で渡ってしまうため。100KB を超える値はキャッシュしない。
 - 1件の失敗は、その件だけ null にする。
-- 新しい許可（スコープ）は要らない（`drive.readonly` で足りる）。
+- 読むだけなので、Drive の読み取りの許可で足りる（第5ラウンドまでは `drive.readonly`。今は画面からの書き込みのために `drive`）。
 
 画面側（`index.html`）：
 
@@ -172,7 +189,7 @@ getThumbnails(["<ファイルID>", …], large) → { "<ファイルID>": "data:
 | 961〜1279px | 3列。絞り込みは最初だけたたむ（`filtersOpen` の初期値が `(min-width:1280px)`）。利用者が開け閉めしたら、それを保つ |
 | 960px 以下 | 1列。ヘッダーは1行で上に固定し、ボタンは絵だけにする（名前は `.btn-text` で読み上げる）。その下に検索欄と「絞り込み」ボタンを固定する。一覧のカードは2列。要対応の帯は1行にたたむ（`state.issuesOpen`） |
 
-960px 以下の重なりは3つ（絞り込みシート・詳細・作品を追加するパネル）で、`applyLayers` が一手に扱う。dialog の属性、後ろの `inert`、body のスクロールの固定と復元（`setScrollLock`）を受け持つ。
+960px 以下の重なりは4つ（絞り込みシート・詳細・ドライブ・Fusion から追加するパネル・作品を追加する画面）で、`applyLayers` が一手に扱う。作品を追加する画面（`add`）は PC でもモーダルなので、幅によらず後ろ（`.app`）を `inert` にする。dialog の属性、後ろの `inert`、body のスクロールの固定と復元（`setScrollLock`）を受け持つ。
 
 - 絞り込みシートは PC と**同じ DOM**。`.f-sheet` は PC では `display:contents`（見た目に影響しない）、960px 以下では下からの全画面シートになる。部品を二重に持たない。
 - 詳細は右から全画面で重なる。開くとフォーカスは「← 一覧」へ移り、閉じると押したカードかリストの行へ戻る。Esc で閉じる。Tab は中で回る。
@@ -182,8 +199,9 @@ getThumbnails(["<ファイルID>", …], large) → { "<ファイルID>": "data:
 
 画面は `google.script.run` の4関数のほかに、`google.script.history`（`push` / `replace` / `setChangeHandler`）と `google.script.url.getLocation` を使う。`Code.gs` の `doGet` は変えていない。`google.script.history` には back が無いので、閉じるときは `window.history.back()` を呼ぶ。
 
-- 開いている重なりは `state.layer` の1つだけ（null・`guide`・`sheet`・`detail`）。別のものを開くと、前のものは閉じる。開け閉めは `openLayer(kind, id, fromHistory)` と `closeLayer(fromHistory)` だけで行う。
-- 履歴の状態は `histLayer`（今の段に積んでいる重なり。null なら一覧の段）の1つ。段は一覧の段の上に**高々1つ**。state は `{overlay:'detail', item}`（URL は `?item=<フォルダID>`）、`{overlay:'sheet'}`、`{overlay:'guide'}`。
+- 開いている重なりは `state.layer` の1つだけ（null・`add`・`guide`・`sheet`・`detail`）。別のものを開くと、前のものは閉じる。開け閉めは `openLayer(kind, id, fromHistory)` と `closeLayer(fromHistory)` だけで行う。
+- 履歴の状態は `histLayer`（今の段に積んでいる重なり。null なら一覧の段）の1つ。段は一覧の段の上に**高々1つ**。state は `{overlay:'detail', item}`（URL は `?item=<フォルダID>`）、`{overlay:'sheet'}`、`{overlay:'guide'}`、`{overlay:'add'}`。
+- 確かめ（`askConfirm`）と「画面で直す」は `<dialog>` の `showModal` で、重なり（`state.layer`）にも履歴にも入れない。開いている間は、重なりの Esc・Tab の処理をしない（`<dialog>` が受け持つ）。
 - 960px 以下で開くとき：積んでいなければ push、積んでいれば replace（載せ替え）。積み重ねると、一覧に戻るまで何度も「戻る」を押すことになるため。
 - PC では push しない。作品を選ぶと replace で `?item=` を替える（積んでいる段があれば、その state のまま）。幅を広げても `state.layer` と段は残す（狭く戻すとまた重なる）。最初の作品を自動で選んだときは URL を変えない。
 - 画面の操作で閉じるとき（×・← 一覧・n件を表示・Esc）：積んでいれば `history.back()`。600ms 待っても返事が無ければ `replace(null, {})` にする（空振りは1回で済む）。返事待ちの間に開いた重なりは、返事が来てから push し、待ち時間を過ぎたら捨てる（`backWait`）。積んでいない詳細を閉じたときは `replace(null, {})` で `?item=` を外す。
@@ -193,6 +211,28 @@ getThumbnails(["<ファイルID>", …], large) → { "<ファイルID>": "data:
 - プレビューでは `&histdelay=<ms>`（「戻る」の知らせを遅らせる）と `&backfail=1`（back を効かなくする）で不調を再現できる。筋書きの再現は `dev/preview/out/hist-m3.sh`。
 
 アクセシビリティ：カードとリストの行は全体が1つのボタンで、`aria-labelledby` が名前、`aria-describedby` が用途・状態・日付を指す。リストの行のフォーカス枠は内側に描く（`.list` の `overflow:hidden` で切れるため）。
+
+### 画面からの書き込み（第6ラウンド）
+
+どれも失敗は日本語の `Error`（権限不足は「作品フォルダを書き換える権限がありません…」、ゴミ箱は「…コンテンツ管理者以上が必要です」）。`entry` は `recordToGalleryEntry` の形（`{item}` か `{issue}`）で、画面はそれでその1件を差し替える（`applyEntry`。全件は読み直さない）。
+
+| 関数 | 戻り値 | 内容 |
+| --- | --- | --- |
+| `updateItemMeta(folderId, fields, baseFp, overwriteBroken)` | `{ok, message, entry, conflict?, broken?}` | meta.json の `author` `purpose` `status` `tags` `note` を書き換える（`EDITABLE_META_KEYS`。ほかのキーは残す）。meta.json が無ければ作る。`baseFp` が今のフォルダの指紋と違えば書かずに `conflict:true` と最新の `entry`（画面は、自分が変えていない項目だけ最新に合わせて、もう一度保存してもらう）。JSON として壊れていれば `broken`（元の文字列）を返し、`overwriteBroken` のときだけ書き直す。値の検査は `checkMeta` |
+| `trashItemFile(folderId, fileId)` | `{ok, message, entry}` | 作品フォルダの直下のファイルをゴミ箱へ（meta.json は不可） |
+| `uploadItemFile(folderId, name, mimeType, base64, replace)` | `{id, name, size}` | 作品フォルダか置き場に1ファイルを上げる。名前は `cleanUploadName`。meta.json は不可。`UPLOAD_MAX_BYTES` まで。作品フォルダで同じ名前があれば、`replace` なら上げてから古い方をゴミ箱へ、そうでなければ断る（置き場は同じ名前を許す）。一覧には反映しない |
+| `refreshItem(folderId)` | `{done, message, entry}` | 1作品を読み直す（ファイルを上げ終えたあと） |
+| `beginUpload()` | `{id}` | items の直下に置き場 `_up_…` を作る |
+| `discardUploadedFile(stagingId, fileId)` | `{ok}` | 置き場のファイルをゴミ箱へ（移せなくても失敗にしない） |
+| `registerItems(stagingId, works)` | `{results:[{key, ok, folderName?, entry?, error?}]}` | `works`＝`[{key, name, date, fields, extraMeta, files:[{id, name}]}]`。1作品ずつ `registerWork_`：作業用フォルダへ移す（移せなければ Drive の中でコピー）→ 名前を変える → meta.json → フォルダ名を `YYYYMMDD_名前`（重なれば `-v2`）→ 行を作る。最後に名前を付けるので、途中で失敗した作品は `_up_` のまま一覧に出ない。同じ `key` でやり直すと同じ作業用フォルダから続ける。1つの失敗で残りを止めない |
+| `abandonUpload(stagingId)` | `{ok}` | 置き場とその作業用フォルダをゴミ箱へ（移せなくても失敗にしない） |
+
+画面の側（`index.html`）：
+
+- **詳細の編集**：「編集の箱」（`newEditor`）に入力を持ち、入力のたびには描き直さない（`forceDetail` のときだけ詳細を描き直す）。形が変わるとき（タグ・メモの行の足し引き）だけ `rerenderEditor` で描き直してフォーカスを戻す。編集中に別の作品を選ぶ・詳細を閉じると、変更は下書き（`drafts`）に残り、もう一度開くと「続ける／捨てる」を出す。日本語の変換中の Enter（`isComposing`）では、タグの確定や行の追加をしない。
+- **作品を追加する画面**（`state.add`）：ファイルを落とすとすぐ置き場へ上げ始め（`pumpAddUploads`。同時に2本、思いがけない失敗は3回まで送り直す）、その間に仕分けと説明を入れる。仕分けの案（`ingest` / `placeLoose`）：フォルダ1つ＝作品1つ（中がフォルダだけなら、その1つずつ。`YYYYMMDD_名前` なら日付と名前も取り、meta.json があれば説明に入れて `fusion_id` などを引き継ぐ）。ばらのファイルは、3Dの元データ（f3d・step など）の名前の先頭の語で作品にまとめ、ほかは同じ語の作品へ。元データが無ければまとめて1作品。作品が1つで仕分けるものが無ければ、作品の列を畳んで2列にする。画像は、最初の png・jpg を代表画像（`thumb.<拡張子>` で登録）、ほかを写真（`photo_` を付けて登録）にする案を出す。閉じても中身は残り、ヘッダーの「作品を追加する」に印が付く。
+- **ページ全体へのドロップ**：ファイルを持ってくると印（`#drop-veil`）を出し、どこに落としても作品を追加する画面で受ける。編集中の詳細のファイル欄・追加の画面の中の受け口は、そちらが受けて `stopPropagation` する。
+- 書き込みのボタン（編集・画面で直す・追加）は `canSync`（スプシの編集権限）が無い人には出さない。追加は、書き込めない人にはドライブに直接置く説明を開く。
 
 ### `syncNow()` / `resyncItem(folderId)` の戻り値
 
@@ -224,6 +264,22 @@ getThumbnails(["<ファイルID>", …], large) → { "<ファイルID>": "data:
 | `error` | 不備の内容（` / ` 区切り）。**空ならギャラリーに表示、あれば要対応**。セル上限での切り詰めもここに記録 |
 | `synced_at` | その行を最後に更新した時刻（ISO形式） |
 
+### シート links（説明書などのリンク）
+
+管理者が手で書き換えるシート（同期では上書きしない。保護もかけない）。`setup()` が作り、足りない key の行を足す（既にある行は上書きしない）。見出しは `key` `label` `target` `memo`。
+
+| key | 画面に出る所 | `setup()` が入れる初期値（Drive でたどって見つかれば） |
+| --- | --- | --- |
+| `manual` | 追加ボタンの ▾ のメニュー、パネルの冒頭 | `3Dギャラリー/tools/docs/README.md` |
+| `admin` | パネルの冒頭、要対応の帯の「エラーの一覧」 | `tools/docs/OPERATION.md` |
+| `fusion` | パネル（Fusion から）の段1 | `tools/fusion_export/` |
+| `template` | パネル（ドライブに直接置く）の段2 | `items/_template/` |
+| `items` | パネルの冒頭と段3 | `items/`（行が無くても `ITEMS_FOLDER_ID` から出す） |
+| `repo` | メニューの一番下 | 空（空なら出さない） |
+| 空・ほかの値 | メニューの「説明書・リンク」とパネルの冒頭に「その他」として並ぶ | — |
+
+`target` は URL か、Drive のファイル・フォルダの ID（10文字以上の英数字と `-` `_`。`https://drive.google.com/open?id=<ID>` にする）。それ以外（`javascript:` など）は出さない。`label` が空なら決まった名前を使う。
+
 ---
 
 ## データ仕様
@@ -245,7 +301,7 @@ getThumbnails(["<ファイルID>", …], large) → { "<ファイルID>": "data:
 - 名前は日本語可。`/` `\` `:` などファイル名に使えない記号は避ける。
 - 同じ日付・同じ名前が重なったら末尾に `-v2` などを付ける（`-v2` は名前の一部として扱われる）。
 - 日付と名前はフォルダ名から取る。**`meta.json` には書かない**。
-- **同期の対象外**：`items/` 直下の、先頭が `_` のフォルダ／ゴミ箱の中のフォルダ／ショートカット／フォルダ以外のファイル。作品フォルダ内では、ゴミ箱の中・ショートカット・`*.tmp`（`IGNORE_FILE_EXTENSIONS`。Fusion書き出しの一時ファイルなど）を無視する。
+- **同期の対象外**：`items/` 直下の、先頭が `_` のフォルダ（画面からの追加の置き場・作業用フォルダ `_up_…` もこれ）／ゴミ箱の中のフォルダ／ショートカット／フォルダ以外のファイル。作品フォルダ内では、ゴミ箱の中・ショートカット・`*.tmp`（`IGNORE_FILE_EXTENSIONS`。Fusion書き出しの一時ファイルなど）を無視する。
 
 ### フォルダの中身
 
@@ -307,11 +363,11 @@ getThumbnails(["<ファイルID>", …], large) → { "<ファイルID>": "data:
 
 | 変えること | 直す箇所 |
 | --- | --- |
-| 状態の選択肢（例：「保管中」を足す） | `Code.gs` の `STATUS_CHOICES`（検査と指紋に効き、`getGalleryData` の `statuses` として画面にも渡る）／`index.html` の状態の色（既知の3種の色対応。`DEFAULT_STATUSES` は `statuses` が無いときの予備。色が無い新しい状態はグレーの破線枠で出る）／`guide.html` の表（`status` の行）と `#ai-prompt` の status の文／`_template/README.txt`／`fusion_export.py` は status を `DEFAULT_STATUS`（既定は空）で出すので、選択肢を変えたら設定欄のコメントの選択肢も直す／**この文書のデータ仕様** |
-| 必須キーを足す・外す | `Code.gs` の `REQUIRED_META_KEYS` と `checkMeta`（キーごとの検査）／`guide.html` の meta 例・キー一覧・`#ai-prompt`／`_template/meta.json` と `README.txt`／`fusion_export.py` の `build_meta` の雛形（`fusion_id` は済み判定に使うので、外さない）／この文書。**古い作品が一斉に要対応にならないか**を考える（必須にするなら既存作品を直す手間が出る。基本は任意キーとして足す） |
-| 任意キーを足す | `checkMeta`（型の検査と整形）／シートの列を足すなら `HEADERS`・`buildRecord`・`recordToGalleryEntry`（そして「全部作り直す」）／`getGalleryData` の戻り値を変えるなら `index.html`／`guide.html`／`_template`／`build_meta`／この文書 |
-| フォルダ名の形式 | `Code.gs` の `parseFolderName`／`fusion_export.py` の `FOLDER_NAME_PATTERN`・`make_folder_name`・`is_valid_folder_name`・`date_part`／`guide.html`／`_template/README.txt`／この文書 |
-| 代表画像・写真の規則 | `Code.gs` の `THUMB_FILE_NAMES`・`PHOTO_PREFIX`・`pickThumbFile`・`pickPhotoFiles`／`fusion_export.py` の `THUMB_FILENAME`／`guide.html`／この文書 |
+| 状態の選択肢（例：「保管中」を足す） | `Code.gs` の `STATUS_CHOICES`（検査と指紋に効き、`getGalleryData` の `statuses` として画面にも渡る）／`index.html` の状態の色（既知の3種の色対応。`DEFAULT_STATUSES` は `statuses` が無いときの予備。色が無い新しい状態はグレーの破線枠で出る）／`guide.html` の表（`status` の行）と `#ai-prompt` の status の文／`_template/README.txt`／`fusion_export.py` は status を `DEFAULT_STATUS`（既定は空）で出すので、選択肢を変えたら設定欄のコメントの選択肢も直す／`index.html` の作品を追加する画面の状態の既定値（`newGroup` の `使用中`）／**この文書のデータ仕様** |
+| 必須キーを足す・外す | `Code.gs` の `REQUIRED_META_KEYS` と `checkMeta`（キーごとの検査）／`index.html` の画面での検査（`validate`・`groupProblems`。正はサーバー）と編集のフォーム（`editFormHTML`）／`guide.html` の meta 例・キー一覧・`#ai-prompt`／`_template/meta.json` と `README.txt`／`fusion_export.py` の `build_meta` の雛形（`fusion_id` は済み判定に使うので、外さない）／この文書。**古い作品が一斉に要対応にならないか**を考える（必須にするなら既存作品を直す手間が出る。基本は任意キーとして足す） |
+| 任意キーを足す | `checkMeta`（型の検査と整形）／画面で編集させるなら `EDITABLE_META_KEYS`・`cleanMetaFields` と `index.html` の `fieldsOf`・`cleanFields`・`editFormHTML`・`applyMetaFile`（させないなら、画面からの保存でもそのキーは残る）／シートの列を足すなら `HEADERS`・`buildRecord`・`recordToGalleryEntry`（そして「全部作り直す」）／`getGalleryData` の戻り値を変えるなら `index.html`／`guide.html`／`_template`／`build_meta`／この文書 |
+| フォルダ名の形式 | `Code.gs` の `parseFolderName`・`registerWork_`・`uniqueFolderName`／`index.html` の `folderLabel`・`parseDirName`／`fusion_export.py` の `FOLDER_NAME_PATTERN`・`make_folder_name`・`is_valid_folder_name`・`date_part`／`guide.html`／`_template/README.txt`／この文書 |
+| 代表画像・写真の規則 | `Code.gs` の `THUMB_FILE_NAMES`・`PHOTO_PREFIX`・`pickThumbFile`・`pickPhotoFiles`／`fusion_export.py` の `THUMB_FILENAME`／`index.html` の作品を追加する画面の名前の付け方（`THUMB_EXTS`・`finalName`・`autoRoles`）／`guide.html`／この文書 |
 | 新しいGoogleサービスを使う（スコープが増える） | コードを変えたら、`appsscript.json` の `oauthScopes` に必要なスコープを足す（足さないと実行時に権限エラー。足すと閲覧者の許可画面の内容が広がるので最小限に）／[SETUP.md](SETUP.md) の `appsscript.json` の説明 |
 | 同期の対象外にする条件 | `Code.gs` の `IGNORE_PREFIX`・`IGNORE_FILE_EXTENSIONS`・`listItemFolders_`・`listFolderFiles_`／`guide.html`／この文書 |
 
@@ -330,11 +386,11 @@ getThumbnails(["<ファイルID>", …], large) → { "<ファイルID>": "data:
 
 | 対象 | コマンド | 内容 |
 | --- | --- | --- |
-| `Code.gs` | `cd dev/gas-test && node --test` | `Code.gs` を Node で読み込み、偽の `DriveApp` / `SpreadsheetApp` / `PropertiesService` などで検証する。純粋な関数（フォルダ名、検査、指紋など）と、同期の通し（追加・変更・削除・リネーム・時間切れからの再開・二重実行・1件再同期・`getGalleryData`・`setup`・`getThumbnails`） |
+| `Code.gs` | `cd dev/gas-test && node --test` | `Code.gs` を Node で読み込み、偽の `DriveApp` / `SpreadsheetApp` / `PropertiesService` などで検証する。純粋な関数（フォルダ名、検査、指紋など）と、同期の通し（追加・変更・削除・リネーム・時間切れからの再開・二重実行・1件再同期・`getGalleryData`・`setup`・`getThumbnails`）、links シート（`links.test.js`）、画面からの編集（`edit.test.js`）と追加（`add.test.js`） |
 | `fusion_export.py` | `python -m unittest discover -s dev/fusion-test -v` | 偽の `adsk` を差し込んで import し、Fusionを要しない部分（命名、CSV、行の選別、名前での絞り込み、triage.csv の引き継ぎ、パスの解決、済み判定、meta.json の生成、外部参照の判定）と、`break_external_links` を偽のオカレンスでテストする |
 | 画面 | `node dev/preview/build.mjs` | `index.html` の `include('guide')` を `guide.html` で置き換え、`google.script.run` の偽物（サンプルデータを返す）を注入して `dev/preview/out/index.html` を出す。ブラウザで開いて見た目を確認する |
 
-プレビューの場面は URL の `?scenario=` で切り替えられる：`out/index.html?scenario=empty`（作品ゼロ）、`error`（読み込み失敗）、`partial`（時間切れ）、`syncfail`（同期失敗）、`readonly`（同期できない人）、`status`（未知の状態）、`many`（30件。画像の取り直しを含む）、`thumbfail`（取り直しも失敗）、`heic`（大きな画像が表示できず縮小画像で取り直す）。画像の取り直し（IntersectionObserver）は `--virtual-time-budget` のスクショでは途中で止まるので、実時間で調べる `node --experimental-websocket dev/preview/cdp-check.mjs "scenario=many;view=list" 1400,900 5000 [shot.png]` で確かめる（Windows ではクエリの区切りに `;` を使う。手順は `THEN`〜`THEN6` で続けられ、`STEP_SHOTS=1` で手順ごとに撮る。`FRAME=1` で 390px の iframe の中を操作し、`"@size 幅,高さ"` で大きさを変える。出力には pageY・フォーカス・履歴（`data-hist`）が出る。プレビューの `&item=<フォルダID>` と、`google.script.history` / `url` の偽物（pushState と popstate で再現）もある。第3ラウンドの一式は `dev/preview/out/shots-m3.sh` で撮り直せる。1400px の見た目を比べるときは、実時間で撮ったもの同士で比べる。`--virtual-time-budget` で撮ったものは毎回少しずつ変わるので、比べるのには使えない。また、drive.google.com は Chrome の `--host-resolver-rules` で 127.0.0.1:9 に向けてすぐ失敗させる）。読み込み後の操作もクエリで指定できる（プレビュー専用）：`&view=list|gallery`、`&select=<folderId>`、`&click=<CSSセレクタ>`、`&scroll=end|bottom`。スマホ幅は `out/frame-390.html?src=<クエリ>` で 390px の iframe に入れて見る。サンプルデータは `dev/preview/sample-data.js`。GASのテンプレート構文が残っているとビルドが失敗する。
+プレビューの場面は URL の `?scenario=` で切り替えられる：`out/index.html?scenario=empty`（作品ゼロ）、`error`（読み込み失敗）、`partial`（時間切れ）、`syncfail`（同期失敗）、`readonly`（同期できない人）、`status`（未知の状態）、`many`（30件。画像の取り直しを含む）、`thumbfail`（取り直しも失敗）、`heic`（大きな画像が表示できず縮小画像で取り直す）、`conflict`（最初の保存が「ほかの人が先に変更」）、`broken`（要対応の meta.json が壊れている）、`upfail`（名前に fail を含むファイルの送信が失敗）、`denytrash`（ゴミ箱へ移す権限がない）、`regfail`（名前に fail を含む作品の登録が失敗）。画面からの書き込みの偽物はメモリの上のサンプルを書き換え、呼び出しを `<html data-writes>` に残す（`cdp-check.mjs` の `THEN` で `document.documentElement.dataset.writes` を見る。ファイルは `ingest([{file: new File([...], 'a.stl'), path: 'フォルダ/a.stl'}], null)` で落としたのと同じに入れられる）。画像の取り直し（IntersectionObserver）は `--virtual-time-budget` のスクショでは途中で止まるので、実時間で調べる `node --experimental-websocket dev/preview/cdp-check.mjs "scenario=many;view=list" 1400,900 5000 [shot.png]` で確かめる（Windows ではクエリの区切りに `;` を使う。手順は `THEN`〜`THEN6` で続けられ、`STEP_SHOTS=1` で手順ごとに撮る。`FRAME=1` で 390px の iframe の中を操作し、`"@size 幅,高さ"` で大きさを変える。出力には pageY・フォーカス・履歴（`data-hist`）が出る。プレビューの `&item=<フォルダID>` と、`google.script.history` / `url` の偽物（pushState と popstate で再現）もある。第3ラウンドの一式は `dev/preview/out/shots-m3.sh` で撮り直せる。1400px の見た目を比べるときは、実時間で撮ったもの同士で比べる。`--virtual-time-budget` で撮ったものは毎回少しずつ変わるので、比べるのには使えない。また、drive.google.com は Chrome の `--host-resolver-rules` で 127.0.0.1:9 に向けてすぐ失敗させる）。読み込み後の操作もクエリで指定できる（プレビュー専用）：`&view=list|gallery`、`&select=<folderId>`、`&click=<CSSセレクタ>`、`&scroll=end|bottom`。スマホ幅は `out/frame-390.html?src=<クエリ>` で 390px の iframe に入れて見る。サンプルデータは `dev/preview/sample-data.js`。GASのテンプレート構文が残っているとビルドが失敗する。
 
 ローカルで確かめられないこと：GAS実環境での動作（許可画面、共有ドライブ上の挙動、実行時間）、Driveのサムネイル表示（ブラウザのCookie制限）、Fusion APIの実際の挙動。これらは次の「本番での確認」と、Fusionの実機で確かめる。
 
@@ -345,7 +401,7 @@ AIや他の人が直したコードは、本番に出す前にテスト環境で
 1. **スプシごとコピーしてテスト環境を作る**：本番のスプシを「ファイル → コピーを作成」する（コピーに GAS も付く）。
 2. **コピー側の GAS に変更したコードを貼る**（`appsscript.json` を変えた場合は、コピー側でもマニフェストの表示をオンにして置き換える）。コピー側の「プロジェクトの設定 → スクリプト プロパティ」で `ITEMS_FOLDER_ID` を**テスト用フォルダ**（本番の `items/` ではない、テスト作品だけを入れた別フォルダ）のIDにする。コピーではスクリプトプロパティが引き継がれないことがあるので、必ず確かめる。
 3. スプシのメニュー「ギャラリー → 今すぐ同期」でテスト用フォルダを同期し、シートの内容（変更した列・`error`）を確認する。`setup()` は必須ではない（同期が見出しを作る）。実行した場合は、コピー側に毎日のトリガーが登録されるので、確認後にエディタの「トリガー」から削除する。
-4. エディタの「デプロイ → デプロイをテスト」の URL（最新コードが動く）で画面を確認する。一覧、絞り込み、詳細、要対応、「作品を追加する」パネル、PC幅とスマホ幅。
+4. エディタの「デプロイ → デプロイをテスト」の URL（最新コードが動く）で画面を確認する。一覧、絞り込み、詳細と編集、要対応と「画面で直す」、作品を追加する画面（テスト用の items フォルダで）、ドライブ・Fusion から追加するパネル、PC幅とスマホ幅。
 5. 問題なければ**本番のGASに貼り替え**、「デプロイ → デプロイを管理」で新バージョンを出す。URLが変わっていないことを確認する。
 6. 本番で「今すぐ同期」と画面表示を確認する。
 7. `tools/gas/` の控えを差し替え、この文書を更新する。

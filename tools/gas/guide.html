@@ -6,7 +6,8 @@
      リンク：a[data-link="<key>"] は、スプシの links シートに登録した URL が入る（無ければ隠れる。index.html の fillGuideLinks）。
      #guide-links には説明書などのリンクが並ぶ。
      ここにはスクリプトレット（山かっこ＋疑問符の構文）を書かないこと。 -->
-  <p class="lead">作品1つ＝共有ドライブの <b>3Dギャラリー/items/</b> の中のフォルダ1つです。下の 1〜3 を用意して置き、「今すぐ同期」を押すと一覧に出ます。1件ずつなら「ドライブに直接置く」、Fusion のデータをまとめて登録するなら「Fusion からまとめて書き出す」が楽です。</p>
+  <p class="lead">ふつうは、ギャラリーの「作品を追加する」にファイルを落とすだけで登録できます（フォルダ作りと meta.json まで画面で済みます）。ここでは、<b>ドライブに直接置く</b>方法と、<b>Fusion からまとめて書き出す</b>方法を説明します。</p>
+  <p class="hint">作品1つ＝共有ドライブの <b>3Dギャラリー/items/</b> の中のフォルダ1つです。下の 1〜3 を用意して置き、「今すぐ同期」を押すと一覧に出ます。<button class="linklike" type="button" data-action="open-add">画面から追加する</button></p>
   <div class="guide-links" id="guide-links" hidden></div>
 
   <section>
@@ -72,6 +73,10 @@
         <li><span class="no" aria-hidden="true">1</span><span class="t">1 のファイルをまとめたフォルダに items/_template<a class="glink" data-link="template" target="_blank" rel="noopener" hidden>開く</a> の meta.json をコピーし、メモ帳で開く（スクリプトで書き出したなら、できている meta.json を開く）</span></li>
         <li><span class="no" aria-hidden="true">2</span><span class="t">上の例のように "" の中を埋めて保存する。区切りの , と "" は消さない</span></li>
       </ol>
+    </div>
+    <div class="way" data-way="fusion">
+      <h4>ギャラリーの画面で書く（いちばん手軽）</h4>
+      <p class="hint">書き出して同期すると、作品は説明が空のまま「一覧に出ていない作品」に並びます。各行の「画面で直す」から用途・状態・タグなどを書いて保存すると、その場で一覧に出ます。数が多いときは、下の AI に頼む方法が速いです。</p>
     </div>
     <div class="way ai" data-way="fusion">
       <div class="ai-head">
@@ -145,7 +150,7 @@
     <div class="way" data-way="drive">
       <h4>フォルダを作って入れる</h4>
       <p class="hint">1・2 のファイルを入れたフォルダの名前を「作成日_名前」にして、items/<a class="glink" data-link="items" target="_blank" rel="noopener" hidden>開く</a> に置く。</p>
-      <p class="small">Google ドライブ（パソコン版）ならエクスプローラーで普通に作業できます。Webの画面だけなら、items/ に新しいフォルダを作ってファイルをアップロードします。同じ名前のファイルがあれば「置き換える」を選んでください（2つあると要対応になります）。</p>
+      <p class="small">Google ドライブ（パソコン版）ならエクスプローラーで普通に作業できます。ブラウザのドライブの画面で作業するなら、ギャラリーの「作品を追加する」のほうが手早く済みます。同じ名前のファイルがあれば「置き換える」を選んでください（2つあると要対応になります）。</p>
     </div>
     <div class="way" data-way="fusion">
       <h4>済んでいる</h4>
@@ -156,5 +161,5 @@
 
   <section>
     <h3><span class="step-no">4</span>同期して確かめる</h3>
-    <p class="hint">上の「今すぐ同期」を押すと一覧に出ます。出ないときは一覧の上に理由が表示されるので、その作品の meta.json を直してもう一度同期してください。</p>
+    <p class="hint">上の「今すぐ同期」を押すと一覧に出ます。出ないときは一覧の上に理由が表示されるので、その作品の meta.json を直してもう一度同期してください（meta.json の中身の不備は、その行の「画面で直す」から書けます）。</p>
   </section>
