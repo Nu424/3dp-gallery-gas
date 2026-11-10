@@ -301,6 +301,83 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
 .ai-head div{display:flex;flex-direction:column;gap:6px;flex:1 1 300px}
 .prompt{margin:0;padding:14px;background:#fff;border-radius:8px;font-family:inherit;font-size:13.5px;line-height:1.7;white-space:pre-wrap;max-height:260px;overflow:auto}
 
+/* ---- 編集（詳細の「編集」・要対応を画面で直す。第6ラウンドの E）---- */
+.detail-head .edit-btn{margin-left:auto}
+.edit-btn svg,.ed-mode svg{flex:none}
+.ed-mode{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:var(--accent-ink);background:var(--accent-soft);padding:3px 10px;border-radius:12px}
+.ed{display:flex;flex-direction:column;gap:20px}
+.ed-field{display:flex;flex-direction:column;gap:6px}
+.ed-label{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--muted)}
+.ed-input{min-height:44px;width:100%;min-width:0;padding:0 12px;font-size:15px;font-family:inherit;color:var(--ink);background:#fff;border:1px solid var(--field-line);border-radius:8px}
+.ed-input[aria-invalid="true"]{border-color:var(--req);box-shadow:0 0 0 1px var(--req)}
+.ed-err{font-size:12.5px;font-weight:700;color:var(--req)}
+.ed-status{display:flex;flex-wrap:wrap;gap:6px}
+.ed-st{min-height:40px;padding:0 16px;font-size:14px;font-weight:700;background:#fff;border:1px solid var(--chip-line);border-radius:8px;cursor:pointer}
+.ed-st:hover{border-color:var(--ink-3)}
+.ed-st[aria-pressed="true"]{box-shadow:0 0 0 2px var(--ink)}
+.ed-st.st-use{background:var(--st-use-bg);color:var(--st-use-fg);border-color:var(--st-use-bd)}
+.ed-st.st-ref{background:var(--st-ref-bg);color:var(--st-ref-fg);border-color:var(--st-ref-bd)}
+.ed-st.st-ret{background:var(--st-ret-bg);color:var(--st-ret-fg);border-color:var(--st-ret-bd)}
+.ed-st.st-other{background:var(--st-oth-bg);color:var(--st-oth-fg);border-color:var(--st-oth-bd)}
+.ed-tags{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-height:44px;padding:5px 6px;background:#fff;border:1px solid var(--field-line);border-radius:8px;cursor:text}
+.ed-tags:focus-within{outline:3px solid var(--accent);outline-offset:1px}
+.ed-tag{display:inline-flex;align-items:center;gap:0;padding:0 0 0 10px;font-size:13.5px;color:var(--accent-ink);background:var(--accent-soft);border-radius:14px}
+.ed-tag button{width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;color:inherit;background:none;border:none;border-radius:50%;cursor:pointer}
+.ed-tag button:hover{background:rgba(23,63,112,.12)}
+.ed-tag-input{flex:1;min-width:110px;min-height:32px;padding:0 4px;font:inherit;font-size:15px;background:transparent;border:none;outline:none}
+.ed-sugg{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)}
+.ed-sugg:empty{display:none}
+.ed-sugg button{min-height:32px;padding:0 10px;font-size:13px;background:#fff;border:1px dashed var(--chip-line);border-radius:16px;cursor:pointer}
+.ed-sugg button:hover{border-style:solid;border-color:var(--accent);color:var(--accent-ink)}
+.ed-notes{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.ed-notes li{display:flex;align-items:center;gap:4px}
+.ed-notes li::before{content:"・";flex:none;width:14px;color:var(--muted)}
+.ed-add{align-self:flex-start}
+.ed-alert{padding:10px 14px;font-size:14px;font-weight:700;line-height:1.6;color:var(--req);background:#FDECEA;border:1px solid #F3B8B0;border-radius:8px}
+.ed-draft{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:10px 14px;font-size:14px;background:var(--warn-bg);border:1px solid var(--warn-line);border-radius:10px}
+.ed-draft span{flex:1 1 200px;font-weight:700;color:var(--warn-ink)}
+.ed-files h3{margin:0;font-size:13px;font-weight:700;color:var(--muted)}
+.ed-file-list,.ed-ups{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px}
+.ed-file{min-height:44px;display:flex;align-items:center;gap:10px;padding:0 2px 0 10px;font-size:14px;background:var(--soft);border-radius:6px}
+.ed-file .ext{font-size:11px;font-weight:700;min-width:38px;text-align:center;padding:2px 4px;border-radius:4px;background:var(--ink);color:#fff}
+.ed-file .fname{flex:1;min-width:0;overflow-wrap:anywhere}
+.ed-file .small{padding-right:10px}
+.ed-file.busy{opacity:.55}
+.ed-up{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;min-height:40px;padding:4px 10px;font-size:13.5px;border:1px solid var(--line);border-radius:6px}
+.ed-up .fname{flex:1 1 160px;min-width:0;overflow-wrap:anywhere}
+.ed-up .st{font-size:12.5px;font-weight:700;color:var(--muted)}
+.ed-up.is-send .st{color:var(--accent-ink)}
+.ed-up.is-done .st{color:#2E6B3A}
+.ed-up.is-fail{border-color:#F3B8B0;background:#FDF4F2}
+.ed-up.is-fail .st{color:var(--req)}
+.ed-up .why{flex-basis:100%;font-size:12.5px;color:var(--req)}
+.ed-drop{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:6px 10px;padding:16px;font-size:14px;color:var(--muted);text-align:center;border:2px dashed var(--chip-line);border-radius:10px}
+.ed-drop.over{color:var(--accent-ink);background:var(--accent-row);border-color:var(--accent)}
+.ed-drop .small{flex-basis:100%}
+.ed-foot{position:sticky;bottom:0;z-index:2;margin-top:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:12px 20px;background:#fff;border-top:1px solid var(--line);box-shadow:0 -6px 16px rgba(31,37,43,.06)}
+.ed-foot .grow{flex:1 1 140px;font-size:13px;color:var(--muted)}
+.ed-foot .grow.dirty{color:var(--warn-ink);font-weight:700}
+.btn-danger{background:var(--req);border-color:var(--req);color:#fff;font-weight:700}
+.btn-danger:hover{color:#fff}
+/* ダイアログ（確かめ・要対応を直す）。<dialog> の showModal なので、後ろは触れず Esc で閉じる */
+.dlg{width:min(480px,calc(100vw - 32px));max-height:calc(100svh - 48px);padding:0;color:var(--ink);background:#fff;border:none;border-radius:14px;box-shadow:0 24px 64px rgba(31,37,43,.28)}
+.dlg[open]{display:flex;flex-direction:column}
+.dlg::backdrop{background:rgba(31,37,43,.42)}
+.dlg-wide{width:min(640px,calc(100vw - 32px))}
+.dlg-head{flex:none;display:flex;align-items:center;gap:12px;padding:18px 20px 6px 24px}
+.dlg-head h2{flex:1;margin:0;font-size:18px;font-weight:700;line-height:1.4}
+.dlg-body{flex:1;min-height:0;overflow-y:auto;padding:8px 24px 16px;display:flex;flex-direction:column;gap:14px}
+.dlg-foot{flex:none;display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px 10px;padding:12px 20px 16px;border-top:1px solid var(--line-2)}
+.dlg-foot .grow{flex:1 1 160px;font-size:12.5px;color:var(--muted);overflow-wrap:anywhere}
+.dlg-list{margin:0;padding-left:20px;font-size:14px;line-height:1.7;overflow-wrap:anywhere}
+.ed-problem{margin:0;display:flex;gap:8px;align-items:flex-start;padding:10px 12px;font-size:14px;line-height:1.6;background:var(--warn-bg);border:1px solid var(--warn-line);border-radius:8px}
+.ed-problem svg{flex:none;margin-top:3px}
+.ed-broken{display:flex;flex-direction:column;gap:6px;font-size:13.5px}
+.ed-broken p{margin:0;font-weight:700;color:var(--req)}
+.ed-broken pre{margin:0;max-height:140px;overflow:auto;padding:10px;font-size:12.5px;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--soft);border-radius:6px}
+.ed-broken label{display:flex;align-items:center;gap:8px;min-height:44px;font-weight:700}
+.ed-broken input{width:20px;height:20px}
+
 /* 移植で加えた部分：読み込み中・エラー・要対応の各行・同期メッセージ */
 .sync-label.warn{color:var(--warn-ink);font-weight:700}
 .sync-label.err{color:var(--req);font-weight:700}
@@ -382,6 +459,12 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
   .detail-body{padding:16px max(16px,env(safe-area-inset-right)) calc(40px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
   .detail h2{font-size:21px}
   .hero{height:200px}
+  .ed-foot{padding:10px max(16px,env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+  .ed-input,.ed-tag-input{font-size:16px}   /* 16px 未満だと、iOS が入力のときに画面を拡大する */
+  .dlg,.dlg-wide{width:100vw;max-width:100vw;height:100svh;max-height:100svh;margin:0;border-radius:0}
+  .dlg-head{padding:calc(12px + env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) 4px max(16px,env(safe-area-inset-left))}
+  .dlg-body{padding:8px max(16px,env(safe-area-inset-right)) 16px max(16px,env(safe-area-inset-left))}
+  .dlg-foot{padding:10px max(16px,env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
   /* M6 作品を追加するパネル：全幅。見出しは上に固定（.sheet-head は sticky）。表は縦積み、コードは枠の中で横スクロール */
   .sheet-panel{overscroll-behavior:contain;box-shadow:none}
   .sheet-head{min-height:calc(var(--hdr-h) + env(safe-area-inset-top));padding:env(safe-area-inset-top) max(8px,env(safe-area-inset-right)) 10px max(16px,env(safe-area-inset-left))}
@@ -406,7 +489,8 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
 @media (min-width: 961px){.filters.closed{overflow-x:hidden}}
 /* 押せる場所を 44px 以上に（960px 以下と、1279px 以下のタッチ端末） */
 @media (max-width: 960px), (max-width: 1279px) and (pointer: coarse){
-  .chip,.status-row,.active-chip,.tag-btn,.file,.btn-small,.info a,.issue-row .links a,.issue-row .links .btn,.seg button{min-height:44px}
+  .chip,.status-row,.active-chip,.tag-btn,.file,.btn-small,.info a,.issue-row .links a,.issue-row .links .btn,.seg button,.ed-st,.ed-sugg button{min-height:44px}
+  .ed-tag button{width:40px;height:40px}
   .seg button.icon{width:44px}
   .linklike{min-height:44px;display:inline-flex;align-items:center}
 }
@@ -508,6 +592,10 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
 </div>
 
 
+<!-- ダイアログ：確かめ（askConfirm）と、要対応を画面で直す（openIssueEdit）。中身は JS が描く -->
+<dialog class="dlg" id="confirm-dlg" aria-labelledby="confirm-title"></dialog>
+<dialog class="dlg dlg-wide" id="issue-dlg" aria-labelledby="issue-dlg-title"></dialog>
+
 <!-- 「ドライブ・Fusion から追加する」パネルの中身は guide.html。GAS が include で差し込む -->
 <template id="guide-template">
 <?!= include('guide') ?>
@@ -597,6 +685,7 @@ function selectFirstOnPc() {
   state.selId = first ? first.folderId : null;
 }
 function afterLoad() {
+  if (state.edit && !hasItem(state.edit.id)) leaveEdit(false);
   if (!hasItem(state.selId)) {
     state.selId = null;
     if (state.layer === 'detail') closeLayer(false);   // 開いていた作品が一覧から消えた
@@ -904,6 +993,10 @@ const ICON = {
   dl: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1F5FA8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>',
   back: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="M11 6l-6 6 6 6"/></svg>',
   ext: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>',
+  pen: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg>',
+  trash: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg>',
+  upload: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M5 20h14"/></svg>',
+  close: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>',
   folder: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
   stack: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>',
   doc: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 12h6"/><path d="M9 16h6"/></svg>',
@@ -1025,7 +1118,7 @@ function issuesBar() {
       <ul class="issue-list">${issues.map((i) => `
         <li class="issue-row">
           <span class="issue-text">${esc(i.folderName)}：${esc(i.problem)}</span>
-          <span class="links">${link(i.url, 'Driveのフォルダ')}${link(i.rowUrl || state.data.sheetUrl, i.rowUrl ? 'スプシの該当行' : 'スプシで確認')}${i.folderId ? `<button class="btn btn-small" type="button" data-action="resync-issue" data-id="${esc(i.folderId)}"${busy() || !canSync() ? ' disabled' : ''}${canSync() ? '' : ` title="${NO_SYNC_TITLE}"`}>${state.resyncing === i.folderId ? '再同期中…' : '再同期'}</button>` : ''}</span>
+          <span class="links">${link(i.url, 'Driveのフォルダ')}${link(i.rowUrl || state.data.sheetUrl, i.rowUrl ? 'スプシの該当行' : 'スプシで確認')}${i.folderId && i.date && canEdit() ? `<button class="btn btn-small btn-primary" type="button" data-action="fix-issue" data-id="${esc(i.folderId)}">画面で直す</button>` : ''}${i.folderId ? `<button class="btn btn-small" type="button" data-action="resync-issue" data-id="${esc(i.folderId)}"${busy() || !canSync() ? ' disabled' : ''}${canSync() ? '' : ` title="${NO_SYNC_TITLE}"`}>${state.resyncing === i.folderId ? '再同期中…' : '再同期'}</button>` : ''}</span>
         </li>`).join('')}</ul>
     </div>`;
 }
@@ -1119,9 +1212,20 @@ function renderDetailBody() {
   const el = document.getElementById('detail');
   const it = state.data.items.find((x) => x.folderId === state.selId);
   if (!it) {
+    el.dataset.edId = '';
     el.innerHTML = `<div class="detail-body"><p class="hint">${state.loading ? '' : '一覧から作品を選ぶと、ここに用途や元データが出ます。'}</p></div>`;
     return;
   }
+  // 編集中：入力の途中で描き直すと、打っている文字やカーソルの位置が飛ぶので、フォームは必要なとき（forceDetail）だけ描く
+  const ed = state.edit && state.edit.id === it.folderId ? state.edit : null;
+  if (ed) {
+    if (el.dataset.edId === it.folderId && !forceDetail) return;
+    forceDetail = false;
+    el.dataset.edId = it.folderId;
+    el.innerHTML = detailEditHTML(it, ed);
+    return;
+  }
+  el.dataset.edId = '';
   // 写真：クリックで Drive のファイルを新しいタブで開く（photos には url しか無いので、files から同名を探す）
   const photos = (it.photos || []).map((p) => {
     const inner = p.url ? imgHTML({ url: p.url, alt: p.name, kind: 'photo' }) : ICON.photo;
@@ -1138,8 +1242,9 @@ function renderDetailBody() {
   // 重ねたときの見出し（aria-labelledby）は下の h2（#detail-title）
   el.innerHTML = `
     <div class="detail-bar"><button class="detail-back" id="detail-back" type="button" data-action="close-detail" aria-label="一覧に戻る">${ICON.back}<span>一覧</span></button><span class="detail-bar-name" aria-hidden="true">${esc(it.name)}</span></div>
-    <div class="detail-head"><span class="status-badge st-${stClass(it.status)}">${esc(it.status)}</span><span class="date">${dateLong(it.date)}作成</span></div>
+    <div class="detail-head"><span class="status-badge st-${stClass(it.status)}">${esc(it.status)}</span><span class="date">${dateLong(it.date)}作成</span>${canEdit() ? `<button class="btn btn-small edit-btn" type="button" data-action="edit-start" aria-label="この作品を編集する">${ICON.pen}<span>編集</span></button>` : ''}</div>
     <div class="detail-body">
+      ${drafts.has(it.folderId) ? `<div class="ed-draft" role="status"><span>保存していない変更があります</span><button class="btn btn-small" type="button" data-action="draft-discard">捨てる</button><button class="btn btn-small btn-primary" type="button" data-action="draft-resume">続ける</button></div>` : ''}
       <h2 id="detail-title">${esc(it.name)}</h2>
       <p class="purpose" style="margin-top:-12px">${esc(it.purpose)}</p>
       <div class="tags">${tagButtons(it.tags)}</div>
@@ -1236,6 +1341,7 @@ function openLayer(kind, id, fromHistory) {
 function closeLayer(fromHistory) {
   const kind = state.layer;
   if (!kind) return;
+  if (kind === 'detail' && narrowMq.matches && state.edit) { leaveEdit(true); renderDetail(); }   // 変更は下書きに残す
   state.layer = null;
   applyLayers();
   const narrow = narrowMq.matches;
@@ -1379,6 +1485,493 @@ function onNarrowChange() {
 if (narrowMq.addEventListener) narrowMq.addEventListener('change', onNarrowChange); else narrowMq.addListener(onNarrowChange); // 古い Safari
 
 /* ============================================================
+   編集（詳細の「編集」と、要対応を画面で直す。第6ラウンドの E）
+   - 書き込むのは Drive の作品フォルダの meta.json とファイルだけ（サーバーの updateItemMeta / trashItemFile /
+     uploadItemFile / refreshItem）。サーバーは書いたあとにその作品の行を作り直し、画面用のデータ（entry）を返すので、
+     画面は全件を読み直さず、その1件だけ差し替える（applyEntry）
+   - 編集の中身は「編集の箱」（newEditor）に持つ。詳細の編集は state.edit、要対応を直すダイアログは state.issueEdit。
+     入力のたびに箱を書き換え、フォームは描き直さない（打っている途中の文字が飛ばないように）。
+     タグ・メモの行の足し引きなど形が変わるときだけ描き直す（rerenderEditor）
+   - 未保存の変更：編集中に別の作品を選ぶ・詳細を閉じる・「戻る」を押しても止めない。その作品の下書き（drafts）として残し、
+     もう一度開くと「保存していない変更があります（続ける／捨てる）」を出す（確かめのダイアログで「戻る」と争わないため）
+   - 保存のとき、読んだときの指紋（fp）を送る。サーバーで違っていたら書かずに最新を返すので、それを土台にして
+     入力はそのまま残し、もう一度保存してもらう
+   ============================================================ */
+const callServer = (name, ...args) => new Promise((ok, ng) => { google.script.run.withSuccessHandler(ok).withFailureHandler(ng)[name](...args); });
+const canEdit = () => canSync();   // 書いたあとにスプシの行も作り直すので、スプシの編集権限で判断する（Drive の権限はサーバーが言い換える）
+const itemById = (id) => state.data.items.find((x) => x.folderId === id) || null;
+const issueById = (id) => (state.data.issues || []).find((x) => x.folderId === id) || null;
+const drafts = new Map();     // 作品のフォルダID → 保存していない詳細の編集の箱
+let forceDetail = false;      // true なら、編集中でも詳細を描き直す（renderDetailBody）
+const fieldsOf = (src) => ({ author: src.author || '', purpose: src.purpose || '', status: src.status || '', tags: (src.tags || []).slice(), note: (src.note || []).slice() });
+/* 比べる・送るための形（サーバーの cleanMetaFields と同じ整え方） */
+function cleanFields(f) {
+  const tags = [];
+  f.tags.forEach((x) => { x = x.trim(); if (x && !tags.includes(x)) tags.push(x); });
+  const note = [];
+  f.note.forEach((n) => n.split(/\r?\n/).forEach((l) => { l = l.replace(/\s+$/, ''); if (l.trim()) note.push(l); }));
+  return { author: f.author.trim(), purpose: f.purpose.trim(), status: f.status.trim(), tags, note };
+}
+function newEditor(scope, id, src, fp) {
+  return { scope, id, base: fieldsOf(src), fields: fieldsOf(src), fp: fp || '', tagInput: '', error: '', errors: {}, saving: false, uploads: [], busyFile: null, broken: null, overwrite: false };
+}
+const isDirty = (ed) => !!ed && (JSON.stringify(cleanFields(ed.fields)) !== JSON.stringify(cleanFields(ed.base)) || !!ed.tagInput.trim());
+const uploading = (ed) => !!ed && ed.uploads.some((u) => u.status === 'wait' || u.status === 'send');
+const edFor = (el) => el.closest('#issue-dlg') ? state.issueEdit : el.closest('#detail') ? state.edit : null;
+/* 入力の検査（サーバーの checkMeta と同じ決まり。正はサーバー） */
+function validate(ed) {
+  const f = cleanFields(ed.fields), e = {};
+  const valid = state.data.statuses && state.data.statuses.length ? state.data.statuses : DEFAULT_STATUSES;
+  if (!f.purpose) e.purpose = '何のための部品かを一行で書いてください';
+  if (!f.status) e.status = '状態を選んでください';
+  else if (!valid.includes(f.status)) e.status = valid.join('・') + ' のどれかを選んでください';
+  if (!f.author) e.author = '作った人を書いてください';
+  return e;
+}
+/* サーバーが返した1件（{item} か {issue}）で、一覧の中のその作品を差し替える */
+function applyEntry(id, entry) {
+  state.data.items = state.data.items.filter((x) => x.folderId !== id);
+  state.data.issues = (state.data.issues || []).filter((x) => x.folderId !== id);
+  if (entry && entry.item) state.data.items.push(entry.item);
+  if (entry && entry.issue) state.data.issues.push(entry.issue);
+}
+/* 候補：既にあるタグ（多い順。入力中ならその文字を含むもの）と、作った人 */
+function tagSuggestions(ed) {
+  const count = new Map();
+  state.data.items.forEach((it) => it.tags.forEach((x) => count.set(x, (count.get(x) || 0) + 1)));
+  const q = ed.tagInput.trim().toLowerCase();
+  return [...count.entries()].filter(([x]) => !ed.fields.tags.includes(x) && (!q || x.toLowerCase().includes(q)))
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ja')).slice(0, q ? 12 : 8).map(([x]) => x);
+}
+function authorSuggestions(ed) {
+  const count = new Map();
+  state.data.items.forEach((it) => { if (it.author) count.set(it.author, (count.get(it.author) || 0) + 1); });
+  const q = ed.fields.author.trim();
+  return [...count.entries()].filter(([a]) => a !== q && (!q || a.includes(q))).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([a]) => a);
+}
+const suggTagsHTML = (ed) => { const l = tagSuggestions(ed); return l.length ? `<span>${ed.tagInput.trim() ? '合うタグ' : 'よく使うタグ'}</span>` + l.map((x) => `<button type="button" data-ed-tag-add="${esc(x)}">#${esc(x)}</button>`).join('') : ''; };
+const suggAuthorsHTML = (ed) => { const l = authorSuggestions(ed); return l.length ? '<span>候補</span>' + l.map((a) => `<button type="button" data-ed-author="${esc(a)}">${esc(a)}</button>`).join('') : ''; };
+
+/* 編集のフォーム（用途・状態・タグ・メモ・作った人。一覧の詳細と同じ並び） */
+function editFormHTML(ed) {
+  const f = ed.fields, p = 'ed-' + ed.scope, er = ed.errors || {};
+  const err = (k) => er[k] ? `<span class="ed-err" id="${p}-${k}-err">${esc(er[k])}</span>` : '';
+  const inv = (k) => er[k] ? ` aria-invalid="true" aria-describedby="${p}-${k}-err"` : '';
+  return `
+    ${ed.error ? `<div class="ed-alert" role="alert">${esc(ed.error)}</div>` : ''}
+    <div class="ed-field"><label class="ed-label" for="${p}-purpose">用途 <span class="req req-must">必須</span></label>
+      <input class="ed-input" id="${p}-purpose" data-ed="purpose" value="${esc(f.purpose)}" placeholder="何のための部品か（一覧に出る一行）" autocomplete="off"${inv('purpose')}>${err('purpose')}</div>
+    <div class="ed-field" role="group" aria-labelledby="${p}-status-l"><span class="ed-label" id="${p}-status-l">状態 <span class="req req-must">必須</span></span>
+      <div class="ed-status">${statusList().map((s) => `<button type="button" class="ed-st${f.status === s ? ' st-' + stClass(s) : ''}" data-ed-status="${esc(s)}" aria-pressed="${f.status === s}"${er.status ? ` aria-describedby="${p}-status-err"` : ''}>${esc(s)}</button>`).join('')}</div>${err('status')}</div>
+    <div class="ed-field"><span class="ed-label" id="${p}-tags-l">タグ</span>
+      <div class="ed-tags" data-ed-tags>${f.tags.map((x, i) => `<span class="ed-tag">#${esc(x)}<button type="button" data-ed-tag-del="${i}" aria-label="タグ「${esc(x)}」を外す">${ICON.x}</button></span>`).join('')}<input class="ed-tag-input" id="${p}-tag" data-ed="tagInput" value="${esc(ed.tagInput)}" placeholder="${f.tags.length ? 'さらに足す' : 'タグを足す'}" aria-labelledby="${p}-tags-l" aria-describedby="${p}-tag-hint" autocomplete="off" enterkeyhint="done"></div>
+      <div class="ed-sugg" data-sugg="tags">${suggTagsHTML(ed)}</div>
+      <span class="small" id="${p}-tag-hint">Enter か「、」で確定。既にあるタグに合わせると、絞り込みで見つけやすくなります</span></div>
+    <div class="ed-field"><span class="ed-label" id="${p}-note-l">メモ</span>
+      ${f.note.length ? `<ul class="ed-notes" aria-labelledby="${p}-note-l">${f.note.map((n, i) => `<li><input class="ed-input" data-ed-note="${i}" value="${esc(n)}" aria-label="メモの${i + 1}行目" autocomplete="off" enterkeyhint="next"><button class="icon-btn" type="button" data-ed-note-del="${i}" aria-label="メモの${i + 1}行目を消す">${ICON.trash}</button></li>`).join('')}</ul>` : ''}
+      <button class="btn btn-small ed-add" type="button" data-ed-note-add>＋ 行を足す</button>
+      <span class="small">1行に1つのこと（必要な部品、印刷のコツ、経緯など）。行の中で Enter を押すと次の行</span></div>
+    <div class="ed-field"><label class="ed-label" for="${p}-author">作った人 <span class="req req-must">必須</span></label>
+      <input class="ed-input" id="${p}-author" data-ed="author" value="${esc(f.author)}" autocomplete="off"${inv('author')}>${err('author')}
+      <div class="ed-sugg" data-sugg="authors">${suggAuthorsHTML(ed)}</div></div>`;
+}
+const edFootText = (ed) => ed.saving ? '保存しています…' : uploading(ed) ? 'ファイルを上げています…' : isDirty(ed) ? '保存していない変更があります' : '変更はまだありません';
+function edFootHTML(ed) {
+  return `<span class="grow${isDirty(ed) && !ed.saving ? ' dirty' : ''}" data-ed-foot-text aria-live="polite">${edFootText(ed)}</span>
+    <button class="btn" type="button" data-action="edit-cancel"${ed.saving ? ' disabled' : ''}>やめる</button>
+    <button class="btn btn-primary" type="button" data-action="edit-save"${ed.saving ? ' disabled' : ''} data-ed-save>${isDirty(ed) ? '保存する' : '編集を終える'}</button>`;
+}
+/* 入力のたびに、下の行の文と保存ボタンの名前だけを直す（フォームは描き直さない） */
+function updateFoot(ed) {
+  const box = ed.scope === 'issue' ? document.getElementById('issue-dlg') : document.getElementById('detail');
+  const text = box.querySelector('[data-ed-foot-text]');
+  if (text && ed.scope === 'detail') { text.textContent = edFootText(ed); text.classList.toggle('dirty', isDirty(ed) && !ed.saving); }
+  const save = box.querySelector('[data-ed-save]');
+  if (save && ed.scope === 'detail') save.textContent = isDirty(ed) ? '保存する' : '編集を終える';
+}
+function edFilesHTML(it, ed) {
+  const mb = Math.round(uploadMax() / 1024 / 1024);
+  const upLabel = { wait: '待っています', send: '送っています…', done: '済み', fail: '失敗' };
+  return `<h3>ファイル</h3>
+    <ul class="ed-file-list">${(it.files || []).map((f) => `<li class="ed-file${ed.busyFile === f.id ? ' busy' : ''}"><span class="ext">${esc(extOf(f.name).toUpperCase())}</span><span class="fname">${esc(f.name)}</span>${f.name === 'meta.json'
+      ? '<span class="small">上の内容</span>'
+      : `<button class="icon-btn" type="button" data-action="file-del" data-file="${esc(f.id || '')}" data-name="${esc(f.name)}" aria-label="「${esc(f.name)}」をゴミ箱に移す"${ed.busyFile || !f.id ? ' disabled' : ''}>${ICON.trash}</button>`}</li>`).join('')}</ul>
+    ${ed.uploads.length ? `<ul class="ed-ups" aria-live="polite">${ed.uploads.map((u, i) => `<li class="ed-up is-${u.status}"><span class="fname">${esc(u.name)}</span><span class="st">${upLabel[u.status]}</span>${u.status === 'fail' && u.file ? `<button class="btn btn-small" type="button" data-action="up-retry" data-i="${i}">もう一度</button>` : ''}${u.error ? `<span class="why">${esc(u.error)}</span>` : ''}</li>`).join('')}</ul>` : ''}
+    ${ed.uploads.some((u) => u.status === 'fail' && /大きすぎ/.test(u.error || '')) && it.folderUrl ? `<a class="glink" href="${esc(it.folderUrl)}" target="_blank" rel="noopener" style="align-self:flex-start;margin:0">ドライブでこの作品のフォルダを開く</a>` : ''}
+    <div class="ed-drop" data-ed-drop>${ICON.upload}<span>ここにファイルを落とすか</span><button class="btn btn-small" type="button" data-action="file-pick">ファイルを選ぶ</button>
+      <input type="file" multiple hidden data-ed-file-input>
+      <span class="small">落とした・選んだときにすぐ上がります（1ファイル ${mb}MB まで）。同じ名前のファイルは置き換えるか確かめます</span></div>`;
+}
+function detailEditHTML(it, ed) {
+  return `
+    <div class="detail-bar"><button class="detail-back" id="detail-back" type="button" data-action="close-detail" aria-label="一覧に戻る">${ICON.back}<span>一覧</span></button><span class="detail-bar-name" aria-hidden="true">${esc(it.name)}</span></div>
+    <div class="detail-head"><span class="ed-mode">${ICON.pen}編集中</span><span class="date">${dateLong(it.date)}作成</span></div>
+    <div class="detail-body">
+      <div><h2 id="detail-title">${esc(it.name)}</h2>
+        <p class="small" style="margin-top:4px">名前と日付はフォルダ名（${esc(it.folderName)}）から決まります。変えるときはドライブでフォルダ名を直します</p></div>
+      <div class="ed" data-editor="detail">${editFormHTML(ed)}</div>
+      <section class="d-section ed-files" data-ed-files>${edFilesHTML(it, ed)}</section>
+    </div>
+    <div class="ed-foot">${edFootHTML(ed)}</div>`;
+}
+/* 形が変わったときに描き直し、focusSel の要素にフォーカスを置く（末尾にカーソル） */
+function rerenderEditor(ed, focusSel) {
+  if (ed.scope === 'issue') renderIssueDialog();
+  else if (state.edit === ed) { forceDetail = true; renderDetail(); }
+  else return;
+  if (!focusSel) return;
+  const box = ed.scope === 'issue' ? document.getElementById('issue-dlg') : document.getElementById('detail');
+  const el = box.querySelector(focusSel);
+  if (!el) return;
+  el.focus();
+  if (el.setSelectionRange && typeof el.value === 'string') { const n = el.value.length; try { el.setSelectionRange(n, n); } catch (_) { /* number などは無視 */ } }
+}
+function renderEdFiles(ed) {
+  if (state.edit !== ed) return;
+  const box = document.querySelector('#detail [data-ed-files]'), it = itemById(ed.id);
+  if (box && it) box.innerHTML = edFilesHTML(it, ed);
+  updateFoot(ed);
+}
+function refreshSugg(ed, kind) {
+  const box = ed.scope === 'issue' ? document.getElementById('issue-dlg') : document.getElementById('detail');
+  const el = box.querySelector(`[data-sugg="${kind}"]`);
+  if (el) el.innerHTML = kind === 'tags' ? suggTagsHTML(ed) : suggAuthorsHTML(ed);
+}
+/* タグの入力欄の文字をタグにする（読点・カンマで区切って複数も可） */
+function commitTagInput(ed) {
+  const parts = ed.tagInput.split(/[、,，]/).map((x) => x.trim()).filter(Boolean);
+  parts.forEach((x) => { if (!ed.fields.tags.includes(x)) ed.fields.tags.push(x); });
+  ed.tagInput = '';
+  return parts.length > 0;
+}
+
+/* 詳細の編集を始める（下書きがあればそれから） */
+function startEdit(id) {
+  const it = itemById(id);
+  if (!it || !canEdit()) return;
+  state.edit = drafts.get(id) || newEditor('detail', id, it, it.fp);
+  drafts.delete(id);
+  forceDetail = true;
+  renderDetail();
+  rerenderEditor(state.edit, '#ed-detail-purpose');
+}
+/* 詳細の編集から抜ける。keepDraft なら、変更があれば下書きに残す（別の作品を選んだ・閉じた） */
+function leaveEdit(keepDraft) {
+  const ed = state.edit;
+  if (!ed) return;
+  state.edit = null;
+  if (keepDraft && (isDirty(ed) || uploading(ed)) && itemById(ed.id)) drafts.set(ed.id, ed);
+  forceDetail = true;
+}
+async function cancelEdit(ed) {
+  if (isDirty(ed) && !(await askConfirm({ title: '変更を捨てますか？', text: '保存していない変更は消えます。上げたファイルはそのまま残ります。', ok: '捨てる', cancel: '編集に戻る', danger: true }))) return;
+  leaveEdit(false);
+  renderDetail();
+  focusEditButton();
+}
+const focusEditButton = () => { const b = document.querySelector('#detail [data-action="edit-start"]'); if (b) b.focus(); };
+async function saveEdit(ed) {
+  commitTagInput(ed);
+  ed.errors = validate(ed);
+  if (Object.keys(ed.errors).length) {
+    ed.error = '';
+    const first = ['purpose', 'status', 'author'].find((k) => ed.errors[k]);
+    rerenderEditor(ed, first === 'status' ? '[data-ed-status]' : `#ed-${ed.scope}-${first}`);
+    return;
+  }
+  if (ed.scope === 'detail' && !isDirty(ed)) { leaveEdit(false); renderDetail(); focusEditButton(); return; }
+  if (ed.broken !== null && !ed.overwrite) { ed.error = '今の meta.json を捨ててよいか、上のチェックで確かめてください'; rerenderEditor(ed, '[data-ed-overwrite]'); return; }
+  ed.saving = true; ed.error = '';
+  rerenderEditor(ed);
+  try {
+    const r = await callServer('updateItemMeta', ed.id, cleanFields(ed.fields), ed.fp, ed.overwrite);
+    ed.saving = false;
+    if (r && r.ok) { applyEntry(ed.id, r.entry); finishSave(ed, r.entry); return; }
+    if (r && r.conflict) {   // 誰かが先に変えていた：最新を土台にして、入力は残す
+      applyEntry(ed.id, r.entry);
+      const cur = r.entry && (r.entry.item || (r.entry.issue && Object.assign({ fp: r.entry.issue.fp }, r.entry.issue.meta)));
+      if (cur) {
+        // 項目ごとに合わせる：自分が変えていない項目は相手の新しい値に、変えた項目は自分の値のまま
+        const nb = fieldsOf(cur);
+        Object.keys(nb).forEach((k) => { if (JSON.stringify(ed.fields[k]) === JSON.stringify(ed.base[k])) ed.fields[k] = JSON.parse(JSON.stringify(nb[k])); });
+        ed.base = nb;
+        ed.fp = cur.fp || '';
+      }
+      ed.error = r.message;
+    } else if (r && r.broken !== undefined) {
+      ed.broken = r.broken; ed.error = r.message;
+    } else {
+      ed.error = (r && r.message) || '保存できませんでした';
+    }
+  } catch (err) {
+    ed.saving = false;
+    ed.error = errMsg(err);
+  }
+  renderAll();
+  rerenderEditor(ed);
+}
+function finishSave(ed, entry) {
+  const it = entry && entry.item;
+  if (ed.scope === 'detail') {
+    leaveEdit(false);
+    state.notice = { text: '「' + (it ? it.name : '') + '」を保存しました', kind: '' };
+    renderAll();
+    focusEditButton();
+    return;
+  }
+  // 要対応を直した：一覧に出たら、ダイアログを閉じてその作品を選ぶ。まだ不備があれば、ダイアログに理由を出す
+  if (it) {
+    state.issueEdit = null;
+    document.getElementById('issue-dlg').close();
+    state.notice = { text: '「' + it.name + '」を一覧に出しました', kind: '' };
+    if (narrowMq.matches) { renderAll(); openLayer('detail', it.folderId, false); return; }
+    state.selId = it.folderId;
+    renderAll();
+    const card = cardOf(it.folderId);
+    if (card) { revealCard(card); card.focus({ preventScroll: true }); }
+    return;
+  }
+  ed.base = fieldsOf(ed.fields);
+  ed.fp = entry && entry.issue ? entry.issue.fp : ed.fp;
+  ed.error = 'meta.json は保存しましたが、まだ直すところがあります：' + (entry && entry.issue ? entry.issue.problem : '');
+  renderAll();
+  rerenderEditor(ed);
+}
+
+/* ---- ファイルの削除と追加（詳細の編集）---- */
+const uploadMax = () => state.data.uploadMaxBytes || 20 * 1024 * 1024;
+const UPLOAD_PARALLEL = 2;   // 同時に送る数
+const UPLOAD_TRIES = 3;      // 1ファイルを送る回数の上限（思いがけない失敗だけ送り直す）
+/* サーバーの cleanUploadName と同じ整え方（同じ名前かを先に調べるため） */
+const cleanName = (n) => String(n || '').replace(/[\u0000-\u001f\u007f/\\:*?"<>|]/g, '_').trim().replace(/[.\s]+$/, '');
+function fileToBase64(file) {
+  return new Promise((ok, ng) => {
+    const r = new FileReader();
+    r.onload = () => ok(String(r.result).slice(String(r.result).indexOf(',') + 1));
+    r.onerror = () => ng(r.error || new Error('ファイルを読めませんでした'));
+    r.readAsDataURL(file);
+  });
+}
+/* 送り直してよい失敗か（サーバーが決まった文で断ったものは、何度送っても同じなので送り直さない） */
+const retryable = (err) => { const m = errMsg(err); return /^上げられませんでした：/.test(m) || !/[ぁ-んァ-ン]/.test(m); };
+/* 1件を送る。u は { file, name, status, error, ... }、send(u, base64) はサーバーを呼ぶ Promise */
+async function sendOne(u, send, onChange) {
+  u.status = 'send'; u.error = ''; onChange();
+  for (let i = 1; ; i++) {
+    try {
+      const b64 = await fileToBase64(u.file);
+      u.result = await send(u, b64);
+      u.status = 'done'; onChange();
+      return;
+    } catch (err) {
+      if (i >= UPLOAD_TRIES || !retryable(err)) { u.status = 'fail'; u.error = errMsg(err); onChange(); return; }
+      await new Promise((r) => setTimeout(r, 800 * i));
+    }
+  }
+}
+/* list の中の待っているものを、同時に UPLOAD_PARALLEL 本まで送る。全部終わったら解決する */
+function runUploads(list, send, onChange) {
+  const queue = list.filter((u) => u.status === 'wait');
+  const worker = async () => { while (queue.length) await sendOne(queue.shift(), send, onChange); };
+  return Promise.all(Array.from({ length: Math.min(UPLOAD_PARALLEL, queue.length) }, worker));
+}
+async function addFilesToItem(ed, files) {
+  const it = itemById(ed.id);
+  if (!it || !files.length) return;
+  const max = uploadMax(), mb = Math.round(max / 1024 / 1024);
+  const names = (it.files || []).map((f) => f.name);
+  const ok = [];
+  files.forEach((f) => {
+    const name = cleanName(f.name);
+    if (!name) ed.uploads.push({ name: f.name, status: 'fail', error: 'この名前のファイルは上げられません' });
+    else if (name.toLowerCase() === 'meta.json') ed.uploads.push({ name, status: 'fail', error: 'meta.json は上の欄で編集します' });
+    else if (f.size > max) ed.uploads.push({ name, status: 'fail', error: `大きすぎます（${mb}MB まで）。ドライブで直接入れてください` });
+    else ok.push({ file: f, name, status: 'wait', replace: false });
+  });
+  const dup = ok.filter((u) => names.includes(u.name));
+  if (dup.length) {
+    const yes = await askConfirm({ title: '同じ名前のファイルがあります', text: '置き換えると、今のファイルはドライブのゴミ箱に移ります（30日以内なら戻せます）。', list: dup.map((u) => u.name), ok: '置き換える', cancel: 'この分は上げない' });
+    dup.forEach((u) => { if (yes) u.replace = true; else { u.status = 'fail'; u.file = null; u.error = '同じ名前のファイルがあるので上げませんでした'; } });
+  }
+  ok.forEach((u) => ed.uploads.push(u));
+  renderEdFiles(ed);
+  await uploadToItem(ed);
+}
+async function uploadToItem(ed) {
+  await runUploads(ed.uploads, (u, b64) => callServer('uploadItemFile', ed.id, u.name, u.file.type || '', b64, !!u.replace), () => renderEdFiles(ed));
+  if (!ed.uploads.some((u) => u.status === 'done' && !u.applied)) return;
+  try {
+    const r = await callServer('refreshItem', ed.id);
+    ed.uploads.forEach((u) => { if (u.status === 'done') u.applied = true; });
+    adoptEntry(ed, r.entry);
+  } catch (err) {
+    showError('一覧に反映できませんでした：' + errMsg(err));
+  }
+}
+/* 自分のファイル操作のあとの1件を取り込む。指紋は自分の変更の分だけ進んだので、編集の箱の fp も新しくする */
+function adoptEntry(ed, entry) {
+  applyEntry(ed.id, entry);
+  if (entry && entry.item) ed.fp = entry.item.fp;
+  renderMain();
+  if (state.edit === ed) renderEdFiles(ed); else renderDetail();
+}
+async function deleteFile(ed, fileId, name) {
+  if (!(await askConfirm({ title: '「' + name + '」を消しますか？', text: 'ドライブのゴミ箱に移します。30日以内なら、ドライブのゴミ箱から戻せます。', ok: 'ゴミ箱に移す', danger: true }))) return;
+  ed.busyFile = fileId; renderEdFiles(ed);
+  try {
+    const r = await callServer('trashItemFile', ed.id, fileId);
+    state.notice = { text: r.message, kind: '' }; renderSync();
+    ed.busyFile = null;
+    adoptEntry(ed, r.entry);
+  } catch (err) {
+    ed.busyFile = null; renderEdFiles(ed);
+    showError(errMsg(err));
+  }
+  const next = document.querySelector('#detail [data-action="file-del"]:not([disabled])') || document.querySelector('#detail [data-action="file-pick"]');
+  if (next) next.focus();
+}
+
+/* ---- 要対応を画面で直す（ダイアログ）---- */
+function openIssueEdit(id) {
+  const is = issueById(id);
+  if (!is || !canEdit()) return;
+  if (!state.issueEdit || state.issueEdit.id !== id) state.issueEdit = newEditor('issue', id, is.meta || {}, is.fp);
+  state.issueEdit.returnTo = document.activeElement;
+  renderIssueDialog();
+  document.getElementById('issue-dlg').showModal();
+  rerenderEditor(state.issueEdit, '#ed-issue-purpose');
+}
+function renderIssueDialog() {
+  const ed = state.issueEdit, dlg = document.getElementById('issue-dlg');
+  if (!ed) return;
+  const is = issueById(ed.id) || { folderName: '', problem: '' };
+  dlg.innerHTML = `
+    <div class="dlg-head"><h2 id="issue-dlg-title">「${esc(is.name || is.folderName)}」の説明を書く</h2><button class="icon-btn" type="button" data-action="issue-close" aria-label="閉じる">${ICON.close}</button></div>
+    <div class="dlg-body">
+      <p class="ed-problem">${ICON.warn}<span>${esc(is.problem)}</span></p>
+      ${ed.broken !== null ? `<div class="ed-broken"><p>今の meta.json（JSON として読めません）</p><pre>${esc(ed.broken)}</pre><label><input type="checkbox" data-ed-overwrite${ed.overwrite ? ' checked' : ''}>この中身を捨てて、下の内容で書き直す</label></div>` : ''}
+      <div class="ed" data-editor="issue">${editFormHTML(ed)}</div>
+    </div>
+    <div class="dlg-foot"><span class="grow">フォルダ：${esc(is.folderName)}（meta.json に書きます）</span>
+      <button class="btn" type="button" data-action="issue-close">やめる</button>
+      <button class="btn btn-primary" type="button" data-action="issue-save"${ed.saving ? ' disabled' : ''}>${ed.saving ? '保存しています…' : '保存して一覧に出す'}</button></div>`;
+}
+/* 閉じても入力は残す（同じ作品をもう一度開くと続きから）。保存できたら消える */
+function closeIssueEdit() {
+  const dlg = document.getElementById('issue-dlg');
+  if (dlg.open) dlg.close();
+  const ret = state.issueEdit && state.issueEdit.returnTo;
+  if (ret && document.contains(ret)) ret.focus();
+}
+document.getElementById('issue-dlg').addEventListener('cancel', (e) => { e.preventDefault(); closeIssueEdit(); });
+
+/* ---- 確かめのダイアログ（ゴミ箱へ・置き換え・捨てる）。Promise<boolean> ---- */
+function askConfirm(o) {
+  const dlg = document.getElementById('confirm-dlg');
+  dlg.innerHTML = `<div class="dlg-head"><h2 id="confirm-title">${esc(o.title)}</h2></div>
+    <div class="dlg-body">${o.text ? `<p class="hint">${esc(o.text)}</p>` : ''}${o.list ? `<ul class="dlg-list">${o.list.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}</div>
+    <div class="dlg-foot"><button class="btn" type="button" data-dlg="no">${esc(o.cancel || 'やめる')}</button><button class="btn ${o.danger ? 'btn-danger' : 'btn-primary'}" type="button" data-dlg="yes">${esc(o.ok)}</button></div>`;
+  const back = document.activeElement;
+  return new Promise((resolve) => {
+    const done = (v) => {
+      dlg.removeEventListener('click', onClick); dlg.removeEventListener('cancel', onCancel);
+      if (dlg.open) dlg.close();
+      if (back && document.contains(back) && back.offsetParent !== null) back.focus();
+      resolve(v);
+    };
+    const onClick = (e) => { const b = e.target.closest('[data-dlg]'); if (b) done(b.dataset.dlg === 'yes'); };
+    const onCancel = (e) => { e.preventDefault(); done(false); };
+    dlg.addEventListener('click', onClick); dlg.addEventListener('cancel', onCancel);
+    dlg.showModal();
+    dlg.querySelector(o.danger ? '[data-dlg="no"]' : '[data-dlg="yes"]').focus();   // 消す方は、うっかり Enter で消えないように
+  });
+}
+
+/* ---- 編集のフォームの操作（詳細と要対応のダイアログで共通）---- */
+function handleEditClick(t, d) {
+  const ed = edFor(t);
+  switch (d.action) {
+    case 'edit-start': startEdit(state.selId); return true;
+    case 'edit-save': if (ed) saveEdit(ed); return true;
+    case 'edit-cancel': if (ed) cancelEdit(ed); return true;
+    case 'draft-resume': startEdit(state.selId); return true;
+    case 'draft-discard': drafts.delete(state.selId); renderDetail(); focusEditButton(); return true;
+    case 'file-del': if (ed) deleteFile(ed, d.file, d.name); return true;
+    case 'file-pick': { const inp = t.parentElement.querySelector('[data-ed-file-input]'); if (inp) inp.click(); return true; }
+    case 'up-retry': if (ed) { const u = ed.uploads[Number(d.i)]; if (u && u.file) { u.status = 'wait'; u.error = ''; renderEdFiles(ed); uploadToItem(ed); } } return true;
+    case 'issue-save': if (state.issueEdit) saveEdit(state.issueEdit); return true;
+    case 'issue-close': closeIssueEdit(); return true;
+  }
+  if (!ed) return false;
+  if (d.edStatus !== undefined) { ed.fields.status = d.edStatus; delete ed.errors.status; rerenderEditor(ed, `[data-ed-status="${CSS.escape(d.edStatus)}"]`); return true; }
+  if (d.edTagDel !== undefined) { ed.fields.tags.splice(Number(d.edTagDel), 1); rerenderEditor(ed, `#ed-${ed.scope}-tag`); return true; }
+  if (d.edTagAdd !== undefined) { if (!ed.fields.tags.includes(d.edTagAdd)) ed.fields.tags.push(d.edTagAdd); ed.tagInput = ''; rerenderEditor(ed, `#ed-${ed.scope}-tag`); return true; }
+  if (d.edAuthor !== undefined) { ed.fields.author = d.edAuthor; delete ed.errors.author; rerenderEditor(ed, `#ed-${ed.scope}-author`); return true; }
+  if (d.edNoteDel !== undefined) { const i = Number(d.edNoteDel); ed.fields.note.splice(i, 1); rerenderEditor(ed, ed.fields.note.length ? `[data-ed-note="${Math.max(0, i - 1)}"]` : '[data-ed-note-add]'); return true; }
+  if (d.edNoteAdd !== undefined) { ed.fields.note.push(''); rerenderEditor(ed, `[data-ed-note="${ed.fields.note.length - 1}"]`); return true; }
+  return false;
+}
+document.addEventListener('input', (e) => {
+  const el = e.target, ed = el.closest ? edFor(el) : null;
+  if (!ed) return;
+  const k = el.dataset.ed;
+  if (k === 'tagInput') { ed.tagInput = el.value; refreshSugg(ed, 'tags'); }
+  else if (k) { ed.fields[k] = el.value; if (k === 'author') refreshSugg(ed, 'authors'); }
+  else if (el.dataset.edNote !== undefined) ed.fields.note[Number(el.dataset.edNote)] = el.value;
+  else if (el.dataset.edOverwrite !== undefined) ed.overwrite = el.checked;
+  updateFoot(ed);
+});
+document.addEventListener('keydown', (e) => {
+  const el = e.target, ed = el.closest ? edFor(el) : null;
+  if (!ed || e.isComposing || e.keyCode === 229) return;   // 日本語の変換中の Enter は確定なので触らない
+  if (el.dataset.ed === 'tagInput') {
+    if ((e.key === 'Enter' || e.key === ',' || e.key === '、') && el.value.trim()) { e.preventDefault(); commitTagInput(ed); rerenderEditor(ed, `#ed-${ed.scope}-tag`); }
+    else if (e.key === 'Enter') e.preventDefault();
+    else if (e.key === 'Backspace' && !el.value && ed.fields.tags.length) { e.preventDefault(); ed.fields.tags.pop(); rerenderEditor(ed, `#ed-${ed.scope}-tag`); }
+    return;
+  }
+  if (el.dataset.edNote !== undefined) {
+    const i = Number(el.dataset.edNote);
+    if (e.key === 'Enter') { e.preventDefault(); ed.fields.note.splice(i + 1, 0, ''); rerenderEditor(ed, `[data-ed-note="${i + 1}"]`); }
+    else if (e.key === 'Backspace' && !el.value) { e.preventDefault(); ed.fields.note.splice(i, 1); rerenderEditor(ed, ed.fields.note.length ? `[data-ed-note="${Math.max(0, i - 1)}"]` : '[data-ed-note-add]'); }
+    else if (e.key === 'ArrowUp' && i > 0) { e.preventDefault(); rerenderEditor(ed, `[data-ed-note="${i - 1}"]`); }
+    else if (e.key === 'ArrowDown' && i < ed.fields.note.length - 1) { e.preventDefault(); rerenderEditor(ed, `[data-ed-note="${i + 1}"]`); }
+    return;
+  }
+  if (e.key === 'Enter' && el.matches('.ed-input')) e.preventDefault();   // 1行の欄で Enter を押しても何も送らない
+});
+/* タグの枠のすき間を押したら、入力欄へ */
+document.addEventListener('mousedown', (e) => {
+  if (e.target.matches && e.target.matches('[data-ed-tags]')) { e.preventDefault(); const i = e.target.querySelector('.ed-tag-input'); if (i) i.focus(); }
+});
+document.addEventListener('change', (e) => {
+  const el = e.target;
+  if (el.matches && el.matches('[data-ed-file-input]') && state.edit) { addFilesToItem(state.edit, [...el.files]); el.value = ''; }
+});
+/* 編集中の詳細のファイル欄へのドロップ */
+const hasFiles = (e) => !!e.dataTransfer && [...(e.dataTransfer.types || [])].includes('Files');
+document.addEventListener('dragover', (e) => {
+  const z = e.target.closest && e.target.closest('[data-ed-drop]');
+  if (z && hasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; z.classList.add('over'); }
+});
+document.addEventListener('dragleave', (e) => {
+  const z = e.target.closest && e.target.closest('[data-ed-drop]');
+  if (z && !z.contains(e.relatedTarget)) z.classList.remove('over');
+});
+document.addEventListener('drop', (e) => {
+  const z = e.target.closest && e.target.closest('[data-ed-drop]');
+  if (!z || !hasFiles(e) || !state.edit) return;
+  e.preventDefault();
+  z.classList.remove('over');
+  addFilesToItem(state.edit, [...e.dataTransfer.files]);
+});
+/* 保存していない変更・上げている途中でページを離れるときは、ブラウザに確かめてもらう */
+window.addEventListener('beforeunload', (e) => {
+  const eds = [state.edit, state.issueEdit].concat([...drafts.values()]).filter(Boolean);
+  if (eds.some((x) => isDirty(x) || uploading(x))) { e.preventDefault(); e.returnValue = ''; }
+});
+
+/* ============================================================
    「作品を追加する」の分割ボタンのメニューと、ドライブ・Fusion から追加するパネル
    メニュー：ほかの追加方法（パネルをそのやり方で開く）と、links シートの説明書などのリンク。
    キーボード：▾ で開くと最初の項目へ。↑↓・Home・End で移動、Esc で閉じて ▾ へ戻る、Tab で閉じる。外を押しても閉じる
@@ -1480,7 +2073,10 @@ document.addEventListener('click', (e) => {
   if (!t) return;
   const d = t.dataset;
   if (d.guideWay) { setGuideWay(d.guideWay); return; }
+  if (t.closest('#detail, #issue-dlg') && handleEditClick(t, d)) return;
+  if (d.action === 'fix-issue') { openIssueEdit(d.id); return; }
   if (d.select) {
+    if (state.edit && state.edit.id !== d.select) leaveEdit(true);   // 編集中に別の作品を選んだ：変更は下書きに残す
     if (narrowMq.matches) { openLayer('detail', d.select, false); return; }   // 960px 以下：詳細を重ねて開く
     state.selId = d.select; renderMain(); renderDetail();
     document.getElementById('detail').scrollTop = 0;
@@ -1540,11 +2136,12 @@ function topLayer() {
   return { el: document.getElementById(state.layer === 'detail' ? 'detail' : 'f-sheet') };
 }
 document.addEventListener('keydown', (e) => {
+  if (document.querySelector('dialog[open]')) return;   // 確かめ・要対応のダイアログ（<dialog> が Esc とフォーカスを受け持つ）
   const layer = topLayer();
   if (!layer) return;
   if (e.key === 'Escape') { closeLayer(false); return; }
   if (e.key === 'Tab') {
-    const f = layer.el.querySelectorAll('button:not([hidden]):not([disabled]), a[href], input');
+    const f = layer.el.querySelectorAll('button:not([hidden]):not([disabled]), a[href], input:not([type="file"])');
     const vis = [...f].filter((x) => x.offsetParent !== null && getComputedStyle(x).visibility !== 'hidden');   // 隠した要素を除く
     if (!vis.length) return;
     if (e.shiftKey && document.activeElement === vis[0]) { e.preventDefault(); vis[vis.length - 1].focus(); }

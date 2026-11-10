@@ -73,8 +73,10 @@ export const SAMPLE_DATA = {
       files: files('cable', ['guide.stl', 'thumb.jpg']) }
   ],
   issues: [
-    { folderId: 'id-fanduct-0722', folderName: '20260722_ファンダクト試作', problem: 'meta.json の purpose が空です',
-      url: 'https://example.com/preview/folder/fanduct', rowUrl: 'https://example.com/preview/sheet#gid=0&range=A9' }
+    { folderId: 'id-fanduct-0722', folderName: '20260722_ファンダクト試作', problem: '「purpose」が空です',
+      url: 'https://example.com/preview/folder/fanduct', rowUrl: 'https://example.com/preview/sheet#gid=0&range=A9',
+      date: '2026-07-22', name: 'ファンダクト試作', fp: 'fp-fanduct',
+      meta: { author: '山田', purpose: '', status: '使用中', tags: ['試作'], note: [] } }
   ]
 };
 

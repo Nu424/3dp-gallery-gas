@@ -5,6 +5,10 @@
 // 場面の切り替え：out/index.html?scenario=empty | error | partial | syncfail | readonly（canSync:false）| status（未知の状態あり）
 //                 | many（作品30件）| thumbfail（getThumbnails が失敗する）
 //                 | heic（作品30件。large=true の返事がブラウザで表示できない画像 → 画面は S で頼み直す）
+//                 | conflict（最初の保存は「ほかの人が先に変更」で返す）| broken（要対応の meta.json が壊れている）
+//                 | upfail（名前に fail を含むファイルの送信が失敗する）| denytrash（ゴミ箱へ移す権限がない）
+// 画面からの書き込み（updateItemMeta・trashItemFile・uploadItemFile・refreshItem）は、メモリの上の DATA を書き換える。
+//   呼び出しは <html data-writes="[...]"> に残す。送信は大きさに応じて待つ（1MB あたり 400ms）
 // プレビュー専用の指定（ヘッドレス Chrome の --screenshot で、操作した後の状態を撮るため）：
 //   &view=list|gallery    読み込み後に表示方法を切り替える
 //   &select=<folderId>    読み込み後にその作品を選ぶ
@@ -86,6 +90,15 @@ const fake = `<script>
     URL.createObjectURL = () => 'blob:null/preview-broken-' + (++n);   // 読めない blob: の URL
   }
   if (scenario === 'readonly') DATA.canSync = false;
+  // 編集用：ファイルに ID、作品に指紋（本物は getGalleryData が入れる）
+  DATA.items.forEach((it) => { it.fp = 'fp-' + it.folderId; it.files.forEach((f, i) => { f.id = it.folderId + '-f' + i; }); });
+  DATA.uploadMaxBytes = 20 * 1024 * 1024;
+  const writes = [];
+  const logWrite = (what) => { writes.push(what); document.documentElement.dataset.writes = JSON.stringify(writes); };
+  let fpSeq = 0, fileSeq = 0, conflictLeft = scenario === 'conflict' ? 1 : 0;
+  const pending = {};   // 上げたが refreshItem でまだ反映していないファイル（フォルダID → [file]）
+  const findItem = (id) => DATA.items.find((x) => x.folderId === id);
+  const copy = (v) => JSON.parse(JSON.stringify(v));
   if (scenario === 'status') { DATA.statuses = ['使用中', '参考', '引退', '検討中']; DATA.items[1].status = '検討中'; }
   const impl = {
     getGalleryData(ok, fail) {
@@ -123,6 +136,60 @@ const fake = `<script>
         DATA.syncedAt = new Date().toISOString();
         if (scenario === 'partial') return ok({ done: false, message: '時間切れのため途中までです（5件を確認、1件を更新）。もう一度押すと続きから進みます' });
         ok({ done: true, message: '同期しました（8件を確認、0件を更新）' });
+      });
+    },
+    updateItemMeta(ok, fail, id, fields, fp, overwrite) {
+      logWrite('updateItemMeta ' + id + ' ' + JSON.stringify(fields) + (overwrite ? ' overwrite' : ''));
+      wait(700, () => {
+        const it = findItem(id), is = DATA.issues.find((x) => x.folderId === id);
+        if (!it && !is) return fail(new Error('作品のフォルダが見つかりません。一覧を読み込み直してください'));
+        if (conflictLeft && it) {   // 誰かが先に作った人を変えていた
+          conflictLeft--; it.author = '高橋'; it.fp = 'fp-c' + (++fpSeq);
+          return ok({ ok: false, conflict: true, message: 'ほかの人が先にこの作品を変更していました。最新の内容を読み込んだので、確かめてもう一度保存してください', entry: { item: copy(it) } });
+        }
+        if (scenario === 'broken' && is && !overwrite) return ok({ ok: false, message: 'meta.json を JSON として読めません。今の中身を捨てて書き直すか、ドライブで直してください', entry: null, broken: '{\\n  "author": "山田",\\n  "purpose": \\n' });
+        if (it && fp && fp !== it.fp) return ok({ ok: false, conflict: true, message: 'ほかの人が先にこの作品を変更していました（プレビュー）', entry: { item: copy(it) } });
+        if (!fields.author || !fields.purpose || !DATA.statuses.includes(fields.status)) return fail(new Error('保存できません：必須の項目が空です'));
+        if (it) { Object.assign(it, fields); it.fp = 'fp-s' + (++fpSeq); return ok({ ok: true, message: '保存しました', entry: { item: copy(it) } }); }
+        // 要対応が直った：一覧へ移す
+        DATA.issues = DATA.issues.filter((x) => x !== is);
+        const item = { folderId: id, folderName: is.folderName, folderUrl: is.url, date: is.date, name: is.name, ...fields, fp: 'fp-s' + (++fpSeq), thumbUrl: null, photos: [], files: [{ id: id + '-meta', name: 'meta.json', url: '#', downloadUrl: '#' }] };
+        DATA.items.unshift(item);
+        ok({ ok: true, message: '保存しました', entry: { item: copy(item) } });
+      });
+    },
+    trashItemFile(ok, fail, id, fileId) {
+      logWrite('trashItemFile ' + id + ' ' + fileId);
+      wait(600, () => {
+        if (scenario === 'denytrash') return fail(new Error('ファイルをゴミ箱に移す権限がありません。共有ドライブでは「コンテンツ管理者」以上が必要です'));
+        const it = findItem(id), f = it && it.files.find((x) => x.id === fileId);
+        if (!f) return fail(new Error('このファイルはこの作品のフォルダにありません'));
+        it.files = it.files.filter((x) => x !== f); it.photos = it.photos.filter((x) => x.name !== f.name); it.fp = 'fp-t' + (++fpSeq);
+        ok({ ok: true, message: '「' + f.name + '」をゴミ箱に移しました', entry: { item: copy(it) } });
+      });
+    },
+    uploadItemFile(ok, fail, id, name, mimeType, base64, replace) {
+      const size = Math.floor(base64.length * 3 / 4);
+      logWrite('uploadItemFile ' + id + ' ' + name + ' ' + size + (replace ? ' replace' : ''));
+      wait(300 + Math.round(size / 1048576 * 400), () => {
+        if (scenario === 'upfail' && /fail/.test(name)) return fail(new Error('上げられませんでした：ネットワークの疑似エラー（プレビュー）'));
+        const file = { id: 'up-' + (++fileSeq), name, url: '#', downloadUrl: '#' };
+        (pending[id] = pending[id] || []).push({ file, replace });
+        ok({ id: file.id, name, size });
+      });
+    },
+    refreshItem(ok, fail, id) {
+      logWrite('refreshItem ' + id);
+      wait(500, () => {
+        const it = findItem(id);
+        if (!it) return ok({ done: true, message: '', entry: null });
+        (pending[id] || []).forEach(({ file }) => {
+          it.files = it.files.filter((x) => x.name !== file.name).concat([file]).sort((a, b) => (a.name < b.name ? -1 : 1));
+          if (/^photo_/i.test(file.name)) it.photos.push({ name: file.name, url: 'https://drive.google.com/thumbnail?id=preview-up-' + file.id + '&sz=w600' });
+        });
+        pending[id] = [];
+        it.fp = 'fp-r' + (++fpSeq);
+        ok({ done: true, message: '「' + it.name + '」を再同期しました', entry: { item: copy(it) } });
       });
     },
     resyncItem(ok, fail, folderId) {

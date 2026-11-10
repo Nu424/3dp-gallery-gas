@@ -26,11 +26,16 @@ class FakeDrive {
     this.getByIdErrors = {}; // { ID: メッセージ } で、そのIDの getFolderById / getFileById が例外を投げる
     this.thumbReads = []; // getThumbnail() されたファイルID
     this.byteReads = [];  // getBlob().getBytes() されたファイルID（元のファイルを読んだか調べる用）
+    this.writes = [];     // 書き込みの記録（[操作, ID, 名前]）
+    this.denyWrite = {};  // { ID: メッセージ }：そのフォルダ・ファイルへの書き込み（作成・変更・ゴミ箱・移動）が例外を投げる
+    this.denyTrash = {};  // { ID: メッセージ }：ゴミ箱へ移すことだけが例外を投げる（共有ドライブの投稿者）
   }
+  checkWrite(id) { if (this.denyWrite[id]) throw new Error(this.denyWrite[id]); }
   newId(prefix) { return prefix + String(++this.seq).padStart(4, '0'); }
   addFolder(name, parentId) {
     const id = this.newId('fo');
-    this.nodes.set(id, { kind: 'folder', id, name, parents: parentId ? [parentId] : [], trashed: false });
+    this.clock += 1000;
+    this.nodes.set(id, { kind: 'folder', id, name, parents: parentId ? [parentId] : [], trashed: false, created: this.clock });
     return id;
   }
   addFile(parentId, name, content = '', opts = {}) {
@@ -73,6 +78,27 @@ class FakeDrive {
         getParents: () => iterator(node.parents.filter((p) => drive.nodes.has(p)).map((p) => drive.wrap(drive.nodes.get(p)))),
         getFoldersByName: (name) => iterator(drive.children(node.id, 'folder').filter((n) => n.name === name).map((n) => drive.wrap(n))),
         getFilesByName: (name) => iterator(drive.children(node.id, 'file').filter((n) => n.name === name).map((n) => drive.wrap(n))),
+        getDateCreated: () => new Date(node.created || 0),
+        // createFile(blob) と createFile(name, content, mimeType) の両方
+        createFile: (a, content, mimeType) => {
+          drive.checkWrite(node.id);
+          const blob = typeof a === 'object' ? a : { name: a, content: content || '', mimeType: mimeType || guessMime(a) };
+          const id = drive.addFile(node.id, blob.name, blob.content, { mimeType: blob.mimeType });
+          drive.writes.push(['create', id, blob.name]);
+          return drive.wrap(drive.nodes.get(id));
+        },
+        createFolder: (name) => {
+          drive.checkWrite(node.id);
+          const id = drive.addFolder(name, node.id);
+          drive.writes.push(['mkdir', id, name]);
+          return drive.wrap(drive.nodes.get(id));
+        },
+        setName: (name) => { drive.checkWrite(node.id); drive.writes.push(['rename', node.id, name]); node.name = name; },
+        setTrashed: (v) => {
+          drive.checkWrite(node.id);
+          if (drive.denyTrash[node.id]) throw new Error(drive.denyTrash[node.id]);
+          drive.writes.push(['trash', node.id, node.name]); node.trashed = !!v;
+        },
       };
     }
     return {
@@ -87,6 +113,26 @@ class FakeDrive {
         getBytes: () => { drive.byteReads.push(node.id); return toBytes(node.content); },
         getContentType: () => node.mimeType,
       }),
+      getParents: () => iterator(node.parents.filter((p) => drive.nodes.has(p)).map((p) => drive.wrap(drive.nodes.get(p)))),
+      setContent: (text) => { drive.checkWrite(node.id); drive.writes.push(['setContent', node.id, node.name]); drive.setContent(node.id, text); },
+      setName: (name) => { drive.checkWrite(node.id); drive.writes.push(['rename', node.id, name]); node.name = name; },
+      setTrashed: (v) => {
+        drive.checkWrite(node.id);
+        if (drive.denyTrash[node.id]) throw new Error(drive.denyTrash[node.id]);
+        drive.writes.push(['trash', node.id, node.name]); node.trashed = !!v;
+      },
+      moveTo: (folder) => {
+        drive.checkWrite(node.id);
+        drive.checkWrite(folder.getId());
+        drive.writes.push(['move', node.id, folder.getId()]); node.parents = [folder.getId()];
+        return drive.wrap(node);
+      },
+      makeCopy: (name, folder) => {
+        drive.checkWrite(folder.getId());
+        const id = drive.addFile(folder.getId(), name, node.content, { mimeType: node.mimeType });
+        drive.writes.push(['copy', node.id, id]);
+        return drive.wrap(drive.nodes.get(id));
+      },
       getThumbnail: () => {
         drive.thumbReads.push(node.id);
         if (node.thumbnail === null) return null;
@@ -318,6 +364,14 @@ const Utilities = {
   },
   base64Encode(bytes) {
     return Buffer.from(bytes.map((b) => b & 255)).toString('base64');
+  },
+  base64Decode(text) {
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(text)) throw new Error('Could not decode string.');
+    return [...Buffer.from(text, 'base64')].map((b) => (b > 127 ? b - 256 : b));
+  },
+  // 偽物の Blob は { name, content（文字列）, mimeType }
+  newBlob(bytes, mimeType, name) {
+    return { name, mimeType, content: Buffer.from(bytes.map((b) => b & 255)).toString('utf8'), size: bytes.length };
   },
   formatDate(date, tz, fmt) {
     // テストでは JST 固定の簡易版

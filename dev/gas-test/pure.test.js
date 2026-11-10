@@ -283,7 +283,7 @@ test('recordToGalleryEntry: 作品', () => {
   assert.equal(e.issue, undefined);
   const it = e.item;
   assert.deepEqual(Object.keys(it), ['folderId', 'folderName', 'folderUrl', 'date', 'name', 'author', 'purpose',
-    'status', 'tags', 'note', 'thumbUrl', 'photos', 'files']);
+    'status', 'tags', 'note', 'fp', 'thumbUrl', 'photos', 'files']);
   assert.equal(it.folderUrl, 'https://drive.google.com/drive/folders/F1');
   assert.deepEqual(it.tags, ['顕微鏡', '治具']);
   assert.deepEqual(it.note, ['M3ネジ×4で固定。', '縦向きで刷る。']);
@@ -293,6 +293,7 @@ test('recordToGalleryEntry: 作品', () => {
     { name: 'photo_2.jpg', url: 'https://drive.google.com/thumbnail?id=p2&sz=w600' },
   ]);
   assert.deepEqual(it.files[0], {
+    id: 's1',
     name: 'base.stl',
     url: 'https://drive.google.com/file/d/s1/view',
     downloadUrl: 'https://drive.google.com/uc?export=download&id=s1',
@@ -321,6 +322,10 @@ test('recordToGalleryEntry: 不備のある行は issue（行へのリンク付�
     problem: r.error,
     url: 'https://drive.google.com/drive/folders/F1',
     rowUrl: 'https://docs.google.com/spreadsheets/d/SS/edit#gid=42&range=A7',
+    date: '2025-06-12',
+    name: '流路セルホルダー',
+    fp: r.fingerprint,
+    meta: { author: '', purpose: '', status: '', tags: [], note: [] },
   });
 });
 

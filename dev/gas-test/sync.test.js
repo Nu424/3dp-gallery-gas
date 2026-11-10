@@ -338,7 +338,7 @@ test('getGalleryData：シートが無ければ空', () => {
   const env = setupEnv();
   assert.deepEqual(plain(env.ctx.getGalleryData()), {
     syncedAt: null, sheetUrl: 'https://docs.google.com/spreadsheets/d/SSID/edit',
-    statuses: ['使用中', '参考', '引退'], canSync: true,
+    statuses: ['使用中', '参考', '引退'], canSync: true, uploadMaxBytes: 20 * 1024 * 1024,
     links: [{ key: 'items', label: 'items フォルダ', url: 'https://drive.google.com/drive/folders/' + env.itemsId }],
     items: [], issues: [] });
 });
@@ -430,7 +430,7 @@ test('getGalleryData：statuses・canSync・issues の folderId', () => {
   const data = plain(env.ctx.getGalleryData());
   assert.deepEqual(data.statuses, ['使用中', '参考', '引退']);
   assert.equal(data.canSync, true);
-  assert.deepEqual(Object.keys(data.issues[0]), ['folderId', 'folderName', 'problem', 'url', 'rowUrl']);
+  assert.deepEqual(Object.keys(data.issues[0]), ['folderId', 'folderName', 'problem', 'url', 'rowUrl', 'date', 'name', 'fp', 'meta']);
   assert.equal(data.issues[0].folderId, id);
   env.ss.canEdit = false;
   assert.equal(env.ctx.getGalleryData().canSync, false);

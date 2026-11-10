@@ -125,6 +125,20 @@ var MSG_DELETE_SKIPPED_MANY = '消えたフォルダが多すぎるため、行�
 var APP_TITLE = '3Dプリント作品ギャラリー';
 
 /**
+ * 画面からの編集・追加（作品フォルダへの書き込み）の決まり。
+ * 書き込むのは Drive の作品フォルダと meta.json だけで、スプシはそのあと再同期で直す（フォルダが唯一の正）。
+ * meta.json は画面から来た EDITABLE_META_KEYS だけを差し替え、ほかのキー（fusion_id など）はそのまま残す。
+ */
+var EDITABLE_META_KEYS = ['author', 'purpose', 'status', 'tags', 'note'];
+var UPLOAD_MAX_BYTES = 20 * 1024 * 1024;  // 1ファイルの上限。google.script.run で base64 にして送る（約1.33倍）ため。実機で確かめて引き上げる
+var UPLOAD_NAME_MAX = 120;                // ファイル名の長さの上限（文字数）
+var STAGING_PREFIX = '_up_';              // 画面からの追加の置き場・作業中のフォルダ（先頭が _ なので同期の対象外）
+var STAGING_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 置き去りの置き場を同期で片付けるまでの時間
+var MSG_WRITE_PERMISSION = '作品フォルダを書き換える権限がありません。共有ドライブのメンバー（投稿者以上）か確かめてください';
+var MSG_TRASH_PERMISSION = 'ファイルをゴミ箱に移す権限がありません。共有ドライブでは「コンテンツ管理者」以上が必要です';
+var MSG_CONFLICT = 'ほかの人が先にこの作品を変更していました。最新の内容を読み込んだので、確かめてもう一度保存してください';
+
+/**
  * 画面に出す関連リンク（説明書・スクリプト・ひな形など）を書くシート。管理者がセルを書き換えて登録する
  * （コードを貼り直しても消えないように、Code.gs の定数やスクリプトプロパティにはしない）。
  * 列は key（置き場所を決める名前）・label（画面に出す名前）・target（URL か Drive のID）・memo。
@@ -520,7 +534,12 @@ function recordToGalleryEntry(record, where) {
         folderName: record.folder_name,
         problem: record.error,
         url: folderUrl,
-        rowUrl: sheetRowUrl(where.sheetUrl, where.sheetGid, where.rowNumber)
+        rowUrl: sheetRowUrl(where.sheetUrl, where.sheetGid, where.rowNumber),
+        // 画面で meta.json を直すとき（updateItemMeta）用。date が空ならフォルダ名の不備で、画面では直せない
+        date: record.date,
+        name: record.name,
+        fp: record.fingerprint,
+        meta: { author: record.author, purpose: record.purpose, status: record.status, tags: splitTags(record.tags), note: splitNote(record.note) }
       }
     };
   }
@@ -537,12 +556,13 @@ function recordToGalleryEntry(record, where) {
       status: record.status,
       tags: splitTags(record.tags),
       note: splitNote(record.note),
+      fp: record.fingerprint,   // 画面から編集するとき、読んだあとに誰かが変えていないかの確かめに使う
       thumbUrl: record.thumb_id ? driveThumbnailUrl(record.thumb_id) : null,
       photos: pickPhotoFiles(files).map(function (f) {
         return { name: f.name, url: driveThumbnailUrl(f.id) };
       }),
       files: files.map(function (f) {
-        return { name: f.name, url: driveFileUrl(f.id), downloadUrl: driveDownloadUrl(f.id) };
+        return { id: f.id, name: f.name, url: driveFileUrl(f.id), downloadUrl: driveDownloadUrl(f.id) };
       })
     }
   };
@@ -587,6 +607,85 @@ function parseLinkRows(values) {
     out.push({ key: key, label: label, url: url });
   });
   return out;
+}
+
+/**
+ * 画面から来た meta の項目を整える（型の違うものは空にする）。
+ * 文字列は前後の空白を除く。tags は前後の空白を除いて空と重複を捨てる。note は1要素＝1行で、
+ * 要素の中の改行は行に分け、行末の空白と空の行を捨てる。
+ * @return {{author:string,purpose:string,status:string,tags:string[],note:string[]}}
+ */
+function cleanMetaFields(fields) {
+  var f = fields || {};
+  var str = function (v) { return typeof v === 'string' ? v.trim() : ''; };
+  var list = function (v) { return Array.isArray(v) ? v.filter(function (x) { return typeof x === 'string'; }) : []; };
+  var tags = [];
+  list(f.tags).forEach(function (t) {
+    t = t.trim();
+    if (t && tags.indexOf(t) < 0) tags.push(t);
+  });
+  var note = [];
+  list(f.note).forEach(function (n) {
+    n.split(/\r?\n/).forEach(function (line) {
+      line = line.replace(/\s+$/, '');
+      if (line.trim() !== '') note.push(line);
+    });
+  });
+  return { author: str(f.author), purpose: str(f.purpose), status: str(f.status), tags: tags, note: note };
+}
+
+/**
+ * meta.json の文字列 → オブジェクト。空・無し（null）なら {}。
+ * JSON として読めない・{ } でないときは obj が null で、error に理由。
+ */
+function parseMetaObject(text) {
+  if (text === null || text === undefined || String(text).trim() === '') return { obj: {}, error: '' };
+  try {
+    var obj = JSON.parse(stripBom(text));
+    if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) return { obj: null, error: 'meta.json の中身が { } で囲まれていません' };
+    return { obj: obj, error: '' };
+  } catch (e) {
+    return { obj: null, error: 'meta.json を JSON として読めません' };
+  }
+}
+
+/**
+ * 元の meta（オブジェクト）に、画面から来た項目を重ねた meta.json の文字列を作る。
+ * キーの並びは元のまま、無かった EDITABLE_META_KEYS は後ろに足す。ほかのキー（fusion_id など）は残す。
+ * 書く前の検査は同期と同じ checkMeta（errors が空でなければ書かない）。
+ * @return {{text:string, errors:string[]}}
+ */
+function mergeMetaText(baseObj, fields) {
+  var clean = cleanMetaFields(fields);
+  var out = {};
+  Object.keys(baseObj || {}).forEach(function (k) {
+    out[k] = EDITABLE_META_KEYS.indexOf(k) >= 0 ? clean[k] : baseObj[k];
+  });
+  EDITABLE_META_KEYS.forEach(function (k) {
+    if (!(k in out)) out[k] = clean[k];
+  });
+  var text = JSON.stringify(out, null, 2) + '\n';
+  return { text: text, errors: checkMeta(text).errors };
+}
+
+/**
+ * 画面から上げるファイルの名前を整える。ファイル名に使えない記号（/ \ : * ? " < > |）と制御文字を _ にし、
+ * 前後の空白と末尾の . を除き、UPLOAD_NAME_MAX 文字に収める（拡張子は残す）。使えない名前なら空文字。
+ */
+function cleanUploadName(name) {
+  var s = String(name || '').replace(/[\u0000-\u001f\u007f\/\\:*?"<>|]/g, '_').trim().replace(/[.\s]+$/, '');
+  if (s.length > UPLOAD_NAME_MAX) {
+    var ext = fileExtension(s);
+    var keep = ext && ext.length < 12 ? '.' + ext : '';
+    s = s.slice(0, UPLOAD_NAME_MAX - keep.length) + keep;
+  }
+  if (s === '' || s === '.' || s === '..') return '';
+  return s;
+}
+
+/** 置き場（画面からの追加の作業用フォルダ）の名前か */
+function isStagingFolderName(name) {
+  return String(name).indexOf(STAGING_PREFIX) === 0;
 }
 
 /**
@@ -1142,40 +1241,217 @@ function runSync_(options) {
  * 呼ぶが、「見つからない」以外の失敗（権限など）は投げ直し、行は消さない。
  */
 function resyncItem_(folderId) {
-  folderId = String(folderId || '');
   return withSyncLock_(function () {
-    var sheet = getOrCreateSheet_();
-    assertCanWriteSheet_(sheet);
-    var itemsFolder = getItemsFolder_();
-    var records = readRecords_(sheet);
+    var r = resyncUnlocked_(folderId);
+    return { done: r.done, message: r.message };
+  });
+}
 
-    var entry = listItemFolders_(itemsFolder).filter(function (f) { return f.id === folderId; })[0];
+/**
+ * resyncItem_ の中身（ロックは呼ぶ側が取る）。画面からの書き込みのあと、同じロックの中で一覧に反映するのにも使う。
+ * @return {{done:boolean, message:string, record:Object|null, entry:Object|null}}
+ *   entry は画面用のデータ（{item} か {issue}。recordToGalleryEntry の形）。一覧から外したときは null
+ */
+function resyncUnlocked_(folderId) {
+  folderId = String(folderId || '');
+  var sheet = getOrCreateSheet_();
+  assertCanWriteSheet_(sheet);
+  var itemsFolder = getItemsFolder_();
+  var records = readRecords_(sheet);
 
-    if (!entry) {
-      var reason = whyNotSyncTarget_(folderId, itemsFolder.getId());
-      var rest = records.filter(function (r) { return r.folder_id !== folderId; });
-      var hadRow = rest.length !== records.length;
-      if (hadRow) writeRecords_(sheet, rest);
-      return {
-        done: true,
-        message: hadRow ? '一覧から外しました（' + reason + '）' : '同期の対象ではありません（' + reason + '）'
-      };
-    }
+  var entry = listItemFolders_(itemsFolder).filter(function (f) { return f.id === folderId; })[0];
 
-    var name = entry.name;
-    var previous = records.filter(function (r) { return r.folder_id === entry.id; })[0];
-    var result = syncOneFolder_(entry, previous, true, nowIso_());
-    var others = records.filter(function (r) { return r.folder_id !== entry.id; });
-    writeRecords_(sheet, others.concat([result.record]));
-
-    var rec = result.record;
+  if (!entry) {
+    var reason = whyNotSyncTarget_(folderId, itemsFolder.getId());
+    var rest = records.filter(function (r) { return r.folder_id !== folderId; });
+    var hadRow = rest.length !== records.length;
+    if (hadRow) writeRecords_(sheet, rest);
     return {
       done: true,
-      message: rec.error
-        ? '「' + name + '」を再同期しました。直すところがあります：' + rec.error
-        : '「' + name + '」を再同期しました'
+      message: hadRow ? '一覧から外しました（' + reason + '）' : '同期の対象ではありません（' + reason + '）',
+      record: null,
+      entry: null
     };
+  }
+
+  var name = entry.name;
+  var previous = records.filter(function (r) { return r.folder_id === entry.id; })[0];
+  var result = syncOneFolder_(entry, previous, true, nowIso_());
+  var others = records.filter(function (r) { return r.folder_id !== entry.id; });
+  writeRecords_(sheet, others.concat([result.record]));
+
+  var rec = result.record;
+  // 画面用のデータ。行番号は writeRecords_ と同じ並び（フォルダ名順）での位置
+  var all = sortRecords(others.concat([rec]));
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var where = { sheetUrl: ss.getUrl(), sheetGid: sheet.getSheetId(), rowNumber: all.indexOf(rec) + 2 };
+  return {
+    done: true,
+    message: rec.error
+      ? '「' + name + '」を再同期しました。直すところがあります：' + rec.error
+      : '「' + name + '」を再同期しました',
+    record: rec,
+    entry: recordToGalleryEntry(rec, where)
+  };
+}
+
+
+// =============================================================================
+// 作品フォルダへの書き込み（画面からの編集・追加）
+//   書き込むのは items/ の直下の作品フォルダ（と置き場 _up_…）の中だけ。対象は毎回、items の直下にあるかで確かめる。
+//   書いたあとは resyncUnlocked_ でその作品の行を作り直し、画面用のデータを返す（画面は全件を読み直さない）。
+//   書き込みとシートの更新は同期と同じロックの中で行う（同期と同時に走って、行が古いまま残らないように）。
+// =============================================================================
+
+/**
+ * folderId が items の直下の、書き込んでよいフォルダかを確かめて返す。
+ * kind: 'item'（作品フォルダ。先頭 _ は不可）/ 'staging'（置き場。_up_ で始まる）/ 'any'（どちらでも）
+ */
+function writableFolder_(folderId, kind) {
+  var itemsFolder = getItemsFolder_();
+  var folder;
+  try {
+    folder = DriveApp.getFolderById(String(folderId || ''));
+  } catch (e) {
+    if (isPermissionError(e) && !isNotFoundError(e)) throw userError_(MSG_WRITE_PERMISSION);
+    throw userError_('作品のフォルダが見つかりません。一覧を読み込み直してください');
+  }
+  if (folder.isTrashed() || !isDirectChildOf_(folder, itemsFolder.getId())) {
+    throw userError_('作品のフォルダが items の直下にありません。一覧を読み込み直してください');
+  }
+  var name = folder.getName();
+  var staging = isStagingFolderName(name);
+  if ((kind === 'item' && isIgnoredFolderName(name)) || (kind === 'staging' && !staging) || (kind === 'any' && isIgnoredFolderName(name) && !staging)) {
+    throw userError_('このフォルダには書き込めません（' + name + '）');
+  }
+  return folder;
+}
+
+/** フォルダの直下の、ゴミ箱に入っていない meta.json を並べる */
+function metaFilesIn_(folder) {
+  var out = [];
+  var it = folder.getFilesByName(META_FILE_NAME);
+  while (it.hasNext()) {
+    var f = it.next();
+    if (!f.isTrashed()) out.push(f);
+  }
+  return out;
+}
+
+/** Drive の書き込みの失敗を画面向けの文にする（権限不足なら MSG_WRITE_PERMISSION か permissionText） */
+function writeError_(e, permissionText) {
+  if (e && e.userFacing) return e;
+  if (isPermissionError(e)) return userError_(permissionText || MSG_WRITE_PERMISSION);
+  return userError_('作品フォルダに書き込めませんでした：' + String(e && e.message ? e.message : e));
+}
+
+/**
+ * 作品の meta.json を画面の項目で書き換える（中身は mergeMetaText）。
+ * @param {Object} fields { author, purpose, status, tags:[], note:[] }
+ * @param {string} baseFp 画面が読んだときの指紋（fp）。今のフォルダの指紋と違えば、書かずに conflict を返す
+ * @param {boolean} overwriteBroken meta.json が JSON として読めないとき、捨てて書き直してよいか
+ * @return {{ok:boolean, message:string, entry:Object|null, conflict?:boolean, broken?:string}}
+ *   broken：meta.json が壊れていて overwriteBroken でないとき、元の文字列（先頭 2000 文字）
+ */
+function updateItemMeta_(folderId, fields, baseFp, overwriteBroken) {
+  return withSyncLock_(function () {
+    var folder = writableFolder_(folderId, 'item');
+    var sheet = getOrCreateSheet_();
+    assertCanWriteSheet_(sheet);
+    var current = computeFingerprint(folder.getName(), listFolderFiles_(folder));
+    if (baseFp && current !== baseFp) {
+      var fresh = resyncUnlocked_(folder.getId());
+      return { ok: false, conflict: true, message: MSG_CONFLICT, entry: fresh.entry };
+    }
+    var metas = metaFilesIn_(folder);
+    if (metas.length > 1) throw userError_('meta.json が' + metas.length + '個あります。ドライブで1つにしてから直してください');
+    var text = metas.length ? metas[0].getBlob().getDataAsString('UTF-8') : null;
+    var parsed = parseMetaObject(text);
+    if (!parsed.obj && !overwriteBroken) {
+      return { ok: false, message: parsed.error + '。今の中身を捨てて書き直すか、ドライブで直してください', entry: null, broken: String(text).slice(0, 2000) };
+    }
+    var merged = mergeMetaText(parsed.obj || {}, fields);
+    if (merged.errors.length) throw userError_('保存できません：' + merged.errors.join(' / '));
+    try {
+      if (metas.length) metas[0].setContent(merged.text);
+      else folder.createFile(META_FILE_NAME, merged.text, 'application/json');
+    } catch (e) {
+      throw writeError_(e);
+    }
+    var r = resyncUnlocked_(folder.getId());
+    return { ok: true, message: '保存しました', entry: r.entry };
   });
+}
+
+/**
+ * 作品フォルダのファイルを1つゴミ箱へ移す（meta.json は不可）。
+ * @return {{ok:boolean, message:string, entry:Object|null}}
+ */
+function trashItemFile_(folderId, fileId) {
+  return withSyncLock_(function () {
+    var folder = writableFolder_(folderId, 'item');
+    var sheet = getOrCreateSheet_();
+    assertCanWriteSheet_(sheet);
+    var file;
+    try {
+      file = DriveApp.getFileById(String(fileId || ''));
+    } catch (e) {
+      throw userError_('ファイルが見つかりません。一覧を読み込み直してください');
+    }
+    if (file.isTrashed() || !isDirectChildOf_(file, folder.getId())) throw userError_('このファイルはこの作品のフォルダにありません');
+    var name = file.getName();
+    if (name === META_FILE_NAME) throw userError_('meta.json は消せません（作品の説明が無くなるため）');
+    try {
+      file.setTrashed(true);
+    } catch (e) {
+      throw writeError_(e, MSG_TRASH_PERMISSION);
+    }
+    var r = resyncUnlocked_(folder.getId());
+    return { ok: true, message: '「' + name + '」をゴミ箱に移しました', entry: r.entry };
+  });
+}
+
+/**
+ * ファイルを1つ上げる（作品フォルダか置き場へ）。base64 の中身を Blob にして createFile する。
+ * 同じ名前のファイルがあるときは、replace なら上げたあとで古い方をゴミ箱へ、そうでなければ断る。
+ * 一覧への反映はしない（何件か上げ終えてから画面が refreshItem を呼ぶ）。ロックも取らない（Drive に足すだけ）。
+ * @return {{id:string, name:string, size:number}}
+ */
+function uploadItemFile_(folderId, name, mimeType, base64, replace) {
+  var folder = writableFolder_(folderId, 'any');
+  var clean = cleanUploadName(name);
+  if (!clean) throw userError_('この名前のファイルは上げられません（' + name + '）');
+  if (clean.toLowerCase() === META_FILE_NAME) throw userError_('meta.json は上げられません（作品の説明はフォームで入れます）');
+  var bytes;
+  try {
+    bytes = Utilities.base64Decode(String(base64 || ''));
+  } catch (e) {
+    throw userError_('ファイルの中身を読めませんでした（' + clean + '）');
+  }
+  if (bytes.length > UPLOAD_MAX_BYTES) {
+    throw userError_('「' + clean + '」は大きすぎます（' + Math.round(UPLOAD_MAX_BYTES / 1024 / 1024) + 'MB まで）。ドライブで直接入れてください');
+  }
+  var olds = [];
+  var it = folder.getFilesByName(clean);
+  while (it.hasNext()) {
+    var f = it.next();
+    if (!f.isTrashed()) olds.push(f);
+  }
+  if (olds.length && !replace) throw userError_('同じ名前のファイル「' + clean + '」があります');
+  var created;
+  try {
+    created = folder.createFile(Utilities.newBlob(bytes, String(mimeType || '') || 'application/octet-stream', clean));
+  } catch (e) {
+    throw writeError_(e);
+  }
+  olds.forEach(function (f) {
+    try {
+      f.setTrashed(true);
+    } catch (e) {
+      Logger.log('古いファイルをゴミ箱に移せませんでした（' + clean + '）：' + (e && e.message ? e.message : e));
+    }
+  });
+  return { id: created.getId(), name: created.getName(), size: created.getSize() };
 }
 
 
@@ -1214,6 +1490,7 @@ function getGalleryData() {
       statuses: STATUS_CHOICES.slice(),
       canSync: canEditSpreadsheet_(ss),
       links: readLinks_(ss),
+      uploadMaxBytes: UPLOAD_MAX_BYTES,   // 画面から上げられる1ファイルの大きさの上限（画面は上げる前にこれで分ける）
       items: [],
       issues: []
     };
@@ -1258,6 +1535,52 @@ function syncNow() {
 function resyncItem(folderId) {
   return withUserErrors_(function () {
     return resyncItem_(folderId);
+  });
+}
+
+/**
+ * 詳細の「編集」の保存：meta.json の author・purpose・status・tags・note を書き換える（updateItemMeta_）。
+ * 要対応の作品（meta.json が無い・中身の不備）を画面で直すときにも使う。
+ * @return {{ok:boolean, message:string, entry:Object|null, conflict?:boolean, broken?:string}}
+ */
+function updateItemMeta(folderId, fields, baseFp, overwriteBroken) {
+  return withUserErrors_(function () {
+    return updateItemMeta_(folderId, fields, baseFp, overwriteBroken === true);
+  }, { permission: MSG_WRITE_PERMISSION, prefix: '保存できませんでした：' });
+}
+
+/**
+ * 詳細の「編集」のファイルの削除（ゴミ箱へ）。
+ * @return {{ok:boolean, message:string, entry:Object|null}}
+ */
+function trashItemFile(folderId, fileId) {
+  return withUserErrors_(function () {
+    return trashItemFile_(folderId, fileId);
+  }, { permission: MSG_TRASH_PERMISSION, prefix: '消せませんでした：' });
+}
+
+/**
+ * ファイルを1つ上げる（詳細の「編集」のファイルの追加、作品の追加の置き場）。
+ * @param {string} base64 中身（data URL の , より後ろ）
+ * @param {boolean} replace 同じ名前のファイルがあれば置き換えるか
+ * @return {{id:string, name:string, size:number}}
+ */
+function uploadItemFile(folderId, name, mimeType, base64, replace) {
+  return withUserErrors_(function () {
+    return uploadItemFile_(folderId, name, mimeType, base64, replace === true);
+  }, { permission: MSG_WRITE_PERMISSION, prefix: '上げられませんでした：' });
+}
+
+/**
+ * 1作品を読み直して、画面用のデータを返す（ファイルを上げ終えたあとに画面が呼ぶ）。
+ * @return {{done:boolean, message:string, entry:Object|null}}
+ */
+function refreshItem(folderId) {
+  return withUserErrors_(function () {
+    return withSyncLock_(function () {
+      var r = resyncUnlocked_(folderId);
+      return { done: r.done, message: r.message, entry: r.entry };
+    });
   });
 }
 
