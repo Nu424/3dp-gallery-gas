@@ -378,9 +378,9 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
 .ed-broken input{width:20px;height:20px}
 
 /* ---- 作品を追加する（画面から。第6ラウンドの A）。PC は真ん中のモーダル、960px 以下は全画面 ---- */
-.addm{position:fixed;inset:0;z-index:12;display:flex;align-items:center;justify-content:center;padding:24px}
+.addm{position:fixed;inset:0;z-index:12;display:flex;align-items:center;justify-content:center;padding:16px}
 .addm-backdrop{position:absolute;inset:0;background:rgba(31,37,43,.42);border:none;cursor:default}
-.addm-panel{position:relative;width:min(1240px,100%);height:min(880px,100%);display:flex;flex-direction:column;background:#fff;border-radius:16px;box-shadow:0 24px 64px rgba(31,37,43,.28);overflow:hidden}
+.addm-panel{position:relative;width:min(1560px,100%);height:min(1000px,100%);display:flex;flex-direction:column;background:#fff;border-radius:16px;box-shadow:0 24px 64px rgba(31,37,43,.28);overflow:hidden}
 .addm-head{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:12px 12px 12px 24px;border-bottom:1px solid var(--line-2)}
 .addm-head h2{margin:0;font-size:20px;font-weight:700}
 .addm-steps{margin:0;padding:0;list-style:none;display:flex;gap:6px;font-size:13px;color:var(--muted)}
@@ -399,11 +399,8 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
 .addm-hero ul{margin:6px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;font-size:14px;line-height:1.6;color:var(--ink-3);text-align:left}
 .addm-hero ul li::before{content:"・";color:var(--muted)}
 /* 3列（ファイル・作品・情報）。作品が1つで仕分けるものが無ければ2列（ファイル・情報） */
-.addm-tabs{display:none}
-.addm-cols{flex:1;min-height:0;display:grid;grid-template-columns:300px 340px minmax(0,1fr)}
-.addm-cols.single{grid-template-columns:360px minmax(0,1fr)}
-.addm-cols.single > [data-col="groups"]{display:none}
-.addm-col{min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:16px;display:flex;flex-direction:column;gap:12px;border-right:1px solid var(--line-2)}
+.addm-cols{flex:1;min-height:0;display:grid;grid-template-columns:minmax(300px,1fr) minmax(340px,1.15fr) minmax(420px,1.6fr)}
+.addm-col{min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:20px;display:flex;flex-direction:column;gap:12px;border-right:1px solid var(--line-2)}
 .addm-col:last-child{border-right:none}
 .addm-col[data-col="files"]{background:var(--soft)}
 .col-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px}
@@ -420,11 +417,12 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
 .fchip .ext{flex:none;min-width:36px;padding:2px 3px;font-size:10.5px;font-weight:700;text-align:center;color:#fff;background:var(--ink);border-radius:4px}
 .fchip .fname{flex:1;min-width:0;line-height:1.35;overflow-wrap:anywhere}
 .fchip .fname small{display:block;font-size:11.5px;color:var(--req)}
-.fchip .up{flex:none;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700}
-.fchip.is-done .up{color:#2E6B3A}
+/* 上げている途中（待ち・送信中）は灰色で、送信中は光が流れる。上がったら普通の見た目。失敗は赤 */
+.fchip.is-wait,.fchip.is-send{color:var(--faint);background:var(--soft);border-style:dashed}
+.fchip.is-wait .ext,.fchip.is-send .ext{background:var(--chip-line)}
+.fchip.is-send{background:linear-gradient(90deg,var(--soft) 0%,#E6EBEF 40%,var(--soft) 80%) 0 0 / 300% 100%;animation:upload-shimmer 1.4s linear infinite}
+@keyframes upload-shimmer{from{background-position:100% 0}to{background-position:-200% 0}}
 .fchip.is-fail{border-color:#F3B8B0;background:#FDF4F2}
-.fchip.is-fail .up{color:var(--req)}
-.fchip.is-wait .up{color:var(--faint)}
 .mini-spin{width:13px;height:13px;border-radius:50%;border:2px solid var(--chip-line);border-top-color:var(--accent);animation:spin .9s linear infinite}
 .fchip .mv{position:relative;flex:none;width:34px;height:34px;display:flex;align-items:center;justify-content:center;color:var(--muted);border-radius:6px}
 .fchip .mv:hover,.fchip .mv:focus-within{color:var(--ink);background:var(--soft)}
@@ -436,7 +434,6 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
 .bulk{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font-size:13px}
 .bulk select,.addm-select{min-height:36px;padding:0 8px;font:inherit;font-size:13.5px;background:#fff;border:1px solid var(--field-line);border-radius:8px}
 .zone-note{padding:12px;font-size:13px;color:var(--muted);text-align:center;border:2px dashed var(--line);border-radius:10px}
-.gtools{display:flex;flex-wrap:wrap;gap:6px}
 .gcards{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px}
 .gcard{display:flex;flex-direction:column;gap:6px;padding:8px;background:#fff;border:1px solid var(--line);border-radius:12px}
 .gcard[aria-current="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
@@ -494,7 +491,7 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
 @keyframes spin{to{transform:rotate(360deg)}}
 .resync .err{color:var(--req);font-weight:700}
 .resync .warn{color:var(--warn-ink);font-weight:700}
-@media (prefers-reduced-motion: reduce){.spinner,.mini-spin{animation-duration:3s}}
+@media (prefers-reduced-motion: reduce){.spinner,.mini-spin{animation-duration:3s}.fchip.is-send{animation:none}}
 .issue-row .links .btn{min-height:36px;padding:0 10px;font-size:13px}
 /* ---- 幅の段階（docs/work-plan.md の M1）----
    1280px 以上：3列（第2ラウンドのまま）。961〜1279px：3列のまま、絞り込みは最初だけたたむ（state.filtersOpen の初期値）。
@@ -559,7 +556,7 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
   .detail h2{font-size:21px}
   .hero{height:200px}
   .ed-foot{padding:10px max(16px,env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
-  /* 作品を追加する：全画面。3列はタブで1列ずつ */
+  /* 作品を追加する：全画面。スマホから追加することはまれなので専用の部品は持たず、3列を縦に積むだけ */
   .addm{padding:0}
   .addm-panel{width:100%;height:100%;border-radius:0;box-shadow:none}
   .addm-head{gap:4px 8px;padding:calc(6px + env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) 6px max(16px,env(safe-area-inset-left))}
@@ -567,13 +564,8 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
   .addm-steps{display:none}
   .addm-head .other-way{order:3;flex-basis:100%;margin:0}
   .addm-hero{margin:12px;padding:16px}
-  .addm-tabs{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:4px;padding:6px 12px;background:var(--seg)}
-  .addm-tabs button{min-height:44px;font-size:14px;font-weight:700;background:transparent;border:none;border-radius:7px;cursor:pointer}
-  .addm-tabs button[aria-selected="true"]{background:#fff;box-shadow:0 1px 2px rgba(31,37,43,.2)}
-  .addm-cols,.addm-cols.single{display:block;overflow-y:auto;overscroll-behavior:contain}
-  .addm-col{display:none;overflow:visible;border:none;padding:14px max(16px,env(safe-area-inset-right)) 24px max(16px,env(safe-area-inset-left))}
-  .addm-cols[data-tab="files"] > [data-col="files"],.addm-cols[data-tab="groups"] > [data-col="groups"],.addm-cols[data-tab="form"] > [data-col="form"]{display:flex}
-  .pick-dir{display:none}   /* スマホはフォルダを選べないことが多い */
+  .addm-cols{display:block;overflow-y:auto;overscroll-behavior:contain}
+  .addm-col{overflow:visible;border-right:none;border-bottom:1px solid var(--line-2);padding:14px max(16px,env(safe-area-inset-right)) 20px max(16px,env(safe-area-inset-left))}
   .addm-foot{padding:10px max(16px,env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
   .addm-foot .grow{flex-basis:100%;font-size:12.5px}
   .addm-foot .btn{flex:1;justify-content:center}
@@ -1763,7 +1755,7 @@ function edFilesHTML(it, ed) {
     <ul class="ed-file-list">${(it.files || []).map((f) => `<li class="ed-file${ed.busyFile === f.id ? ' busy' : ''}"><span class="ext">${esc(extOf(f.name).toUpperCase())}</span><span class="fname">${esc(f.name)}</span>${f.name === 'meta.json'
       ? '<span class="small">上の内容</span>'
       : `<button class="icon-btn" type="button" data-action="file-del" data-file="${esc(f.id || '')}" data-name="${esc(f.name)}" aria-label="「${esc(f.name)}」をゴミ箱に移す"${ed.busyFile || !f.id ? ' disabled' : ''}>${ICON.trash}</button>`}</li>`).join('')}</ul>
-    ${ed.uploads.length ? `<ul class="ed-ups" aria-live="polite">${ed.uploads.map((u, i) => `<li class="ed-up is-${u.status}"><span class="fname">${esc(u.name)}</span><span class="st">${upLabel[u.status]}</span>${u.status === 'fail' && u.file ? `<button class="btn btn-small" type="button" data-action="up-retry" data-i="${i}">もう一度</button>` : ''}${u.error ? `<span class="why">${esc(u.error)}</span>` : ''}</li>`).join('')}</ul>` : ''}
+    ${ed.uploads.some((u) => !(u.applied && !u.error)) ? `<ul class="ed-ups" aria-live="polite">${ed.uploads.map((u, i) => u.applied && !u.error ? '' : `<li class="ed-up is-${u.status}"><span class="fname">${esc(u.name)}</span><span class="st">${upLabel[u.status]}</span>${u.status === 'fail' && u.file ? `<button class="btn btn-small" type="button" data-action="up-retry" data-i="${i}">もう一度</button>` : ''}${u.error ? `<span class="why">${esc(u.error)}</span>` : ''}</li>`).join('')}</ul>` : ''}
     ${ed.uploads.some((u) => u.status === 'fail' && /大きすぎ/.test(u.error || '')) && it.folderUrl ? `<a class="glink" href="${esc(it.folderUrl)}" target="_blank" rel="noopener" style="align-self:flex-start;margin:0">ドライブでこの作品のフォルダを開く</a>` : ''}
     <div class="ed-drop" data-ed-drop>${ICON.upload}<span>ここにファイルを落とすか</span><button class="btn btn-small" type="button" data-action="file-pick">ファイルを選ぶ</button>
       <input type="file" multiple hidden data-ed-file-input>
@@ -2155,7 +2147,8 @@ window.addEventListener('beforeunload', (e) => {
    - 落としたときに仕分けの案を作る（autoSort）：フォルダ1つ＝作品1つ（中がフォルダだけなら、その1つずつ）。
      ばらのファイルは、3Dの元データ（f3d・step など）の名前の先頭の語で作品にまとめ、ほかのファイルは同じ語の作品へ。
      元データが無ければ、まとめて1作品。どこにも当たらないものは「まだ仕分けていない」に残す
-   - 作品が1つで仕分けるものが無ければ、作品の列を畳んで2列（ファイル・情報）にする（いちばん多い「1件だけ追加」）
+   - 作品の数によらず、いつも3列（まだ仕分けていないファイル・作品・説明）。作品が1つでも並びが変わらないので迷わない。
+     作品を足す・まとめるのは、ドラッグ（新しい作品の枠・作品のカード）か各ファイルの ⇄ で行う
    - 作品ごとの説明のフォームは、詳細の編集と同じもの（editFormHTML。作品が編集の箱を兼ねる。scope 'add'）
    - 閉じても（×・Esc・戻る）中身は残る（state.add）。ヘッダーの「作品を追加する」に印が付く。捨てるのは「取り消す」だけ
    ============================================================ */
@@ -2173,7 +2166,7 @@ const lsGet = (k) => { try { return localStorage.getItem(k) || ''; } catch (_) {
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (_) { /* 覚えられなくても困らない */ } };
 let addSeq = 0;
 function addState() {
-  if (!state.add) state.add = { stagingId: '', staging: null, files: [], groups: [], sel: null, step: 'sort', tab: 'files', picked: new Set(), multi: false, busy: false };
+  if (!state.add) state.add = { stagingId: '', staging: null, files: [], groups: [], sel: null, step: 'sort', picked: new Set(), busy: false };
   return state.add;
 }
 const liveFiles = () => (state.add ? state.add.files.filter((f) => !f.removed) : []);
@@ -2368,14 +2361,15 @@ function pumpAddUploads() {
   }
   paintAddFoot();
 }
-const upIcon = (f) => f.status === 'send' ? '<span class="mini-spin" aria-hidden="true"></span>' : f.status === 'done' ? '✓' : f.status === 'fail' ? '!' : '…';
-const upTitle = (f) => ({ wait: '上げる順番を待っています', send: '上げています', done: '上げました', fail: '上げられませんでした' })[f.status];
+/* 読み上げ用の状態（見た目はチップの色で示す。上がったものは何も付けない） */
+const upLabel = (f) => ({ wait: '（上げる順番を待っています）', send: '（上げています）', done: '', fail: '' })[f.status];
 /* 上げている途中の表示だけを直す（全体を描き直さない。入力の途中でも邪魔しない） */
 function paintFile(f) {
   document.querySelectorAll(`#add [data-fkey="${f.key}"]`).forEach((el) => {
     el.className = 'fchip is-' + f.status;
+    el.title = upLabel(f).replace(/[（）]/g, '');
     const up = el.querySelector('.up');
-    if (up) { up.innerHTML = upIcon(f); up.title = upTitle(f); }
+    if (up) up.textContent = upLabel(f);
     const nm = el.querySelector('.fname');
     if (nm && f.status === 'fail' && !nm.querySelector('small')) nm.insertAdjacentHTML('beforeend', `<small>${esc(f.error)}</small>`);
   });
@@ -2412,11 +2406,11 @@ function chipHTML(f, pickable) {
   const A = state.add;
   const opts = A.groups.filter((g) => g.id !== f.group).map((g) => `<option value="${g.id}">${esc(folderLabel(g))}</option>`).join('');
   const role = f.group && f.role === 'thumb' && THUMB_EXTS.includes(extOf(f.name)) ? '<span class="role">代表画像</span>' : f.group && f.role === 'photo' ? '<span class="role">写真</span>' : '';
-  return `<li class="fchip is-${f.status}" draggable="true" data-fkey="${f.key}">
+  return `<li class="fchip is-${f.status}" draggable="true" data-fkey="${f.key}" title="${upLabel(f).replace(/[（）]/g, '')}">
     ${pickable ? `<input type="checkbox" data-add-pick="${f.key}"${A.picked.has(f.key) ? ' checked' : ''} aria-label="「${esc(f.name)}」を選ぶ">` : ''}
     <span class="ext">${esc((extOf(f.name) || '?').toUpperCase())}</span>
     <span class="fname">${esc(f.name)}${role}${f.status === 'fail' ? `<small>${esc(f.error)}</small>` : ''}</span>
-    <span class="up" title="${upTitle(f)}">${upIcon(f)}</span>
+    <span class="up sr-only">${upLabel(f)}</span>
     ${f.status === 'fail' && !f.big ? `<button class="btn btn-small" type="button" data-add-retry="${f.key}">もう一度</button>` : ''}
     <label class="mv" title="ほかの作品へ移す">${ICON.move}<select data-add-move="${f.key}" aria-label="「${esc(f.name)}」を移す先"><option value="" selected>移す先…</option>${opts}${f.group ? '<option value="__none">仕分けに戻す</option>' : ''}<option value="__new">新しい作品にする</option></select></label>
     <button class="icon-btn rm" type="button" data-add-rm="${f.key}" aria-label="「${esc(f.name)}」を外す">${ICON.x}</button>
@@ -2433,12 +2427,6 @@ function filesColHTML() {
       <ul class="fchips addm-zone" data-add-zone="__none">${un.map((f) => chipHTML(f, true)).join('')}</ul>`
     : `<div class="zone-note addm-zone" data-add-zone="__none">${A.groups.length ? 'すべて作品に入っています。作品から外すときは、ここへドラッグ' : ''}</div>`}`;
 }
-function singleFilesHTML(g) {
-  return `<div class="col-head"><h3>ファイル</h3><span class="n">${filesOf(g.id).length}件</span></div>
-    ${dropBoxHTML()}
-    <ul class="fchips addm-zone" data-add-zone="${g.id}">${filesOf(g.id).map((f) => chipHTML(f, false)).join('')}</ul>
-    <button class="btn btn-small" type="button" data-action="add-multi" style="align-self:flex-start">複数の作品に分けて登録する</button>`;
-}
 function groupsColHTML() {
   const A = state.add;
   const card = (g) => {
@@ -2449,9 +2437,8 @@ function groupsColHTML() {
       ${fs.length ? `<ul class="fchips">${fs.map((f) => chipHTML(f, false)).join('')}</ul>` : '<div class="empty-note">ファイルをここへドラッグ</div>'}
     </li>`;
   };
-  return `<div class="col-head"><h3>作品</h3><span class="n">${A.groups.length}件</span><button class="btn btn-small" type="button" data-action="add-new-group">＋ 作品を足す</button></div>
-    ${A.groups.length ? `<div class="gtools"><button class="btn btn-small" type="button" data-action="add-merge-all">全部を1つの作品に</button><button class="btn btn-small" type="button" data-action="add-split-all">3Dデータごとに分ける</button></div>` : ''}
-    <p class="small">ファイルを作品へドラッグして仕分けます（各ファイルの ⇄ からも移せます）。作品を押すと、その説明を書けます。</p>
+  return `<div class="col-head"><h3>作品</h3><span class="n">${A.groups.length}件</span></div>
+    <p class="small">ファイルを作品へドラッグして仕分けます（各ファイルの ⇄ からも移せます）。下の枠に落とすと新しい作品になります。作品を押すと、その説明を書けます。</p>
     <ul class="gcards">${A.groups.map(card).join('')}</ul>
     <div class="zone-note addm-zone" data-add-zone="__new">ここにファイルを落とすと、新しい作品になります</div>`;
 }
@@ -2477,7 +2464,6 @@ function groupFormHTML(g) {
       <p class="fname-preview" data-fpreview>${fnamePreviewHTML(g)}</p>
       ${editFormHTML(g)}
       ${imagesHTML(g)}
-      ${A.groups.length > 1 ? '<button class="btn btn-small" type="button" data-action="add-copy-common" style="align-self:flex-start">作った人・状態・タグを、ほかの作品にも入れる</button>' : ''}
     </div>`;
 }
 function confirmHTML() {
@@ -2538,15 +2524,10 @@ function renderAdd() {
     return;
   }
   if (A.step === 'sort') {
-    const un = liveFiles().filter((f) => !f.group).length;
-    const single = A.groups.length === 1 && !un && !A.multi;
-    if (single && A.tab === 'groups') A.tab = 'form';
     const g = selGroup();
-    const tabs = single ? [['files', `ファイル（${liveFiles().length}）`], ['form', '説明']] : [['files', `未仕分け（${un}）`], ['groups', `作品（${A.groups.length}）`], ['form', '説明']];
-    body.innerHTML = `<div class="addm-tabs" role="tablist" aria-label="表示する列">${tabs.map(([k, l]) => `<button type="button" role="tab" aria-selected="${A.tab === k}" data-add-tab="${k}">${l}</button>`).join('')}</div>
-      <div class="addm-cols${single ? ' single' : ''}" data-tab="${A.tab}">
-        <div class="addm-col" data-col="files">${single ? singleFilesHTML(g) : filesColHTML()}</div>
-        <div class="addm-col" data-col="groups">${single ? '' : groupsColHTML()}</div>
+    body.innerHTML = `<div class="addm-cols">
+        <div class="addm-col" data-col="files">${filesColHTML()}</div>
+        <div class="addm-col" data-col="groups">${groupsColHTML()}</div>
         <div class="addm-col" data-col="form">${g ? groupFormHTML(g) : '<p class="hint">作品を選ぶと、ここで説明を書けます。</p>'}</div>
       </div>`;
     foot.innerHTML = `<span class="grow" data-add-sum aria-live="polite">${addSummary()}</span>
@@ -2575,7 +2556,7 @@ function renderAdd() {
 function moveFiles(keys, to) {
   const A = state.add;
   let g = null;
-  if (to === '__new') { const f0 = A.files.find((f) => f.key === keys[0]); g = newGroup(f0 ? tokenOf(f0.name) : '', '', 'manual'); A.sel = g.id; A.multi = true; }
+  if (to === '__new') { const f0 = A.files.find((f) => f.key === keys[0]); g = newGroup(f0 ? tokenOf(f0.name) : '', '', 'manual'); A.sel = g.id; }
   else if (to && to !== '__none') g = groupById(to);
   const from = new Set();
   keys.forEach((k) => {
@@ -2586,32 +2567,12 @@ function moveFiles(keys, to) {
     if (g && f.role === 'thumb' && filesOf(g.id).some((x) => x !== f && x.role === 'thumb')) f.role = 'photo';
     A.picked.delete(k);
   });
-  if (!g || to === '__none') A.multi = true;
   if (g) { if (!g.date) g.date = guessDate(g); autoRoles(g); }
   // 空になった作品は、説明もまだ書いていなければ消す（仕分けの案で自動に作ったもの）
   from.forEach((gid) => {
     const x = groupById(gid);
     if (x && !filesOf(gid).length && !cleanFields(x.fields).purpose && !x.fromMeta) removeGroup(gid);
   });
-  renderAdd();
-}
-/* 3Dデータごとに分ける：元データ（無ければ印刷用）の名前の先頭の語で作品を作り直す。同じ語のファイルはその作品へ、ほかは仕分けに戻す */
-async function splitByDesign() {
-  const A = state.add;
-  if (A.groups.some((g) => cleanFields(g.fields).purpose) && !(await askConfirm({ title: '作品を作り直しますか？', text: '今の作品の分け方と、書いた説明が消えます。', ok: '作り直す', cancel: '戻る', danger: true }))) return;
-  const fs = liveFiles();
-  A.groups = []; A.sel = null; A.multi = true; A.picked.clear();
-  fs.forEach((f) => { f.group = null; });
-  const byTok = new Map();
-  const make = (kind) => fs.filter((f) => !f.group && fileKind(f.name) === kind).forEach((f) => {
-    const tk = tokenOf(f.name).toLowerCase();
-    if (!byTok.has(tk)) { const g = newGroup(tokenOf(f.name), '', 'name'); g.token = tk; byTok.set(tk, g); }
-    f.group = byTok.get(tk).id;
-  });
-  make('design');
-  if (!byTok.size) make('model');
-  fs.filter((f) => !f.group).forEach((f) => { const g = byTok.get(tokenOf(f.name).toLowerCase()); if (g) f.group = g.id; });
-  A.groups.forEach((g) => { g.date = guessDate(g); autoRoles(g); });
   renderAdd();
 }
 function removeGroup(gid) {
@@ -2650,7 +2611,7 @@ function goConfirm() {
 }
 function fixGroup(gid) {
   const A = state.add, g = groupById(gid);
-  A.step = 'sort'; A.sel = gid; A.tab = 'form';
+  A.step = 'sort'; A.sel = gid;
   renderAdd();
   const p = groupProblems(g)[0];
   const sel = !p ? '#add-name' : p[0] === 'name' ? '#add-name' : p[0] === 'date' ? '#add-date' : p[0] === 'status' ? '[data-ed-status]' : p[0] === 'files' ? '[data-action="add-pick-files"]' : `#ed-add-${p[0]}`;
@@ -2716,21 +2677,6 @@ function addClick(t, d) {
   switch (d.action) {
     case 'add-pick-files': document.getElementById('add-pick-files').click(); return true;
     case 'add-pick-dir': document.getElementById('add-pick-dir').click(); return true;
-    case 'add-new-group': { const g = newGroup('', ymd(Date.now()), 'manual'); A.sel = g.id; A.multi = true; A.tab = 'form'; renderAdd(); const n = document.getElementById('add-name'); if (n) n.focus(); return true; }
-    case 'add-multi': A.multi = true; A.tab = 'groups'; renderAdd(); return true;
-    case 'add-merge-all': {
-      const g = selGroup() || A.groups[0];
-      if (!g) return true;
-      liveFiles().forEach((f) => { f.group = g.id; });
-      A.groups = [g]; A.sel = g.id; A.multi = false; A.picked.clear();
-      autoRoles(g); renderAdd(); return true;
-    }
-    case 'add-split-all': splitByDesign(); return true;
-    case 'add-copy-common': {
-      const g = selGroup(), src = cleanFields(g.fields);
-      A.groups.forEach((x) => { if (x === g) return; x.fields.author = src.author; x.fields.status = src.status; src.tags.forEach((tg) => { if (!x.fields.tags.includes(tg)) x.fields.tags.push(tg); }); });
-      renderAdd(); state.notice = { text: 'ほかの作品にも入れました', kind: '' }; renderSync(); return true;
-    }
     case 'add-next': goConfirm(); return true;
     case 'add-back': {
       A.step = 'sort';
@@ -2747,9 +2693,8 @@ function addClick(t, d) {
     case 'add-finish': if (A && A.step === 'done' && A.groups.every((g) => g.result && g.result.state === 'ok')) state.add = null; closeLayer(false); renderAdd(); return true;
     case 'close-add': closeLayer(false); return true;
   }
-  if (d.addTab) { A.tab = d.addTab; renderAdd(); const b = document.querySelector(`#add [data-add-tab="${d.addTab}"]`); if (b) b.focus(); return true; }
-  if (d.addSel) { A.sel = d.addSel; if (narrowMq.matches) A.tab = 'form'; renderAdd(); const b = narrowMq.matches ? document.getElementById('add-name') : document.querySelector(`#add [data-add-sel="${d.addSel}"]`); if (b) b.focus(); return true; }
-  if (d.addDelGroup) { removeGroup(d.addDelGroup); A.multi = true; renderAdd(); return true; }
+  if (d.addSel) { A.sel = d.addSel; renderAdd(); const b = document.querySelector(`#add [data-add-sel="${d.addSel}"]`); if (b) b.focus(); return true; }
+  if (d.addDelGroup) { removeGroup(d.addDelGroup); renderAdd(); return true; }
   if (d.addRm) { removeFile(d.addRm); return true; }
   if (d.addRetry) { const f = A.files.find((x) => x.key === d.addRetry); if (f) { f.status = 'wait'; f.error = ''; renderAdd(); pumpAddUploads(); } return true; }
   if (d.addFix) { fixGroup(d.addFix); return true; }
