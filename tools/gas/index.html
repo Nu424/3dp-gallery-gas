@@ -71,6 +71,23 @@ a{color:var(--accent)}a:hover{color:#174A84}
 .btn-primary:hover{color:#fff}
 .btn-small{min-height:40px;padding:0 12px;font-size:13.5px;color:var(--ink-3);border-color:var(--line)}
 .btn[disabled]{opacity:.6;cursor:progress}
+/* 「作品を追加する」の分割ボタン。本体で追加、右の ▾ でほかの方法と説明書のメニュー（960px 以下は ▾ を出さない） */
+.add-split{position:relative;display:flex}
+.add-split .split-main{border-radius:8px 0 0 8px}
+.add-split .split-caret{width:40px;padding:0;justify-content:center;border-radius:0 8px 8px 0;border-left:1px solid rgba(255,255,255,.35)}
+.add-split .split-caret svg{transition:transform .15s}
+.add-split .split-caret[aria-expanded="true"] svg{transform:rotate(180deg)}
+.menu{position:absolute;top:calc(100% + 6px);right:0;z-index:20;width:340px;max-width:calc(100vw - 24px);padding:6px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(31,37,43,.18);display:flex;flex-direction:column}
+.menu-item{min-height:44px;display:flex;align-items:center;gap:12px;width:100%;padding:8px 12px;font-size:14.5px;text-align:left;text-decoration:none;color:var(--ink);background:none;border:none;border-radius:8px;cursor:pointer}
+.menu-item:hover,.menu-item:focus-visible{background:var(--soft);color:var(--ink)}
+.menu-item:focus-visible{outline-offset:-3px}
+.menu-item .mi-text{flex:1;display:flex;flex-direction:column;gap:1px}
+.menu-item b{font-weight:700}
+.menu-item .mi-sub{font-size:12.5px;color:var(--muted)}
+.menu-item .mi-icon{flex:none;width:32px;height:32px;border-radius:8px;background:var(--accent-soft);color:var(--accent-ink);display:flex;align-items:center;justify-content:center}
+.menu-item svg{flex:none}
+.menu-sep{height:1px;margin:6px 4px;background:var(--line-2)}
+.menu-label{padding:4px 12px 2px;font-size:12px;font-weight:700;color:var(--muted)}
 .icon-btn{width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:none;border-radius:8px;cursor:pointer;color:var(--muted)}
 .icon-btn:hover{background:var(--soft)}
 
@@ -228,7 +245,7 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
 .sheet[hidden]{display:none}
 .sheet-backdrop{position:absolute;inset:0;background:rgba(31,37,43,.36);border:none;cursor:default}
 .sheet-panel{position:relative;width:780px;max-width:100%;height:100%;overflow-y:auto;background:#fff;box-shadow:-12px 0 32px rgba(31,37,43,.18);display:flex;flex-direction:column}
-.sheet-head{position:sticky;top:0;z-index:1;background:#fff;display:flex;align-items:center;gap:12px;padding:14px 16px 14px 28px;border-bottom:1px solid var(--line-2)}
+.sheet-head{position:sticky;top:0;z-index:1;flex:none;background:#fff;display:flex;flex-direction:column;gap:10px;padding:10px 16px 12px 28px;border-bottom:1px solid var(--line-2)}
 .sheet-head h2{margin:0;font-size:20px;font-weight:700}
 .sheet-head .icon-btn{margin-left:auto;color:var(--ink)}
 .sheet-body{padding:24px 28px 48px;display:flex;flex-direction:column;gap:32px}
@@ -254,18 +271,29 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
 .steps .no{flex:none;width:26px;height:26px;border-radius:50%;background:var(--ink);color:#fff;font-size:12.5px;font-weight:700;display:flex;align-items:center;justify-content:center}
 .steps .t{font-size:14.5px;line-height:1.7}
 .steps li:last-child{border-bottom:none}
-/* 1〜3 の段の見出しと、各段の「手でやる」「自動でやる」の枠 */
+/* 1〜4 の段の見出しと、やり方ごとの枠（.way の data-way：drive＝ドライブに直接置く / fusion＝Fusion からまとめて書き出す） */
 .step-no{flex:none;width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center}
 .way{border:1px solid var(--line);border-radius:10px;padding:12px 16px 6px;display:flex;flex-direction:column;gap:6px}
 .way h4{margin:0;font-size:15px;font-weight:700}
-/* 「手でやる／自動でやる」の切り替え（全段で連動。.sheet-body の data-way）。PC は2つの枠を同じ升に重ね、
-   見せない方は visibility:hidden で高さだけ残す（切り替えても段の高さが変わらない）。960px 以下は余白が大きくなるので display:none */
-.way-seg{align-self:flex-start}
-.ways{display:grid}
-.ways > .way{grid-area:1 / 1;align-self:start}
-.sheet-body:not([data-way="auto"]) .way[data-way="auto"],.sheet-body[data-way="auto"] .way[data-way="manual"]{visibility:hidden}
+/* やり方の切り替えはパネルの見出しの下の1か所（.way-switch。見出しごと上に固定）。見せない方の枠は出さない */
+.sheet-body:not([data-way="fusion"]) .way[data-way="fusion"],.sheet-body[data-way="fusion"] .way[data-way="drive"]{display:none}
 .way > .hint:last-child,.way > .small:last-child{padding-bottom:8px}
 .way > h4 + .hint:last-child{padding-bottom:6px}
+.sheet-head-row{display:flex;align-items:center;gap:12px}
+.way-switch{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;background:var(--seg);border-radius:10px}
+.way-switch button{min-height:52px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:1px;padding:6px 14px;text-align:left;background:transparent;border:none;border-radius:7px;cursor:pointer}
+.way-switch button b{font-size:14.5px;font-weight:700}
+.way-switch button span{font-size:12.5px;color:var(--muted)}
+.way-switch button:hover{background:rgba(255,255,255,.55)}
+.way-switch button[aria-pressed="true"]{background:#fff;box-shadow:0 1px 2px rgba(31,37,43,.2)}
+.way-switch button[aria-pressed="true"] b{color:var(--accent-ink)}
+/* 説明書などのリンク（links シート。fillGuideLinks が入れる） */
+.guide-links{display:flex;flex-wrap:wrap;gap:6px 18px;padding:10px 14px;background:var(--soft);border-radius:10px;font-size:14px}
+.guide-links a,.glink{display:inline-flex;align-items:center;gap:4px;font-weight:700}
+.guide-links a{min-height:32px}
+.glink{margin:0 .35em;padding:1px 8px;font-size:.9em;text-decoration:none;background:var(--accent-soft);border-radius:10px;white-space:nowrap}
+.glink::after{content:"↗";font-size:.85em}
+.glink:hover{background:#D3E2F5}
 .sheet-body code{font-family:ui-monospace,Consolas,monospace;font-size:.92em;background:var(--soft);padding:1px 5px;border-radius:4px;overflow-wrap:anywhere}
 .ai{background:var(--soft);border-color:var(--soft);padding:14px 16px 16px;gap:10px}
 .ai code{background:#fff}
@@ -305,6 +333,8 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
   .topbar .sub{display:none}
   .topbar .actions{flex:none;flex-wrap:nowrap;gap:6px}
   .topbar .btn{width:44px;padding:0;justify-content:center}
+  .add-split .split-main{border-radius:8px}
+  .add-split .split-caret,.add-split .menu{display:none}
   .body{flex-direction:column}
   .pane{overflow:visible}
   /* M3 検索の行：ヘッダーの下に固定。絞り込みの中身（.f-sheet）はボタンで下からのシートとして開く */
@@ -354,7 +384,8 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
   .hero{height:200px}
   /* M6 作品を追加するパネル：全幅。見出しは上に固定（.sheet-head は sticky）。表は縦積み、コードは枠の中で横スクロール */
   .sheet-panel{overscroll-behavior:contain;box-shadow:none}
-  .sheet-head{min-height:calc(var(--hdr-h) + env(safe-area-inset-top));padding:env(safe-area-inset-top) max(8px,env(safe-area-inset-right)) 0 max(16px,env(safe-area-inset-left))}
+  .sheet-head{min-height:calc(var(--hdr-h) + env(safe-area-inset-top));padding:env(safe-area-inset-top) max(8px,env(safe-area-inset-right)) 10px max(16px,env(safe-area-inset-left))}
+  .way-switch{margin-right:max(8px,env(safe-area-inset-right))}
   .sheet-head h2{font-size:18px}
   .sheet-body{padding:16px max(16px,env(safe-area-inset-right)) calc(40px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));gap:28px}
   .rule{grid-template-columns:minmax(0,1fr) auto;gap:2px 12px}
@@ -364,9 +395,11 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
   .prompt{overflow-wrap:anywhere}
   .ai{padding:14px}
   .way{padding:12px 12px 4px}
-  .way-seg{align-self:stretch}
-  .way-seg button{flex:1}
-  .sheet-body:not([data-way="auto"]) .way[data-way="auto"],.sheet-body[data-way="auto"] .way[data-way="manual"]{display:none}
+  .sheet-head{flex-direction:column;align-items:stretch;gap:0;padding-bottom:10px}
+  .sheet-head-row{min-height:var(--hdr-h)}
+  .way-switch button{min-height:44px;padding:4px 10px;align-items:center;text-align:center}
+  .way-switch button b{font-size:13.5px;line-height:1.35}
+  .way-switch button span{display:none}   /* 狭い画面では説明の小さな文を出さない（見出しが高くなりすぎる） */
 }
 /* たたんだ絞り込み欄（961px 以上）に横のスクロールバーが出ないようにする（第2ラウンドからの不具合）。
    幅 60px から枠線 1px と左右の余白を引くと 43px で、44px のボタンが 1px はみ出すため。見た目はスクロールバーが消えるだけ */
@@ -395,10 +428,17 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/></svg>
         <span class="m-sr">今すぐ同期</span>
       </button>
-      <button class="btn btn-primary" id="btn-guide" type="button">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-        <span class="m-sr">作品を追加する</span>
-      </button>
+      <!-- 「作品を追加する」：本体と ▾（ほかの追加方法と説明書のメニュー。renderAddMenu が中身を描く） -->
+      <div class="add-split" id="add-split">
+        <button class="btn btn-primary split-main" id="btn-guide" type="button">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+          <span class="m-sr">作品を追加する</span>
+        </button>
+        <button class="btn btn-primary split-caret" id="btn-add-menu" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="add-menu" aria-label="ほかの追加方法と説明書">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="menu" id="add-menu" role="menu" aria-label="ほかの追加方法と説明書" hidden></div>
+      </div>
     </div>
   </header>
 
@@ -451,17 +491,24 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
   <button class="sheet-backdrop" type="button" data-action="close-guide" aria-label="閉じる" tabindex="-1"></button>
   <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
     <div class="sheet-head">
-      <h2 id="sheet-title">作品を追加する</h2>
-      <button class="icon-btn" type="button" data-action="close-guide" aria-label="閉じる" id="sheet-close">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
-      </button>
+      <div class="sheet-head-row">
+        <h2 id="sheet-title">ドライブ・Fusion から追加する</h2>
+        <button class="icon-btn" type="button" data-action="close-guide" aria-label="閉じる" id="sheet-close">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <!-- やり方の切り替え（本文の .way の data-way と対応。setGuideWay）。見出しごと上に固定されるので、どこまで読んでも切り替えられる -->
+      <div class="way-switch" role="group" aria-label="追加のしかた">
+        <button type="button" data-guide-way="drive" aria-pressed="true"><b>ドライブに直接置く</b><span>1件ずつ。フォルダと meta.json を用意する</span></button>
+        <button type="button" data-guide-way="fusion" aria-pressed="false"><b>Fusion からまとめて書き出す</b><span>スクリプトで一括。meta.json はあとで</span></button>
+      </div>
     </div>
     <div class="sheet-body" id="sheet-body"></div>
   </section>
 </div>
 
 
-<!-- 「作品を追加する」パネルの中身は guide.html。GAS が include で差し込む -->
+<!-- 「ドライブ・Fusion から追加する」パネルの中身は guide.html。GAS が include で差し込む -->
 <template id="guide-template">
 <?!= include('guide') ?>
 </template>
@@ -473,14 +520,15 @@ img[data-wait]{visibility:hidden}   /* サーバーに画像を頼んでいる�
 /* 960px 以下（1列の画面。M2〜M6）か。CSS の @media (max-width: 960px) と同じ境目 */
 const narrowMq = window.matchMedia('(max-width: 960px)');
 const state = {
-  data: { items: [], issues: [], syncedAt: null, sheetUrl: '' },
+  data: { items: [], issues: [], syncedAt: null, sheetUrl: '', links: [] },
   loading: true, loadError: '',                 // 初回の読み込み中／失敗
   q: '', status: 'all', tag: null, author: 'all',
   sort: 'new', view: 'gallery', selId: null,
   // 絞り込み欄を開いているか。1280px 未満では最初はたたむ（M1）。最初の表示のときだけで、その後は利用者の開け閉めのまま。
   // 960px 以下ではこの値は使わない（絞り込みは layer:'sheet' のシート）
   filtersOpen: window.matchMedia('(min-width: 1280px)').matches,
-  layer: null,           // 開いている重なり：null・'guide'（作品を追加する）・'sheet'（960px 以下の絞り込み。M3）・'detail'（960px 以下の詳細。M4）
+  layer: null,           // 開いている重なり：null・'guide'（ドライブ・Fusion から追加する）・'sheet'（960px 以下の絞り込み。M3）・'detail'（960px 以下の詳細。M4）
+  guideWay: 'drive',     // ドライブ・Fusion から追加するパネルで見せるやり方：'drive'（ドライブに直接置く）・'fusion'（Fusion からまとめて書き出す）
   issuesOpen: false,     // 960px 以下：要対応の帯を開いているか（M5。PC では常に開いた見た目）
   syncing: false, resyncing: null, notice: null,   // resyncing: 再同期中の folderId。notice: { text, kind: ''|'warn'|'err' }（同期ボタン横に出す）
   lastIssues: null                              // 要対応の件数（変わったときだけ読み上げる）
@@ -494,8 +542,9 @@ const errMsg = (err) => (err && err.message) ? err.message : String(err || '不�
 function loadData(selectId) {
   google.script.run
     .withSuccessHandler((data) => {
-      state.data = Object.assign({ items: [], issues: [], syncedAt: null, sheetUrl: '' }, data);
+      state.data = Object.assign({ items: [], issues: [], syncedAt: null, sheetUrl: '', links: [] }, data);
       state.loading = false; state.loadError = '';
+      renderAddMenu(); fillGuideLinks();
       // 要対応から一覧に移った作品は、選択状態にして見つけやすくする
       if (selectId && state.data.items.some((it) => it.folderId === selectId)) state.selId = selectId;
       afterLoad();
@@ -855,6 +904,9 @@ const ICON = {
   dl: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1F5FA8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>',
   back: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="M11 6l-6 6 6 6"/></svg>',
   ext: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>',
+  folder: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+  stack: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>',
+  doc: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 12h6"/><path d="M9 16h6"/></svg>',
   photo: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#55606B" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-8 7"/></svg>'
 };
 
@@ -968,7 +1020,7 @@ function issuesBar() {
       <button class="issues-toggle" type="button" data-action="toggle-issues" aria-expanded="${state.issuesOpen}">${ICON.warn}<span>要対応 ${issues.length}件</span><span class="chev" aria-hidden="true">▸</span></button>
       <div class="issues-head">${ICON.warn}
         <strong>一覧に出ていない作品が${issues.length}件あります</strong>
-        <button class="linklike" type="button" data-action="open-guide">直し方</button>
+        <button class="linklike" type="button" data-action="open-guide">直し方</button>${linkOf('admin') ? `<a class="issues-admin" href="${esc(linkOf('admin').url)}" target="_blank" rel="noopener">エラーの一覧${ICON.ext}</a>` : ''}
       </div>
       <ul class="issue-list">${issues.map((i) => `
         <li class="issue-row">
@@ -1164,8 +1216,10 @@ function openLayer(kind, id, fromHistory) {
   const was = state.layer;
   if (kind === 'guide') {
     const body = document.getElementById('sheet-body');
-    if (!body.childElementCount) body.appendChild(document.getElementById('guide-template').content.cloneNode(true));
-    if (!was) lastFocus = document.activeElement;
+    if (!body.childElementCount) { body.appendChild(document.getElementById('guide-template').content.cloneNode(true)); fillGuideLinks(); }
+    applyGuideWay();
+    // メニューから開いたときは、閉じたら ▾ に戻す（メニューの項目は隠れている）
+    if (!was) lastFocus = document.activeElement && document.activeElement.closest('#add-menu') ? document.getElementById('btn-add-menu') : document.activeElement;
   }
   if (kind === 'detail') state.selId = id;
   state.layer = kind;
@@ -1310,6 +1364,7 @@ function applyStartItem() {
    スクロールの枠も変わるので、画像の見張りをやり直す。消える部品にあったフォーカスは移す */
 function onNarrowChange() {
   const narrow = narrowMq.matches;
+  closeAddMenu(false);
   if (!narrow && !state.loading) selectFirstOnPc();
   applyLayers();
   renderAll();
@@ -1323,21 +1378,108 @@ function onNarrowChange() {
 }
 if (narrowMq.addEventListener) narrowMq.addEventListener('change', onNarrowChange); else narrowMq.addListener(onNarrowChange); // 古い Safari
 
-/* 作品を追加するパネルの「手でやる／自動でやる」。全段で連動させ、押した切り替えの画面上の位置を保つ
-   （上の段の高さが変わっても、見ている所がずれないように） */
-function setGuideWay(way, anchor) {
-  const body = anchor.closest('.sheet-body'), panel = anchor.closest('.sheet-panel');
-  const before = anchor.getBoundingClientRect().top;
-  body.dataset.way = way;
-  body.querySelectorAll('.way-seg button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.way === way));
-  panel.scrollTop += anchor.getBoundingClientRect().top - before;
+/* ============================================================
+   「作品を追加する」の分割ボタンのメニューと、ドライブ・Fusion から追加するパネル
+   メニュー：ほかの追加方法（パネルをそのやり方で開く）と、links シートの説明書などのリンク。
+   キーボード：▾ で開くと最初の項目へ。↑↓・Home・End で移動、Esc で閉じて ▾ へ戻る、Tab で閉じる。外を押しても閉じる
+   ============================================================ */
+const linkOf = (key) => (state.data.links || []).find((l) => l.key === key) || null;
+const otherLinks = () => (state.data.links || []).filter((l) => !l.key);
+const ADD_WAYS = [
+  { way: 'drive', title: 'ドライブに直接置く', sub: '1件ずつ。フォルダと meta.json を自分で用意する', icon: 'folder' },
+  { way: 'fusion', title: 'Fusion からまとめて書き出す', sub: 'スクリプトで一括。meta.json はあとで記入', icon: 'stack' }
+];
+function renderAddMenu() {
+  const linkItem = (l) => `<a class="menu-item" role="menuitem" tabindex="-1" href="${esc(l.url)}" target="_blank" rel="noopener">${ICON.doc}<span class="mi-text">${esc(l.label)}</span>${ICON.ext}</a>`;
+  const links = [linkOf('manual')].concat(otherLinks(), [linkOf('repo')]).filter(Boolean);
+  document.getElementById('add-menu').innerHTML =
+    ADD_WAYS.map((w) => `<button class="menu-item" role="menuitem" tabindex="-1" type="button" data-action="open-guide" data-guide="${w.way}"><span class="mi-icon">${ICON[w.icon]}</span><span class="mi-text"><b>${w.title}</b><span class="mi-sub">${w.sub}</span></span></button>`).join('')
+    + (links.length ? `<div class="menu-sep" role="separator"></div><div class="menu-label" aria-hidden="true">説明書・リンク</div>${links.map(linkItem).join('')}` : '');
+}
+const menuItems = () => [...document.querySelectorAll('#add-menu .menu-item')];
+function openAddMenu() {
+  document.getElementById('add-menu').hidden = false;
+  document.getElementById('btn-add-menu').setAttribute('aria-expanded', 'true');
+  const first = menuItems()[0];
+  if (first) first.focus();
+}
+function closeAddMenu(focusCaret) {
+  const menu = document.getElementById('add-menu');
+  if (menu.hidden) return;
+  menu.hidden = true;
+  const caret = document.getElementById('btn-add-menu');
+  caret.setAttribute('aria-expanded', 'false');
+  if (focusCaret) caret.focus();
+}
+document.getElementById('btn-add-menu').addEventListener('click', () => {
+  if (document.getElementById('add-menu').hidden) openAddMenu(); else closeAddMenu(false);
+});
+document.getElementById('btn-add-menu').addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  e.preventDefault();
+  openAddMenu();
+  const l = menuItems();
+  if (e.key === 'ArrowUp' && l.length) l[l.length - 1].focus();
+});
+document.getElementById('add-menu').addEventListener('keydown', (e) => {
+  const list = menuItems(), i = list.indexOf(document.activeElement);
+  const go = (n) => { e.preventDefault(); list[(n + list.length) % list.length].focus(); };
+  if (e.key === 'ArrowDown') go(i + 1);
+  else if (e.key === 'ArrowUp') go(i - 1);
+  else if (e.key === 'Home') go(0);
+  else if (e.key === 'End') go(list.length - 1);
+  else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeAddMenu(true); }
+  else if (e.key === 'Tab') closeAddMenu(false);
+});
+/* メニューの外を押した・項目を選んだら閉じる（▾ 自身は上の処理で開け閉めする） */
+document.addEventListener('click', (e) => {
+  if (document.getElementById('add-menu').hidden || e.target.closest('#btn-add-menu')) return;
+  if (!e.target.closest('#add-menu') || e.target.closest('.menu-item')) closeAddMenu(false);
+}, true);
+
+/* ドライブ・Fusion から追加するパネルを、way のやり方で開く（null なら前のやり方のまま） */
+function openGuide(way) {
+  if (way) state.guideWay = way;
+  openLayer('guide', null, false);
+}
+/* パネルの本文と切り替えのボタンを state.guideWay に合わせる */
+function applyGuideWay() {
+  document.getElementById('sheet-body').dataset.way = state.guideWay;
+  document.querySelectorAll('.way-switch button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.guideWay === state.guideWay));
+}
+/* 切り替えを押した。読んでいた段（見出しのすぐ下にある段）の見出しが、切り替えの後も同じ位置に来るようにする
+   （上の段の長さがやり方で違っても、見ている所がずれないように） */
+function setGuideWay(way) {
+  if (way === state.guideWay) return;
+  const panel = document.querySelector('#sheet .sheet-panel');
+  const headBottom = panel.querySelector('.sheet-head').getBoundingClientRect().bottom;
+  const anchor = [...panel.querySelectorAll('.sheet-body section')].find((s) => s.getBoundingClientRect().bottom > headBottom + 8);
+  const before = anchor ? anchor.getBoundingClientRect().top : 0;
+  state.guideWay = way;
+  applyGuideWay();
+  if (anchor && panel.scrollTop > 0) panel.scrollTop += anchor.getBoundingClientRect().top - before;
+}
+/* パネルの中のリンク（a[data-link]）に links シートの URL を入れる。登録が無いものは隠す。
+   冒頭の #guide-links には、説明書・管理者向け・items フォルダ・その他のリンクを並べる */
+function fillGuideLinks() {
+  const body = document.getElementById('sheet-body');
+  if (!body.childElementCount) return;   // まだ開いていない（開くときにもう一度呼ぶ）
+  body.querySelectorAll('a[data-link]').forEach((a) => {
+    const l = linkOf(a.dataset.link);
+    a.hidden = !l;
+    if (l) a.href = l.url;
+  });
+  const box = document.getElementById('guide-links');
+  const list = ['manual', 'admin', 'items'].map(linkOf).concat(otherLinks()).filter(Boolean);
+  box.hidden = !list.length;
+  box.innerHTML = list.map((l) => `<a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)}${ICON.ext}</a>`).join('');
 }
 
 document.addEventListener('click', (e) => {
   const t = e.target.closest('button, a');
   if (!t) return;
   const d = t.dataset;
-  if (d.way && t.closest('.way-seg')) { setGuideWay(d.way, t); return; }
+  if (d.guideWay) { setGuideWay(d.guideWay); return; }
   if (d.select) {
     if (narrowMq.matches) { openLayer('detail', d.select, false); return; }   // 960px 以下：詳細を重ねて開く
     state.selId = d.select; renderMain(); renderDetail();
@@ -1365,7 +1507,7 @@ document.addEventListener('click', (e) => {
     case 'toggle-filters': state.filtersOpen = !state.filtersOpen; renderFilters(); break;
     case 'reset': Object.assign(state, { q: '', status: 'all', tag: null, author: 'all' }); document.getElementById('search').value = ''; renderFilters(); renderMain(); renderDetail(); break;
     case 'reload': state.loading = true; state.loadError = ''; renderAll(); loadData(); break;
-    case 'open-guide': openLayer('guide', null, false); break;
+    case 'open-guide': openGuide(d.guide || null); break;
     case 'open-filter-sheet': openLayer('sheet', null, false); break;
     case 'close-guide': case 'close-detail': case 'close-filter-sheet': closeLayer(false); break;
     case 'clear-sheet': Object.assign(state, { status: 'all', tag: null, author: 'all' }); renderFilters(); renderMain(); renderDetail(); break;
@@ -1388,7 +1530,7 @@ document.addEventListener('click', (e) => {
     }
   }
 });
-document.getElementById('btn-guide').addEventListener('click', () => openLayer('guide', null, false));
+document.getElementById('btn-guide').addEventListener('click', () => openGuide(null));
 document.getElementById('btn-sync').addEventListener('click', syncNow);
 document.getElementById('search').addEventListener('input', (e) => { state.q = e.target.value; renderFilters(); renderMain(); });
 /* 開いている重なり（Esc で閉じる・Tab をその中で回す） */
@@ -1403,7 +1545,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { closeLayer(false); return; }
   if (e.key === 'Tab') {
     const f = layer.el.querySelectorAll('button:not([hidden]):not([disabled]), a[href], input');
-    const vis = [...f].filter((x) => x.offsetParent !== null && getComputedStyle(x).visibility !== 'hidden');   // 作品を追加するパネルの隠した枠（visibility:hidden）を除く
+    const vis = [...f].filter((x) => x.offsetParent !== null && getComputedStyle(x).visibility !== 'hidden');   // 隠した要素を除く
     if (!vis.length) return;
     if (e.shiftKey && document.activeElement === vis[0]) { e.preventDefault(); vis[vis.length - 1].focus(); }
     else if (!e.shiftKey && document.activeElement === vis[vis.length - 1]) { e.preventDefault(); vis[0].focus(); }
@@ -1413,6 +1555,7 @@ document.addEventListener('keydown', (e) => {
 { const h = gsHistory(); if (h) h.setChangeHandler(onHistoryChange); }
 readStartLocation();   // ?item=（一覧の読み込みと並行して読む）
 renderAll();   // まず「読み込み中」を出す
+renderAddMenu();   // 追加のメニュー（リンクは読み込み後に足す）
 applyLayers();
 loadData();
 </script>

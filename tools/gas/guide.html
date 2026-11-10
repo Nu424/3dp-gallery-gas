@@ -1,9 +1,13 @@
-<!-- 「作品を追加する」パネルの中身（HTML断片）。index.html から include('guide') で読み込まれる。
+<!-- 「ドライブ・Fusion から追加する」パネルの中身（HTML断片）。index.html から include('guide') で読み込まれる。
      文章の修正はこのファイルだけで済む。AIに渡すプロンプトは #ai-prompt の1か所だけ（計画書の版から改訂済み。こちらが正）。
-     構成：用意するものの順に 1 3Dデータ → 2 meta.json → 3 フォルダ。各段に「手でやる」「自動でやる」の枠（.way の data-way）を置き、
-     段ごとの切り替え（.way-seg）で片方だけ見せる。切り替えは全段で連動する（index.html の setGuideWay）。
+     構成：用意するものの順に 1 3Dデータ → 2 meta.json → 3 フォルダ → 4 同期。やり方ごとの部分は .way（data-way が
+     drive＝ドライブに直接置く / fusion＝Fusion からまとめて書き出す）に入れ、パネルの見出しの下の切り替え（index.html の
+     .way-switch）で片方だけ見せる。
+     リンク：a[data-link="<key>"] は、スプシの links シートに登録した URL が入る（無ければ隠れる。index.html の fillGuideLinks）。
+     #guide-links には説明書などのリンクが並ぶ。
      ここにはスクリプトレット（山かっこ＋疑問符の構文）を書かないこと。 -->
-  <p class="lead">作品1つ＝共有ドライブの <b>3Dギャラリー/items/</b> の中のフォルダ1つです。下の 1〜3 を用意して置き、「今すぐ同期」を押すと一覧に出ます。数件なら「手でやる」、まとめてなら「自動でやる」が楽です（各段の切り替えは全段で連動します）。</p>
+  <p class="lead">作品1つ＝共有ドライブの <b>3Dギャラリー/items/</b> の中のフォルダ1つです。下の 1〜3 を用意して置き、「今すぐ同期」を押すと一覧に出ます。1件ずつなら「ドライブに直接置く」、Fusion のデータをまとめて登録するなら「Fusion からまとめて書き出す」が楽です。</p>
+  <div class="guide-links" id="guide-links" hidden></div>
 
   <section>
     <h3><span class="step-no">1</span>3Dデータと画像を用意する</h3>
@@ -15,12 +19,8 @@
       <div class="rule"><span class="n">photo_〜.jpg / .png</span><span class="req req-opt">任意</span><span class="d">詳細に並ぶ写真。取り付けた様子があると伝わりやすい</span></div>
       <div class="rule"><span class="n">そのほか</span><span class="req req-opt">任意</span><span class="d">図面のPDFなど。詳細のファイル一覧に出る</span></div>
     </div>
-    <div class="seg way-seg" role="group" aria-label="やり方（すべての段で連動）">
-      <button type="button" data-way="manual" aria-pressed="true">手でやる</button>
-      <button type="button" data-way="auto" aria-pressed="false">自動でやる</button>
-    </div>
     <div class="ways">
-    <div class="way" data-way="manual">
+    <div class="way" data-way="drive">
       <h4>Fusionから1件ずつ保存する</h4>
       <ol class="steps">
         <li><span class="no" aria-hidden="true">1</span><span class="t">デザインを開き、ファイル › エクスポートで .f3d と .step を保存する</span></li>
@@ -28,16 +28,16 @@
         <li><span class="no" aria-hidden="true">3</span><span class="t">見栄えのよい角度で画面をキャプチャし、thumb.png として保存する</span></li>
       </ol>
     </div>
-    <div class="way" data-way="auto">
+    <div class="way" data-way="fusion">
       <h4>Fusionのスクリプトでまとめて書き出す</h4>
       <p class="hint">1〜3 がまとめて済みます（フォルダと、空欄の meta.json もできる）。</p>
       <ol class="steps">
-        <li><span class="no" aria-hidden="true">1</span><span class="t"><b>登録（初回だけ）</b>：共有ドライブの 3Dギャラリー/tools/fusion_export フォルダをパソコンにコピーする。Fusionの ユーティリティ › スクリプトとアドイン（Shift+S）の「＋」から、そのフォルダを選ぶ</span></li>
+        <li><span class="no" aria-hidden="true">1</span><span class="t"><b>登録（初回だけ）</b>：共有ドライブの 3Dギャラリー/tools/fusion_export フォルダ<a class="glink" data-link="fusion" target="_blank" rel="noopener" hidden>開く</a>をパソコンにコピーする。Fusionの ユーティリティ › スクリプトとアドイン（Shift+S）の「＋」から、そのフォルダを選ぶ</span></li>
         <li><span class="no" aria-hidden="true">2</span><span class="t"><b>設定</b>：fusion_export.py をメモ帳などで開き、冒頭の設定欄に書いて保存する。最低限、<code>PROJECT_NAMES</code>（対象のプロジェクト名）と <code>OUTPUT_DIR</code>（items/ の場所。エクスプローラーでそのフォルダを開き、アドレスバーのパスを使う）。パスは <code>r"…"</code> の "" の中に書き、先頭の r は消さない</span></li>
         <li><span class="no" aria-hidden="true">3</span><span class="t"><b>仕分け</b>：<code>MODE = 1</code> で実行すると、パソコンの「ドキュメント\3Dギャラリー_仕分け」に triage.csv と画像が出る。登録したい行の rank に A（現役）か B（参考）を書き、必要なら folder_name を直す（日付が 00000000 の行は実在の日付に）。実行中は triage.csv を閉じておく</span></li>
         <li><span class="no" aria-hidden="true">4</span><span class="t"><b>書き出し</b>：<code>MODE = 2</code> で実行すると、items/ に作品フォルダができる。続きは 2 の meta.json を埋めるだけ</span></li>
       </ol>
-      <p class="small">特定のファイルだけなら <code>TARGET_NAMES</code> に名前を書く。設定の詳細は tools/docs/OPERATION.md。</p>
+      <p class="small">特定のファイルだけなら <code>TARGET_NAMES</code> に名前を書く。設定の詳細は tools/docs/OPERATION.md<a class="glink" data-link="admin" target="_blank" rel="noopener" hidden>開く</a>。</p>
     </div>
     </div>
   </section>
@@ -65,19 +65,15 @@
         <div class="keyrow"><b>fusion_id</b><span class="req req-opt">自動</span><span>Fusionから書き出すと入る。消さない・書き換えない</span></div>
       </div>
     </div>
-    <div class="seg way-seg" role="group" aria-label="やり方（すべての段で連動）">
-      <button type="button" data-way="manual" aria-pressed="true">手でやる</button>
-      <button type="button" data-way="auto" aria-pressed="false">自動でやる</button>
-    </div>
     <div class="ways">
-    <div class="way" data-way="manual">
+    <div class="way" data-way="drive">
       <h4>メモ帳で書く</h4>
       <ol class="steps">
-        <li><span class="no" aria-hidden="true">1</span><span class="t">1 のファイルをまとめたフォルダに items/_template の meta.json をコピーし、メモ帳で開く（スクリプトで書き出したなら、できている meta.json を開く）</span></li>
+        <li><span class="no" aria-hidden="true">1</span><span class="t">1 のファイルをまとめたフォルダに items/_template<a class="glink" data-link="template" target="_blank" rel="noopener" hidden>開く</a> の meta.json をコピーし、メモ帳で開く（スクリプトで書き出したなら、できている meta.json を開く）</span></li>
         <li><span class="no" aria-hidden="true">2</span><span class="t">上の例のように "" の中を埋めて保存する。区切りの , と "" は消さない</span></li>
       </ol>
     </div>
-    <div class="way ai" data-way="auto">
+    <div class="way ai" data-way="fusion">
       <div class="ai-head">
         <div>
           <h4>AIエージェントに頼む</h4>
@@ -145,17 +141,13 @@
   <section>
     <h3><span class="step-no">3</span>フォルダにまとめて items/ に置く</h3>
     <p class="hint">フォルダ名は <b>作成日_名前</b>（例：20250612_流路セルホルダー）。作成日がわからなければ大体でかまいません。中にはファイルを並べるだけで、サブフォルダは作りません。名前が _ で始まるフォルダ（_template など）は一覧に出ません。</p>
-    <div class="seg way-seg" role="group" aria-label="やり方（すべての段で連動）">
-      <button type="button" data-way="manual" aria-pressed="true">手でやる</button>
-      <button type="button" data-way="auto" aria-pressed="false">自動でやる</button>
-    </div>
     <div class="ways">
-    <div class="way" data-way="manual">
+    <div class="way" data-way="drive">
       <h4>フォルダを作って入れる</h4>
-      <p class="hint">1・2 のファイルを入れたフォルダの名前を「作成日_名前」にして、items/ に置く。</p>
+      <p class="hint">1・2 のファイルを入れたフォルダの名前を「作成日_名前」にして、items/<a class="glink" data-link="items" target="_blank" rel="noopener" hidden>開く</a> に置く。</p>
       <p class="small">Google ドライブ（パソコン版）ならエクスプローラーで普通に作業できます。Webの画面だけなら、items/ に新しいフォルダを作ってファイルをアップロードします。同じ名前のファイルがあれば「置き換える」を選んでください（2つあると要対応になります）。</p>
     </div>
-    <div class="way" data-way="auto">
+    <div class="way" data-way="fusion">
       <h4>済んでいる</h4>
       <p class="hint">Fusionのスクリプト（モード2）は items/ に直接書き出します。AIエージェントに頼んだときは、確認のあとフォルダに並べてくれます。</p>
     </div>

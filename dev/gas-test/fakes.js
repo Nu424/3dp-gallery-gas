@@ -71,6 +71,8 @@ class FakeDrive {
         getFolders: () => iterator(drive.children(node.id, 'folder').map((n) => drive.wrap(n))),
         getFiles: () => iterator(drive.children(node.id, 'file').map((n) => drive.wrap(n))),
         getParents: () => iterator(node.parents.filter((p) => drive.nodes.has(p)).map((p) => drive.wrap(drive.nodes.get(p)))),
+        getFoldersByName: (name) => iterator(drive.children(node.id, 'folder').filter((n) => n.name === name).map((n) => drive.wrap(n))),
+        getFilesByName: (name) => iterator(drive.children(node.id, 'file').filter((n) => n.name === name).map((n) => drive.wrap(n))),
       };
     }
     return {

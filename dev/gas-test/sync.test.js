@@ -338,7 +338,9 @@ test('getGalleryData：シートが無ければ空', () => {
   const env = setupEnv();
   assert.deepEqual(plain(env.ctx.getGalleryData()), {
     syncedAt: null, sheetUrl: 'https://docs.google.com/spreadsheets/d/SSID/edit',
-    statuses: ['使用中', '参考', '引退'], canSync: true, items: [], issues: [] });
+    statuses: ['使用中', '参考', '引退'], canSync: true,
+    links: [{ key: 'items', label: 'items フォルダ', url: 'https://drive.google.com/drive/folders/' + env.itemsId }],
+    items: [], issues: [] });
 });
 
 test('doGet と include', () => {

@@ -29,6 +29,15 @@ export const SAMPLE_DATA = {
   sheetUrl: 'https://example.com/preview/sheet',
   statuses: ['使用中', '参考', '引退'],
   canSync: true,
+  links: [
+    { key: 'manual', label: '使い方の説明書', url: 'https://example.com/preview/manual' },
+    { key: 'admin', label: '管理者向けの説明（運用・エラー一覧）', url: 'https://example.com/preview/operation' },
+    { key: 'fusion', label: 'Fusion の書き出しスクリプト', url: 'https://example.com/preview/fusion_export' },
+    { key: 'template', label: '作品フォルダのひな形（_template）', url: 'https://example.com/preview/template' },
+    { key: 'items', label: 'items フォルダ', url: 'https://example.com/preview/items' },
+    { key: '', label: '3Dプリンターの予約表', url: 'https://example.com/preview/printer' },
+    { key: 'repo', label: 'ソースコード（GitHub）', url: 'https://example.com/preview/repo' },
+  ],
   items: [
     { folderId: 'id-tray-0210', folderName: '20260210_恒温槽用トレイ', folderUrl: 'https://example.com/preview/folder/tray', date: '2026-02-10', name: '恒温槽用トレイ', author: '鈴木', purpose: '恒温槽の中でサンプル瓶6本を立てておく', status: '使用中',
       tags: ['恒温槽', '収納'], note: ['PETGで印刷。PLAだと60℃で反る。', '瓶の径は22mm想定。'],

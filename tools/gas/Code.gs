@@ -125,6 +125,26 @@ var MSG_DELETE_SKIPPED_MANY = '消えたフォルダが多すぎるため、行�
 var APP_TITLE = '3Dプリント作品ギャラリー';
 
 /**
+ * 画面に出す関連リンク（説明書・スクリプト・ひな形など）を書くシート。管理者がセルを書き換えて登録する
+ * （コードを貼り直しても消えないように、Code.gs の定数やスクリプトプロパティにはしない）。
+ * 列は key（置き場所を決める名前）・label（画面に出す名前）・target（URL か Drive のID）・memo。
+ * key が LINK_KEYS に無い行（空も含む）は「その他のリンク」として、追加ボタンのメニューに並ぶ。
+ * setup() がシートを作り、Drive の決まった場所（find）から見つけたものを初期値として書く（既にある行は上書きしない）。
+ *   find: 'items' … items フォルダ自身 / 'items/<名前>' … items の直下 / 'tools/<…>' … items の親の tools/ の下
+ */
+var LINKS_SHEET_NAME = 'links';
+var LINKS_HEADERS = ['key', 'label', 'target', 'memo'];
+var LINKS_HEADER_NOTE = '画面に出すリンク。target は URL か Drive のファイル・フォルダのID。key が空の行はメニューの「その他」に並ぶ';
+var LINK_KEYS = [
+  { key: 'manual', label: '使い方の説明書', find: 'tools/docs/README.md', memo: '追加ボタンのメニュー・説明パネルの冒頭' },
+  { key: 'admin', label: '管理者向けの説明（運用・エラー一覧）', find: 'tools/docs/OPERATION.md', memo: '説明パネルの冒頭・要対応の帯' },
+  { key: 'fusion', label: 'Fusion の書き出しスクリプト', find: 'tools/fusion_export', memo: '説明パネル（Fusion から）' },
+  { key: 'template', label: '作品フォルダのひな形（_template）', find: 'items/_template', memo: '説明パネル（ドライブに直接置く）' },
+  { key: 'items', label: 'items フォルダ', find: 'items', memo: '説明パネル。空なら ITEMS_FOLDER_ID のフォルダ' },
+  { key: 'repo', label: 'ソースコード（GitHub）', find: '', memo: '追加ボタンのメニューの一番下。空なら出さない' }
+];
+
+/**
  * 画像の取り直し（getThumbnails）の決まり。
  * スマホのブラウザは GAS の iframe の中から drive.google.com/thumbnail を読むときに
  * Cookie を送らないため画像が出ない。画面は読めなかった画像だけ、サーバーに data URL で頼む。
@@ -535,6 +555,41 @@ function sheetRowUrl(sheetUrl, gid, rowNumber) {
 }
 
 /**
+ * links シートの target → 開ける URL。http(s) の URL はそのまま、Drive の ID だけなら open?id= の URL にする。
+ * それ以外（javascript: など）は空文字（画面に出さない）。
+ */
+function linkTargetUrl(target) {
+  var s = String(target || '').trim();
+  if (/^https?:\/\/\S+$/i.test(s)) return s;
+  if (/^[A-Za-z0-9_-]{10,}$/.test(s)) return 'https://drive.google.com/open?id=' + s;
+  return '';
+}
+
+/**
+ * links シートのデータ行（[key, label, target, memo] の配列）→ 画面に渡すリンクの配列。
+ * key は LINK_KEYS のどれか（同じ key は先の行だけ使う）、それ以外は ''（その他のリンク）。
+ * target が URL にならない行は捨てる。label が空なら、決まった key の既定の名前か URL。
+ * @return {Array<{key:string, label:string, url:string}>}
+ */
+function parseLinkRows(values) {
+  var known = {};
+  LINK_KEYS.forEach(function (k) { known[k.key] = k; });
+  var seen = {};
+  var out = [];
+  (values || []).forEach(function (row) {
+    var key = String(row[0] || '').trim().toLowerCase();
+    var url = linkTargetUrl(row[2]);
+    if (!url) return;
+    if (!known[key]) key = '';
+    if (key && seen[key]) return;
+    if (key) seen[key] = true;
+    var label = String(row[1] || '').trim() || (key ? known[key].label : url);
+    out.push({ key: key, label: label, url: url });
+  });
+  return out;
+}
+
+/**
  * getThumbnails に渡された ID を整える。ID らしい形の文字列だけを、重複を除いて
  * 先頭から max 件（省略時は THUMB_BATCH_MAX 件）まで残す（配列でなければ空配列）。
  */
@@ -886,6 +941,87 @@ function canEditSpreadsheet_(ss) {
   }
 }
 
+/** links シートのリンクを読む（シートが無い・読めないときは空。一覧の表示は止めない） */
+function readLinks_(ss) {
+  try {
+    var sheet = ss.getSheetByName(LINKS_SHEET_NAME);
+    if (!sheet) return [];
+    var last = sheet.getLastRow();
+    if (last < 2) return [];
+    return parseLinkRows(sheet.getRange(2, 1, last - 1, LINKS_HEADERS.length).getValues());
+  } catch (e) {
+    Logger.log('links シートを読めませんでした：' + (e && e.message ? e.message : e));
+    return [];
+  }
+}
+
+/**
+ * LINK_KEYS の find の場所を Drive でたどり、見つかったものの ID を { key: ID } で返す。
+ * 見つからない・開けないものは入れない（setup の初期値なので、無くても困らない）。
+ */
+function findLinkTargets_(itemsFolder) {
+  var found = {};
+  var toolsFolder;
+  var toolsLooked = false;
+  var child = function (folder, name) {
+    var dirs = folder.getFoldersByName(name);
+    while (dirs.hasNext()) { var d = dirs.next(); if (!d.isTrashed()) return d; }
+    var files = folder.getFilesByName(name);
+    while (files.hasNext()) { var f = files.next(); if (!f.isTrashed()) return f; }
+    return null;
+  };
+  LINK_KEYS.forEach(function (k) {
+    try {
+      var parts = k.find ? k.find.split('/') : [];
+      if (!parts.length) return;
+      var node;
+      if (parts[0] === 'items') {
+        node = itemsFolder;
+      } else if (parts[0] === 'tools') {
+        if (!toolsLooked) {
+          toolsLooked = true;
+          var parents = itemsFolder.getParents();
+          var parent = parents.hasNext() ? parents.next() : null;
+          toolsFolder = parent ? child(parent, 'tools') : null;
+        }
+        node = toolsFolder;
+      }
+      for (var i = 1; node && i < parts.length; i++) node = node.getFoldersByName ? child(node, parts[i]) : null;
+      if (node) found[k.key] = node.getId();
+    } catch (e) {
+      Logger.log('リンクの場所を探せませんでした（' + k.find + '）：' + (e && e.message ? e.message : e));
+    }
+  });
+  return found;
+}
+
+/**
+ * links シートを用意する。無ければ作って見出しを書き、LINK_KEYS のうちシートに無い key の行を足す
+ * （target は findLinkTargets_ で見つけたもの。管理者が書き換えた行には触らない）。
+ * @return {number} 足した行の数
+ */
+function ensureLinksSheet_(ss, itemsFolder) {
+  var sheet = ss.getSheetByName(LINKS_SHEET_NAME) || ss.insertSheet(LINKS_SHEET_NAME);
+  var head = sheet.getRange(1, 1, 1, LINKS_HEADERS.length);
+  if (head.getValues()[0].map(String).join('\t') !== LINKS_HEADERS.join('\t')) {
+    head.setNumberFormat('@').setValues([LINKS_HEADERS]);
+    head.setNote(LINKS_HEADER_NOTE);
+    head.setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+  var last = sheet.getLastRow();
+  var have = {};
+  if (last >= 2) {
+    sheet.getRange(2, 1, last - 1, 1).getValues().forEach(function (r) { have[String(r[0]).trim().toLowerCase()] = true; });
+  }
+  var missing = LINK_KEYS.filter(function (k) { return !have[k.key]; });
+  if (!missing.length) return 0;
+  var found = findLinkTargets_(itemsFolder);
+  var rows = missing.map(function (k) { return [k.key, k.label, found[k.key] || '', k.memo]; });
+  sheet.getRange(Math.max(last, 1) + 1, 1, rows.length, LINKS_HEADERS.length).setNumberFormat('@').setValues(rows);
+  return rows.length;
+}
+
 /** シートに「警告のみ」の保護をかける（既に保護があれば触らない） */
 function protectSheet_(sheet) {
   var existing = sheet.getProtections(SpreadsheetApp.ProtectionType.SHEET);
@@ -1077,9 +1213,15 @@ function getGalleryData() {
       sheetUrl: ss.getUrl(),
       statuses: STATUS_CHOICES.slice(),
       canSync: canEditSpreadsheet_(ss),
+      links: readLinks_(ss),
       items: [],
       issues: []
     };
+    // items フォルダのリンクは、links シートに無くても ITEMS_FOLDER_ID から作れる
+    var itemsId = PropertiesService.getScriptProperties().getProperty(PROP_ITEMS_FOLDER_ID);
+    if (itemsId && !data.links.some(function (l) { return l.key === 'items'; })) {
+      data.links.push({ key: 'items', label: 'items フォルダ', url: driveFolderUrl(itemsId) });
+    }
     if (!sheet) return data;
 
     var last = sheet.getLastRow();
@@ -1323,6 +1465,7 @@ function runSyncFromMenu_(rebuild) {
  * 初期設定。何度実行しても同じ状態になる（トリガーを重複登録しない）。
  * - ITEMS_FOLDER_ID の確認（無い・開けないときはわかる言葉で止める）
  * - シート items と見出し、メモ、「警告のみ」の保護
+ * - シート links（関連リンク。足りない key の行だけ足す）
  * - 毎日の同期トリガー
  * Apps Script のエディタから実行してもよい（その場合は結果がログに出る）。
  * @return {string} 結果の説明
@@ -1332,11 +1475,13 @@ function setup() {
   var sheet = getOrCreateSheet_();
   sheet.setFrozenRows(1);
   var protectedNow = protectSheet_(sheet);
+  var linksAdded = ensureLinksSheet_(SpreadsheetApp.getActiveSpreadsheet(), itemsFolder);
   var triggerCreated = ensureDailyTrigger_();
 
   var lines = [
     'items フォルダ：' + itemsFolder.getName(),
     'シート「' + SHEET_NAME + '」：見出しを確認しました' + (protectedNow ? '（警告のみの保護をかけました）' : ''),
+    'シート「' + LINKS_SHEET_NAME + '」：' + (linksAdded ? linksAdded + '行を足しました（説明書などのリンク。target を書き換えて使います）' : '確認しました'),
     '毎日の同期：' + (triggerCreated ? '登録しました（' + DAILY_SYNC_HOUR + '時台）' : '登録済みです'),
     '続けて「ギャラリー → 今すぐ同期」を実行してください'
   ];
