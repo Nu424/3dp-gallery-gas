@@ -1664,6 +1664,21 @@ function cleanFields(f) {
 function newEditor(scope, id, src, fp) {
   return { scope, id, base: fieldsOf(src), fields: fieldsOf(src), fp: fp || '', tagInput: '', error: '', errors: {}, saving: false, uploads: [], busyFile: null, broken: null, overwrite: false };
 }
+/* 箱の土台を、サーバーが返した最新（entry）に替える。自分が変えていない項目は最新の値に、変えた項目は自分の値のまま。
+   保存の競合（conflict）と、自分のファイル操作のあと（ほかの人の変更が入っているかもしれない）で使う。
+   値が変わった項目があれば true */
+function rebase(ed, entry) {
+  const cur = entry && (entry.item || (entry.issue && Object.assign({ fp: entry.issue.fp }, entry.issue.meta)));
+  if (!cur) return false;
+  const nb = fieldsOf(cur);
+  let changed = false;
+  Object.keys(nb).forEach((k) => {
+    if (JSON.stringify(ed.fields[k]) === JSON.stringify(ed.base[k]) && JSON.stringify(ed.fields[k]) !== JSON.stringify(nb[k])) { ed.fields[k] = JSON.parse(JSON.stringify(nb[k])); changed = true; }
+  });
+  ed.base = nb;
+  ed.fp = cur.fp || '';
+  return changed;
+}
 const isDirty = (ed) => !!ed && (JSON.stringify(cleanFields(ed.fields)) !== JSON.stringify(cleanFields(ed.base)) || !!ed.tagInput.trim());
 const uploading = (ed) => !!ed && ed.uploads.some((u) => u.status === 'wait' || u.status === 'send');
 const edFor = (el) => el.closest('#issue-dlg') ? state.issueEdit : el.closest('#add') ? selGroup() : el.closest('#detail') ? state.edit : null;
@@ -1726,7 +1741,7 @@ function editFormHTML(ed) {
       <input class="ed-input" id="${p}-author" data-ed="author" value="${esc(f.author)}" autocomplete="off"${inv('author')}>${err('author')}
       <div class="ed-sugg" data-sugg="authors">${suggAuthorsHTML(ed)}</div></div>`;
 }
-const edFootText = (ed) => ed.saving ? '保存しています…' : uploading(ed) ? 'ファイルを上げています…' : isDirty(ed) ? '保存していない変更があります' : '変更はまだありません';
+const edFootText = (ed) => ed.saving ? (uploading(ed) || ed.refreshing ? 'ファイルを上げ終わるのを待って保存します…' : '保存しています…') : uploading(ed) ? 'ファイルを上げています…' : isDirty(ed) ? '保存していない変更があります' : '変更はまだありません';
 function edFootHTML(ed) {
   return `<span class="grow${isDirty(ed) && !ed.saving ? ' dirty' : ''}" data-ed-foot-text aria-live="polite">${edFootText(ed)}</span>
     <button class="btn" type="button" data-action="edit-cancel"${ed.saving ? ' disabled' : ''}>やめる</button>
@@ -1772,8 +1787,9 @@ function rerenderEditor(ed, focusSel) {
   else if (ed.scope === 'add') renderAdd();
   else if (state.edit === ed) { forceDetail = true; renderDetail(); }
   else return;
-  if (!focusSel) return;
   const box = boxOf(ed);
+  if (ed.saving) box.querySelectorAll('.ed input, .ed button').forEach((x) => { x.disabled = true; });   // 保存中に打った文字は返事で消えるので止める
+  if (!focusSel) return;
   const el = box.querySelector(focusSel);
   if (!el) return;
   el.focus();
@@ -1813,7 +1829,7 @@ function leaveEdit(keepDraft) {
   const ed = state.edit;
   if (!ed) return;
   state.edit = null;
-  if (keepDraft && (isDirty(ed) || uploading(ed)) && itemById(ed.id)) drafts.set(ed.id, ed);
+  if (keepDraft && isDirty(ed) && itemById(ed.id)) drafts.set(ed.id, ed);
   forceDetail = true;
 }
 async function cancelEdit(ed) {
@@ -1836,20 +1852,15 @@ async function saveEdit(ed) {
   if (ed.broken !== null && !ed.overwrite) { ed.error = '今の meta.json を捨ててよいか、上のチェックで確かめてください'; rerenderEditor(ed, '[data-ed-overwrite]'); return; }
   ed.saving = true; ed.error = '';
   rerenderEditor(ed);
+  // ファイルを上げている途中なら、上げ終えて一覧に反映するのを待ってから送る（待たないと指紋が違って「ほかの人が先に変更」になる）
+  while (uploading(ed) || ed.refreshing) await new Promise((r) => setTimeout(r, 300));
   try {
     const r = await callServer('updateItemMeta', ed.id, cleanFields(ed.fields), ed.fp, ed.overwrite);
     ed.saving = false;
     if (r && r.ok) { applyEntry(ed.id, r.entry); finishSave(ed, r.entry); return; }
     if (r && r.conflict) {   // 誰かが先に変えていた：最新を土台にして、入力は残す
       applyEntry(ed.id, r.entry);
-      const cur = r.entry && (r.entry.item || (r.entry.issue && Object.assign({ fp: r.entry.issue.fp }, r.entry.issue.meta)));
-      if (cur) {
-        // 項目ごとに合わせる：自分が変えていない項目は相手の新しい値に、変えた項目は自分の値のまま
-        const nb = fieldsOf(cur);
-        Object.keys(nb).forEach((k) => { if (JSON.stringify(ed.fields[k]) === JSON.stringify(ed.base[k])) ed.fields[k] = JSON.parse(JSON.stringify(nb[k])); });
-        ed.base = nb;
-        ed.fp = cur.fp || '';
-      }
+      rebase(ed, r.entry);
       ed.error = r.message;
     } else if (r && r.broken !== undefined) {
       ed.broken = r.broken; ed.error = r.message;
@@ -1866,10 +1877,13 @@ async function saveEdit(ed) {
 function finishSave(ed, entry) {
   const it = entry && entry.item;
   if (ed.scope === 'detail') {
-    leaveEdit(false);
+    // 返事を待つ間に別の作品を選んだ・閉じたときは、この箱は今の編集ではない（下書きに移っている）
+    if (drafts.get(ed.id) === ed) drafts.delete(ed.id);
+    const current = state.edit === ed;
+    if (current) leaveEdit(false);
     state.notice = { text: '「' + (it ? it.name : '') + '」を保存しました', kind: '' };
     renderAll();
-    focusEditButton();
+    if (current) focusEditButton();
     return;
   }
   // 要対応を直した：一覧に出たら、ダイアログを閉じてその作品を選ぶ。まだ不備があれば、ダイアログに理由を出す
@@ -1925,7 +1939,8 @@ async function sendOne(u, send, onChange) {
 /* list の中の待っているものを、同時に UPLOAD_PARALLEL 本まで送る。全部終わったら解決する */
 function runUploads(list, send, onChange) {
   const queue = list.filter((u) => u.status === 'wait');
-  const worker = async () => { while (queue.length) await sendOne(queue.shift(), send, onChange); };
+  // 前に呼んだ分の順番待ちと重なることがあるので、送る直前にまだ待っているかを確かめる（sendOne は最初に send にする）
+  const worker = async () => { while (queue.length) { const u = queue.shift(); if (u.status === 'wait') await sendOne(u, send, onChange); } };
   return Promise.all(Array.from({ length: Math.min(UPLOAD_PARALLEL, queue.length) }, worker));
 }
 async function addFilesToItem(ed, files) {
@@ -1951,22 +1966,27 @@ async function addFilesToItem(ed, files) {
   await uploadToItem(ed);
 }
 async function uploadToItem(ed) {
-  await runUploads(ed.uploads, (u, b64) => callServer('uploadItemFile', ed.id, u.name, u.file.type || '', b64, !!u.replace), () => renderEdFiles(ed));
-  if (!ed.uploads.some((u) => u.status === 'done' && !u.applied)) return;
+  ed.refreshing = (ed.refreshing || 0) + 1;   // 上げ終えて一覧に反映するまでの間（保存はこれを待つ）
   try {
+    await runUploads(ed.uploads, (u, b64) => callServer('uploadItemFile', ed.id, u.name, u.file.type || '', b64, !!u.replace), () => renderEdFiles(ed));
+    ed.uploads.forEach((u) => { if (u.status === 'done' && u.result && u.result.notReplaced && !u.warned) { u.warned = true; u.error = '同じ名前の古いファイルを消せませんでした（共有ドライブの権限）。ドライブで古い方を消してください'; } });
+    if (!ed.uploads.some((u) => u.status === 'done' && !u.applied)) { renderEdFiles(ed); return; }
     const r = await callServer('refreshItem', ed.id);
     ed.uploads.forEach((u) => { if (u.status === 'done') u.applied = true; });
     adoptEntry(ed, r.entry);
   } catch (err) {
     showError('一覧に反映できませんでした：' + errMsg(err));
+  } finally {
+    ed.refreshing--;
   }
 }
-/* 自分のファイル操作のあとの1件を取り込む。指紋は自分の変更の分だけ進んだので、編集の箱の fp も新しくする */
+/* 自分のファイル操作のあとの1件を取り込む（指紋が進むので、編集の箱の土台も新しくする） */
 function adoptEntry(ed, entry) {
   applyEntry(ed.id, entry);
-  if (entry && entry.item) ed.fp = entry.item.fp;
+  const changed = rebase(ed, entry);   // fp だけ進めると、ほかの人の変更を黙って上書きしてしまうので、土台ごと新しくする
   renderMain();
-  if (state.edit === ed) renderEdFiles(ed); else renderDetail();
+  if (state.edit !== ed) { renderDetail(); return; }
+  if (changed) rerenderEditor(ed); else renderEdFiles(ed);
 }
 async function deleteFile(ed, fileId, name) {
   if (!(await askConfirm({ title: '「' + name + '」を消しますか？', text: 'ドライブのゴミ箱に移します。30日以内なら、ドライブのゴミ箱から戻せます。', ok: 'ゴミ箱に移す', danger: true }))) return;
@@ -2002,6 +2022,7 @@ function renderIssueDialog() {
     <div class="dlg-head"><h2 id="issue-dlg-title">「${esc(is.name || is.folderName)}」の説明を書く</h2><button class="icon-btn" type="button" data-action="issue-close" aria-label="閉じる">${ICON.close}</button></div>
     <div class="dlg-body">
       <p class="ed-problem">${ICON.warn}<span>${esc(is.problem)}</span></p>
+      <p class="small">保存すると、meta.json の用途・状態・タグ・メモ・作った人を、下の内容で書き換えます（ほかの項目は残ります）。今の値が読めなかった項目は空で始まります。</p>
       ${ed.broken !== null ? `<div class="ed-broken"><p>今の meta.json（JSON として読めません）</p><pre>${esc(ed.broken)}</pre><label><input type="checkbox" data-ed-overwrite${ed.overwrite ? ' checked' : ''}>この中身を捨てて、下の内容で書き直す</label></div>` : ''}
       <div class="ed" data-editor="issue">${editFormHTML(ed)}</div>
     </div>
@@ -2441,7 +2462,7 @@ function imagesHTML(g) {
     const can = THUMB_EXTS.includes(extOf(f.name));
     return `<div class="imgrow"><span class="fname">${esc(f.name)}</span>
       ${can ? `<label><input type="radio" name="add-thumb-${g.id}" data-add-thumb="${f.key}"${f.role === 'thumb' ? ' checked' : ''}>一覧の代表画像</label>` : '<span class="small">代表画像は png・jpg だけ</span>'}
-      <label><input type="checkbox" data-add-photo="${f.key}"${f.role === 'photo' ? ' checked' : ''}${f.role === 'thumb' && can ? ' disabled' : ''}>詳細の写真欄に出す</label></div>`;
+      ${/^photo_/i.test(f.name) && f.role !== 'thumb' ? '<span class="small">名前が photo_ で始まるので写真欄に出ます</span>' : `<label><input type="checkbox" data-add-photo="${f.key}"${f.role === 'photo' ? ' checked' : ''}${f.role === 'thumb' && can ? ' disabled' : ''}>詳細の写真欄に出す</label>`}</div>`;
   }).join('')}</div><span class="small">代表画像は thumb.${'{'}png/jpg{'}'}、写真は photo_〜 という名前で登録します</span></div>`;
 }
 function groupFormHTML(g) {
@@ -2666,6 +2687,12 @@ async function registerAll() {
       } else g.result = { state: 'fail', error: x.error };
     } catch (err) {
       g.result = { state: 'fail', error: errMsg(err) };
+      if (/置き場が見つかりません/.test(errMsg(err))) {   // 時間がたって片付けられた：新しい置き場へ上げ直す
+        A.staging = null; A.stagingId = '';
+        liveFiles().forEach((f) => { if (f.status === 'done' && f.file) { f.status = 'wait'; f.fileId = ''; } });
+        g.result.error += '。ファイルを上げ直しています。上がったら「できなかった分をもう一度」を押してください';
+        pumpAddUploads();
+      }
     }
     renderAdd();
   }
@@ -2705,7 +2732,15 @@ function addClick(t, d) {
       renderAdd(); state.notice = { text: 'ほかの作品にも入れました', kind: '' }; renderSync(); return true;
     }
     case 'add-next': goConfirm(); return true;
-    case 'add-back': A.step = 'sort'; A.groups.forEach((g) => { if (g.result && g.result.state !== 'ok') g.result = null; }); renderAdd(); return true;
+    case 'add-back': {
+      A.step = 'sort';
+      const done = A.groups.filter((g) => g.result && g.result.state === 'ok');
+      A.files.forEach((f) => { if (done.some((g) => g.id === f.group)) f.removed = true; });   // もう作品フォルダに移っている
+      A.groups = A.groups.filter((g) => !done.includes(g));
+      A.groups.forEach((g) => { g.result = null; });
+      if (!selGroup()) A.sel = A.groups[0] ? A.groups[0].id : null;
+      renderAdd(); return true;
+    }
     case 'add-register': registerAll(); return true;
     case 'add-discard': discardAdd(); return true;
     case 'add-again': resetAdd(); { const b = document.getElementById('add-first'); if (b) b.focus(); } return true;
@@ -2812,8 +2847,11 @@ window.addEventListener('dragleave', (e) => {
   if (!dragDepth) veil().hidden = true;
 });
 window.addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });   // 落としたファイルをブラウザが開いてしまわないように
+/* 落とした・やめたら印を消す（受け口が stopPropagation しても届くよう capture 段階で） */
+const hideVeil = () => { dragDepth = 0; veil().hidden = true; };
+window.addEventListener('drop', hideVeil, true);
+window.addEventListener('dragend', hideVeil, true);
 window.addEventListener('drop', (e) => {
-  dragDepth = 0; veil().hidden = true;
   if (!hasFiles(e)) return;
   e.preventDefault();
   if (!canEdit() || document.querySelector('dialog[open]')) return;
@@ -2991,6 +3029,7 @@ function topLayer() {
 }
 document.addEventListener('keydown', (e) => {
   if (document.querySelector('dialog[open]')) return;   // 確かめ・要対応のダイアログ（<dialog> が Esc とフォーカスを受け持つ）
+  if (e.isComposing || e.keyCode === 229) return;       // 日本語の変換中の Esc は変換の取り消し
   const layer = topLayer();
   if (!layer) return;
   if (e.key === 'Escape') { closeLayer(false); return; }

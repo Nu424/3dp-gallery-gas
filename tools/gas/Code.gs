@@ -137,6 +137,7 @@ var STAGING_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 置き去りの置き場を同�
 var FOLDER_LABEL_MAX = 80;                // 画面から登録する作品の名前の長さの上限（文字数）
 var MSG_WRITE_PERMISSION = '作品フォルダを書き換える権限がありません。共有ドライブのメンバー（投稿者以上）か確かめてください';
 var MSG_TRASH_PERMISSION = 'ファイルをゴミ箱に移す権限がありません。共有ドライブでは「コンテンツ管理者」以上が必要です';
+var MSG_STAGING_GONE = 'ファイルの置き場が見つかりません（時間がたって片付けられた可能性があります）';
 var MSG_CONFLICT = 'ほかの人が先にこの作品を変更していました。最新の内容を読み込んだので、確かめてもう一度保存してください';
 
 /**
@@ -1287,17 +1288,25 @@ function resyncItem_(folderId) {
  * @return {{done:boolean, message:string, record:Object|null, entry:Object|null}}
  *   entry は画面用のデータ（{item} か {issue}。recordToGalleryEntry の形）。一覧から外したときは null
  */
-function resyncUnlocked_(folderId) {
+function resyncUnlocked_(folderId, folder) {
   folderId = String(folderId || '');
   var sheet = getOrCreateSheet_();
   assertCanWriteSheet_(sheet);
-  var itemsFolder = getItemsFolder_();
   var records = readRecords_(sheet);
 
-  var entry = listItemFolders_(itemsFolder).filter(function (f) { return f.id === folderId; })[0];
+  // folder：呼ぶ側が writableFolder_ で「items の直下の作品フォルダ」と確かめたもの。あれば items の一覧をたどらない
+  // （たどるのは、対象外の理由を書くときだけ。作品が多いと一覧に時間がかかり、その間ロックを持ち続けるため）
+  var entry = null;
+  var itemsFolder = null;
+  if (folder && !folder.isTrashed() && !isIgnoredFolderName(folder.getName())) {
+    entry = { folder: folder, id: folder.getId(), name: folder.getName() };
+  } else {
+    itemsFolder = getItemsFolder_();
+    entry = listItemFolders_(itemsFolder).filter(function (f) { return f.id === folderId; })[0];
+  }
 
   if (!entry) {
-    var reason = whyNotSyncTarget_(folderId, itemsFolder.getId());
+    var reason = whyNotSyncTarget_(folderId, (itemsFolder || getItemsFolder_()).getId());
     var rest = records.filter(function (r) { return r.folder_id !== folderId; });
     var hadRow = rest.length !== records.length;
     if (hadRow) writeRecords_(sheet, rest);
@@ -1352,6 +1361,7 @@ function writableFolder_(folderId, kind) {
     throw userError_('作品のフォルダが見つかりません。一覧を読み込み直してください');
   }
   if (folder.isTrashed() || !isDirectChildOf_(folder, itemsFolder.getId())) {
+    if (kind === 'staging') throw userError_(MSG_STAGING_GONE);
     throw userError_('作品のフォルダが items の直下にありません。一覧を読み込み直してください');
   }
   var name = folder.getName();
@@ -1395,7 +1405,7 @@ function updateItemMeta_(folderId, fields, baseFp, overwriteBroken) {
     assertCanWriteSheet_(sheet);
     var current = computeFingerprint(folder.getName(), listFolderFiles_(folder));
     if (baseFp && current !== baseFp) {
-      var fresh = resyncUnlocked_(folder.getId());
+      var fresh = resyncUnlocked_(folder.getId(), folder);
       return { ok: false, conflict: true, message: MSG_CONFLICT, entry: fresh.entry };
     }
     var metas = metaFilesIn_(folder);
@@ -1413,7 +1423,7 @@ function updateItemMeta_(folderId, fields, baseFp, overwriteBroken) {
     } catch (e) {
       throw writeError_(e);
     }
-    var r = resyncUnlocked_(folder.getId());
+    var r = resyncUnlocked_(folder.getId(), folder);
     return { ok: true, message: '保存しました', entry: r.entry };
   });
 }
@@ -1441,14 +1451,14 @@ function trashItemFile_(folderId, fileId) {
     } catch (e) {
       throw writeError_(e, MSG_TRASH_PERMISSION);
     }
-    var r = resyncUnlocked_(folder.getId());
+    var r = resyncUnlocked_(folder.getId(), folder);
     return { ok: true, message: '「' + name + '」をゴミ箱に移しました', entry: r.entry };
   });
 }
 
 /**
  * ファイルを1つ上げる（作品フォルダか置き場へ）。base64 の中身を Blob にして createFile する。
- * 同じ名前のファイルがあるときは、replace なら上げたあとで古い方をゴミ箱へ、そうでなければ断る。
+ * 同じ名前のファイルがあるときは、replace なら上げたあとで古い方をゴミ箱へ（移せなければ notReplaced:true）、そうでなければ断る。
  * 一覧への反映はしない（何件か上げ終えてから画面が refreshItem を呼ぶ）。ロックも取らない（Drive に足すだけ）。
  * @return {{id:string, name:string, size:number}}
  */
@@ -1482,14 +1492,18 @@ function uploadItemFile_(folderId, name, mimeType, base64, replace) {
   } catch (e) {
     throw writeError_(e);
   }
+  var notReplaced = false;
   olds.forEach(function (f) {
     try {
       f.setTrashed(true);
     } catch (e) {
+      notReplaced = true;   // 共有ドライブの投稿者はゴミ箱へ移せない。同じ名前が2つ残るので、画面で知らせる
       Logger.log('古いファイルをゴミ箱に移せませんでした（' + clean + '）：' + (e && e.message ? e.message : e));
     }
   });
-  return { id: created.getId(), name: created.getName(), size: created.getSize() };
+  var out = { id: created.getId(), name: created.getName(), size: created.getSize() };
+  if (notReplaced) out.notReplaced = true;
+  return out;
 }
 
 
@@ -1538,6 +1552,14 @@ function registerWork_(staging, itemsFolder, work) {
   var names = dedupeNames(files.map(function (f) { return cleanUploadName(f.name) || 'file'; }));
   if (names.some(function (n) { return n.toLowerCase() === META_FILE_NAME; })) throw userError_('meta.json はファイルとしては登録できません');
 
+  // やり直し：前の回で名前を付けるところまで済んでいた（そのあとの失敗や、返事が届かなかった）なら、
+  // ファイルはみな items の直下の同じ作品フォルダにある。登録済みとして、その作品を読み直して返す（二重に作らない）
+  var done = registeredFolder_(itemsFolder, files, base);
+  if (done) {
+    var again = resyncUnlocked_(done.getId(), done);
+    return { ok: true, folderName: done.getName(), entry: again.entry };
+  }
+
   var tmpName = workFolderName_(staging.getId(), work.key);
   var dirs = itemsFolder.getFoldersByName(tmpName);
   var dir = null;
@@ -1576,8 +1598,33 @@ function registerWork_(staging, itemsFolder, work) {
   } catch (e) {
     throw writeError_(e);
   }
-  var r = resyncUnlocked_(dir.getId());
+  var r = resyncUnlocked_(dir.getId(), dir);
   return { ok: true, folderName: finalName, entry: r.entry };
+}
+
+/**
+ * files（[{id}]）がみな、items の直下の同じ作品フォルダにあり、そのフォルダの名前がこの作品の名前（base か base-v2 …）なら、
+ * そのフォルダを返す。無ければ null（よその作品のファイルを渡されても、そのフォルダを登録済みとはみなさない）
+ */
+function registeredFolder_(itemsFolder, files, base) {
+  var dir = null;
+  for (var i = 0; i < files.length; i++) {
+    var file;
+    try {
+      file = DriveApp.getFileById(String(files[i].id || ''));
+    } catch (e) {
+      return null;
+    }
+    if (file.isTrashed()) return null;
+    var parents = file.getParents();
+    var parent = parents.hasNext() ? parents.next() : null;
+    if (!parent || (dir && parent.getId() !== dir.getId())) return null;
+    dir = parent;
+  }
+  if (!dir || dir.isTrashed() || !isDirectChildOf_(dir, itemsFolder.getId())) return null;
+  var name = dir.getName();
+  if (name !== base && !(name.indexOf(base + '-v') === 0 && /^\d+$/.test(name.slice(base.length + 2)))) return null;
+  return dir;
 }
 
 /**
@@ -1815,8 +1862,9 @@ function abandonUpload(stagingId) {
  */
 function refreshItem(folderId) {
   return withUserErrors_(function () {
+    var folder = writableFolder_(folderId, 'item');
     return withSyncLock_(function () {
-      var r = resyncUnlocked_(folderId);
+      var r = resyncUnlocked_(folder.getId(), folder);
       return { done: r.done, message: r.message, entry: r.entry };
     });
   });

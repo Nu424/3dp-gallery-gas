@@ -186,3 +186,22 @@ test('同期：1日以上たった _up_ のフォルダだけゴミ箱へ（ほ�
   assert.equal(env.drive.nodes.get(fresh).trashed, false);
   assert.equal(env.drive.nodes.get(tpl).trashed, false);
 });
+
+test('registerItems：名前を付けたあとで失敗した（返事が届かなかった）作品をやり直すと、二重に作らず登録済みとして返す', () => {
+  const env = setupEnv();
+  const { staging, ids } = stage(env, ['a.stl']);
+  const work = { key: 'g1', name: 'a', date: '2025-01-02', fields: FIELDS, files: [{ id: ids['a.stl'], name: 'a.stl' }] };
+  assert.equal(env.ctx.registerItems(staging, [work]).results[0].ok, true);
+  const r = plain(env.ctx.registerItems(staging, [work]));   // 画面には返事が届かなかったので、もう一度押した
+  assert.equal(r.results[0].ok, true, r.results[0].error);
+  assert.equal(r.results[0].folderName, '20250102_a');
+  assert.equal(kids(env, env.itemsId, 'folder').filter((n) => n.name.startsWith('20250102_a')).length, 1);
+  assert.equal(kids(env, env.itemsId, 'folder').filter((n) => n.name.startsWith('_up_w_')).length, 0);
+});
+
+test('registerItems：置き場が片付けられていたら、わかる文で断る', () => {
+  const env = setupEnv();
+  const { staging } = stage(env, []);
+  env.drive.trash(staging);
+  assert.throws(() => env.ctx.registerItems(staging, []), /置き場が見つかりません/);
+});

@@ -231,3 +231,26 @@ test('uploadItemFile：meta.json・使えない名前・大きすぎるもの・
   env.ctx.UPLOAD_MAX_BYTES = 1024;
   assert.equal(env.ctx.uploadItemFile(id, 'a/b.stl', '', b64('1')).name, 'a_b.stl');
 });
+
+test('uploadItemFile：置き換えで古い方をゴミ箱へ移せなければ notReplaced（投稿者）', () => {
+  const env = setupEnv();
+  const id = addItem(env, '20250612_ホルダー');
+  const old = env.drive.children(id, 'file').find((n) => n.name === 'base.stl').id;
+  env.drive.denyTrash[old] = 'Insufficient permissions';
+  const r = plain(env.ctx.uploadItemFile(id, 'base.stl', '', b64('new'), true));
+  assert.equal(r.notReplaced, true);
+  assert.equal(env.drive.nodes.get(old).trashed, false);
+});
+
+test('refreshItem・updateItemMeta は items をたどり直さない（確かめたフォルダを直接読む）', () => {
+  const env = setupEnv();
+  const id = addItem(env, '20250612_ホルダー');
+  env.ctx.syncNow();
+  let listed = 0;
+  const real = env.ctx.listItemFolders_;
+  env.ctx.listItemFolders_ = (f) => { listed++; return real(f); };
+  env.ctx.refreshItem(id);
+  env.ctx.updateItemMeta(id, FIELDS, itemOf(env, id).fp);
+  assert.equal(listed, 0);
+  assert.throws(() => env.ctx.refreshItem(env.drive.addFolder('_template', env.itemsId)), /このフォルダには書き込めません/);
+});
