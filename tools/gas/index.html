@@ -1654,22 +1654,53 @@ function cleanFields(f) {
   return { author: f.author.trim(), purpose: f.purpose.trim(), status: f.status.trim(), tags, note };
 }
 function newEditor(scope, id, src, fp) {
-  return { scope, id, base: fieldsOf(src), fields: fieldsOf(src), fp: fp || '', tagInput: '', error: '', errors: {}, saving: false, uploads: [], busyFile: null, broken: null, overwrite: false };
+  return { scope, id, base: fieldsOf(src), fields: fieldsOf(src), fp: fp || '', tagInput: '', error: '', errors: {}, saving: false, uploads: [], busyFile: null, broken: null, overwrite: false, clashes: [], merged: [] };
 }
-/* 箱の土台を、サーバーが返した最新（entry）に替える。自分が変えていない項目は最新の値に、変えた項目は自分の値のまま。
-   保存の競合（conflict）と、自分のファイル操作のあと（ほかの人の変更が入っているかもしれない）で使う。
+const FIELD_NAMES = { author: '作った人', purpose: '用途', status: '状態', tags: 'タグ', note: 'メモ' };
+/* 並び（タグ・メモの行）の三方向の合わせ：相手の最新から自分が消したものを消し、自分が足したものを足す。
+   足したものは、自分の並びで直前にある行（と、相手がそのあとに足した行）のあとに置く（その場で直したメモの行が末尾へ動かないように） */
+function mergeList(base, mine, theirs) {
+  const out = theirs.filter((x) => !(base.includes(x) && !mine.includes(x)));
+  mine.forEach((x, i) => {
+    if (base.includes(x) || out.includes(x)) return;
+    let at = 0;
+    for (let j = i - 1; j >= 0; j--) { const k = out.indexOf(mine[j]); if (k >= 0) { at = k + 1; break; } }
+    while (at < out.length && !base.includes(out[at]) && !mine.includes(out[at])) at++;   // 相手がそこに足した分のあとへ
+    out.splice(at, 0, x);
+  });
+  return out;
+}
+/* 箱の土台を、サーバーが返した最新（entry）に替える。保存の競合（conflict）と、自分のファイル操作のあと
+   （ほかの人の変更が入っているかもしれない）で使う。比べるのは整えた値（cleanFields。末尾の空白などで食い違わないように）。
+   - 自分が変えていない項目は最新の値に
+   - タグ・メモを両方が変えていたら合わせる（相手が足した B と自分が足した C の両方が残る）。ed.merged に入れて知らせる
+   - 作った人・用途・状態を両方が別の値に変えていたら自分の値のまま、ed.clashes に入れて知らせる
    値が変わった項目があれば true */
 function rebase(ed, entry) {
+  ed.clashes = []; ed.merged = [];
   const cur = entry && (entry.item || (entry.issue && Object.assign({ fp: entry.issue.fp }, entry.issue.meta)));
   if (!cur) return false;
-  const nb = fieldsOf(cur);
+  const nb = cleanFields(fieldsOf(cur));
+  const mine = cleanFields(ed.fields), base = cleanFields(ed.base);
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   let changed = false;
   Object.keys(nb).forEach((k) => {
-    if (JSON.stringify(ed.fields[k]) === JSON.stringify(ed.base[k]) && JSON.stringify(ed.fields[k]) !== JSON.stringify(nb[k])) { ed.fields[k] = JSON.parse(JSON.stringify(nb[k])); changed = true; }
+    let next;
+    if (same(mine[k], base[k])) next = nb[k];
+    else if (same(nb[k], base[k]) || same(mine[k], nb[k])) return;   // 自分だけが変えた（入力はそのまま）
+    else if (Array.isArray(nb[k])) { next = mergeList(base[k], mine[k], nb[k]); ed.merged.push(k); }
+    else { ed.clashes.push(k); return; }
+    if (!same(next, ed.fields[k])) { ed.fields[k] = JSON.parse(JSON.stringify(next)); changed = true; }
   });
   ed.base = nb;
   ed.fp = cur.fp || '';
   return changed;
+}
+/* rebase のあとの知らせ（何を合わせたか・どこがぶつかったか） */
+function rebaseNote(ed) {
+  const names = (ks) => ks.map((k) => FIELD_NAMES[k]).join('・');
+  return (ed.merged.length ? names(ed.merged) + 'は、相手とあなたの変更を合わせました（並びも確かめてください）。' : '')
+    + (ed.clashes.length ? names(ed.clashes) + 'は両方が変えていたので、あなたの値のままです（保存するとあなたの値になります）。' : '');
 }
 const isDirty = (ed) => !!ed && (JSON.stringify(cleanFields(ed.fields)) !== JSON.stringify(cleanFields(ed.base)) || !!ed.tagInput.trim());
 const uploading = (ed) => !!ed && ed.uploads.some((u) => u.status === 'wait' || u.status === 'send');
@@ -1852,8 +1883,13 @@ async function saveEdit(ed) {
     if (r && r.ok) { applyEntry(ed.id, r.entry); finishSave(ed, r.entry); return; }
     if (r && r.conflict) {   // 誰かが先に変えていた：最新を土台にして、入力は残す
       applyEntry(ed.id, r.entry);
-      rebase(ed, r.entry);
-      ed.error = r.message;
+      const changed = rebase(ed, r.entry);
+      // サーバーの文の代わりに、何を合わせたか・どこがぶつかったかを書く（指紋はファイルも含むので、項目は変わっていないこともある）
+      ed.error = !isDirty(ed) ? 'ほかの人が先に同じ内容に変更していました。保存しなくてかまいません'
+        : 'ほかの人が先にこの作品を変更していました。'
+          + (changed || ed.merged.length ? 'その変更と、あなたの入力を合わせて下に入れました（まだ保存していません）。' : '最新の内容を読み込みました（あなたの入力はそのままです）。')
+          + rebaseNote(ed)
+          + '内容を確かめてからもう一度保存してください。わかりにくいときは「やめる」で戻り、今の内容を見てから編集し直してください';
     } else if (r && r.broken !== undefined) {
       ed.broken = r.broken; ed.error = r.message;
     } else {
@@ -1976,9 +2012,11 @@ async function uploadToItem(ed) {
 function adoptEntry(ed, entry) {
   applyEntry(ed.id, entry);
   const changed = rebase(ed, entry);   // fp だけ進めると、ほかの人の変更を黙って上書きしてしまうので、土台ごと新しくする
+  // 指紋が進んだので次の保存は競合にならない。ほかの人の変更を合わせた・ぶつかったなら、ここで知らせる
+  if (ed.merged.length || ed.clashes.length || changed) ed.error = 'ほかの人がこの作品を変更していたので、その内容を下に入れました。' + rebaseNote(ed) + '確かめてから保存してください';
   renderMain();
   if (state.edit !== ed) { renderDetail(); return; }
-  if (changed) rerenderEditor(ed); else renderEdFiles(ed);
+  if (changed || ed.error) rerenderEditor(ed); else renderEdFiles(ed);
 }
 async function deleteFile(ed, fileId, name) {
   if (!(await askConfirm({ title: '「' + name + '」を消しますか？', text: 'ドライブのゴミ箱に移します。30日以内なら、ドライブのゴミ箱から戻せます。', ok: 'ゴミ箱に移す', danger: true }))) return;

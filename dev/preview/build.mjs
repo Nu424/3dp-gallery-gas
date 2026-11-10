@@ -145,7 +145,7 @@ const fake = `<script>
         const it = findItem(id), is = DATA.issues.find((x) => x.folderId === id);
         if (!it && !is) return fail(new Error('作品のフォルダが見つかりません。一覧を読み込み直してください'));
         if (conflictLeft && it) {   // 誰かが先に作った人を変えていた
-          conflictLeft--; it.author = '高橋'; it.fp = 'fp-c' + (++fpSeq);
+          conflictLeft--; it.author = '高橋'; it.tags = (it.tags || []).concat(['ほかの人のタグ']); it.fp = 'fp-c' + (++fpSeq);
           return ok({ ok: false, conflict: true, message: 'ほかの人が先にこの作品を変更していました。最新の内容を読み込んだので、確かめてもう一度保存してください', entry: { item: copy(it) } });
         }
         if (scenario === 'broken' && is && !overwrite) return ok({ ok: false, message: 'meta.json を JSON として読めません。今の中身を捨てて書き直すか、ドライブで直してください', entry: null, broken: '{\\n  "author": "山田",\\n  "purpose": \\n' });
